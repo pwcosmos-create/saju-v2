@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 사주팔자 — AI 심층 풀이
 
-## Getting Started
+생년월일·시간으로 60갑자 사주팔자를 계산하고, AI(Groq llama-3.3-70b)가 실시간 스트리밍으로 풀이해주는 웹 서비스입니다.
 
-First, run the development server:
+## 기능
+
+- 사주팔자 (년·월·일·시주) 정밀 계산 — 진짜만세력(고영창) 기반
+- 양력/음력 입력 지원
+- 오행 분석, 신살, 대운
+- 십신·12운성·지장간
+- AI 심층 풀이 (Groq 스트리밍 SSE)
+- 건강·직업·운세·월별 탭
+
+## 로컬 실행
 
 ```bash
+npm install
+cp .env.local.example .env.local  # API 키 설정
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 환경변수
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`.env.local` 파일을 생성하고 아래 값을 입력하세요. (`.env.local`은 gitignore 처리되어 있습니다)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+GROQ_API_KEY=...
+KASI_SERVICE_KEY=...
+NEXT_PUBLIC_FEEDBACK_URL=...   # 피드백 수집 엔드포인트 (선택)
+```
 
-## Learn More
+## 기술 스택
 
-To learn more about Next.js, take a look at the following resources:
+- Next.js 16 (App Router) · TypeScript · Tailwind CSS
+- Groq API (llama-3.3-70b-versatile) — 스트리밍 SSE
+- KASI 공공데이터 API — 음양력 변환
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 라이선스
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+이 프로젝트는 MIT 라이선스로 공개합니다.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+단, 사주 계산 엔진으로 **[@orrery/core](https://github.com/rath/orrery) (AGPL-3.0)** 를 사용합니다.
+AGPL-3.0 조건에 따라 이 저장소의 소스코드를 공개합니다.

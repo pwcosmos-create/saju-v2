@@ -89,6 +89,7 @@ export default function Home() {
   const [comment,  setComment]  = useState('');
   const [showAd,   setShowAd]   = useState(false);
   const [adCount,  setAdCount]  = useState(5);
+  const [copied,   setCopied]   = useState(false);
   const adTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const lastResult = useRef<SajuResult | null>(null);
@@ -161,6 +162,36 @@ export default function Home() {
     });
   }
 
+  function copyResult() {
+    if (!result) return;
+    const r = result;
+    const pillarLabels = ['연주','월주','일주','시주'];
+    const pillarText = r.pillars.map((p, i) =>
+      p ? `${pillarLabels[i]}: ${STEMS[p.s]}${BRANCHES[p.b]}` : `${pillarLabels[i]}: 미입력`
+    ).join(' | ');
+    const yb = r.pillars[0]?.b ?? 0;
+    const lines = [
+      `■ ${name||'사주'} 님의 사주팔자 분석`,
+      `생년월일: ${r.input.year}년 ${r.input.month}월 ${r.input.day}일 (${r.input.gender}성)`,
+      ``,
+      `[사주팔자]`,
+      pillarText,
+      ``,
+      `띠: ${ZODIAC[yb]}띠 | 일간 오행: ${ELEM_NAMES[STEM_ELEM[r.pillars[2]?.s??0]]}`,
+      ``,
+      `[오행 분포]`,
+      r.ohaeng.counts.map((c,i)=>`${ELEM_NAMES[i]} ${c}개`).join(' · '),
+      `보완 오행: ${ELEM_NAMES[r.ohaeng.weakest]}`,
+      ...(aiText ? [``, `[AI 심층 풀이]`, aiText] : []),
+      ``,
+      `— saju.coupax.co.kr`,
+    ];
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   function sendFeedback(rating:number) {
     if (!lastResult.current) return;
     const r = lastResult.current;
@@ -199,7 +230,7 @@ export default function Home() {
       </header>
 
       {/* ── Hero / Form ── */}
-      <section style={{ maxWidth:740, margin:'0 auto', padding:'64px 24px 40px', textAlign:'center' }}>
+      <section className="hero-section">
         <div style={{ display:'inline-block', background:'rgba(139,111,198,.2)',
           border:'1px solid rgba(139,111,198,.4)', color:'#c4a8ff',
           fontSize:'.78rem', fontWeight:700, padding:'5px 14px', borderRadius:100, marginBottom:22 }}>
@@ -212,11 +243,11 @@ export default function Home() {
           생년월일·시간으로 60갑자 일주, 오행, 신살, 대운, 2026년 운세를 상세하게 분석합니다.
         </p>
 
-        <div style={{ background:'var(--card2)', border:'1px solid var(--border)',
-          borderRadius:16, padding:32, backdropFilter:'blur(20px)', textAlign:'left' }}>
+        <div className="form-card" style={{ background:'var(--card2)', border:'1px solid var(--border)',
+          borderRadius:16, backdropFilter:'blur(20px)', textAlign:'left' }}>
           <div style={{ fontSize:'.9rem', fontWeight:700, color:'var(--gold)', marginBottom:20 }}>☽ 생년월일 입력</div>
 
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
+          <div className="form-grid">
             <Field label="이름 (선택)">
               <input style={inputStyle} placeholder="홍길동" maxLength={10}
                 value={name} onChange={e=>setName(e.target.value)} />
@@ -291,13 +322,23 @@ export default function Home() {
 
       {/* ── Results ── */}
       {result&&!loading&&(
-        <div ref={resultsRef} style={{ maxWidth:820, margin:'0 auto', padding:'0 20px 80px' }}>
+        <div ref={resultsRef} className="results-section">
           <div style={{ textAlign:'center', paddingTop:52, marginBottom:28 }}>
             <div style={{ fontSize:'.82rem', color:'var(--muted)', marginBottom:6 }}>{(name||'당신')} 님의 사주 정밀 분석</div>
             <h2 style={{ fontSize:'1.4rem', fontWeight:800 }}>
               <span style={{ color:'var(--gold)' }}>{dp&&STEMS[dp.s]}{dp&&BRANCHES[dp.b]}일주</span>
               {dp&&` — ${getIljooDesc(dp).split('.')[0]}`}
             </h2>
+            <button onClick={copyResult} style={{
+              marginTop:14, padding:'7px 20px',
+              background: copied ? 'rgba(76,190,130,.2)' : 'rgba(255,255,255,.07)',
+              border: `1px solid ${copied ? 'rgba(76,190,130,.5)' : 'var(--border)'}`,
+              borderRadius:100, color: copied ? '#4cbe82' : 'var(--muted)',
+              fontSize:'.8rem', fontWeight:700, cursor:'pointer',
+              transition:'all .25s',
+            }}>
+              {copied ? '✓ 복사됨!' : '📋 결과 복사'}
+            </button>
           </div>
 
           <PillarGrid pillars={result.pillars} />
@@ -397,7 +438,7 @@ export default function Home() {
           <a href="https://github.com/rath/orrery" target="_blank" rel="noopener noreferrer"
             style={{ color:'var(--muted)', textDecoration:'underline' }}>@orrery/core (AGPL-3.0)</a>
           를 사용합니다.{' '}
-          <a href="https://github.com/pwcos/saju-v2" target="_blank" rel="noopener noreferrer"
+          <a href="https://github.com/pwcosmos-create/saju-v2" target="_blank" rel="noopener noreferrer"
             style={{ color:'var(--muted)', textDecoration:'underline' }}>소스코드 공개</a>
         </p>
       </footer>
@@ -414,7 +455,7 @@ function PillarGrid({ pillars }: { pillars:(Pillar|null)[] }) {
   return (
     <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:16, padding:'26px 20px 22px', marginBottom:16 }}>
       <div style={{ fontSize:'.72rem', fontWeight:700, color:'var(--muted)', textAlign:'center', marginBottom:18, letterSpacing:'.08em' }}>사주팔자 (四柱八字)</div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
+      <div className="pillar-grid">
         {pillars.map((p,i)=>(
           <div key={i} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
             <div style={{ fontSize:'.65rem', color:'var(--muted)', fontWeight:600, marginBottom:2 }}>{labels[i]}</div>
@@ -449,7 +490,7 @@ function ScoreCards({ ds }: { ds:number }) {
     {k:'건강',icon:'🌿',color:'#4cbe82'},{k:'직업',icon:'💼',color:'#4a9eff'},
   ];
   return (
-    <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
+    <div className="score-grid">
       {cats.map(c=>(
         <div key={c.k} style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:16, padding:'16px 12px', textAlign:'center' }}>
           <div style={{ fontSize:'1.3rem', marginBottom:6 }}>{c.icon}</div>
@@ -467,7 +508,7 @@ function ScoreCards({ ds }: { ds:number }) {
 function IljooCard({ dp, yearBranch }: { dp:Pillar; yearBranch:number }) {
   const ds=dp.s, idx=getPillarIdx(dp.s,dp.b);
   return (
-    <div style={{ background:'linear-gradient(135deg,rgba(139,111,198,.15),rgba(74,158,255,.1))',border:'1px solid rgba(139,111,198,.3)',borderRadius:16,padding:22,marginBottom:16,display:'flex',alignItems:'flex-start',gap:18 }}>
+    <div className="iljoo-inner" style={{ background:'linear-gradient(135deg,rgba(139,111,198,.15),rgba(74,158,255,.1))',border:'1px solid rgba(139,111,198,.3)',borderRadius:16,padding:22,marginBottom:16 }}>
       <div style={{ fontSize:'2rem',fontWeight:900,color:'var(--gold)',minWidth:70,textAlign:'center',lineHeight:1 }}>
         {STEM_ICONS[ds]}<small style={{ display:'block',fontSize:'.68rem',color:'var(--muted)',marginTop:3 }}>{STEMS[ds]}{BRANCHES[dp.b]}일주</small>
       </div>
@@ -516,7 +557,7 @@ function TabSung({ ds, dp }: { ds:number; dp:Pillar }) {
     <div>
       <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:12,color:'var(--gold)' }}>{STEM_ICONS[ds]} {STEMS[ds]}일간 성격 상세 분석</h3>
       <p style={{ fontSize:'.87rem',color:'rgba(240,238,255,.85)',lineHeight:1.8,marginBottom:14 }}>{IJ60_DESC[getPillarIdx(dp.s,dp.b)]}</p>
-      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
+      <div className="tab-grid-2">
         {[
           {ico:'💼',t:'직업 적성',txt:`${ELEM_NAMES[el]}(${ELEM_NAMES_H[el]}) 기운: ${elemChars[el]}`},
           {ico:'❤️',t:'연애 스타일',txt:ds<5?'한번 마음을 주면 깊게 헌신하는 타입입니다. 내면은 따뜻하고 진지합니다.':'감성적이고 섬세한 사랑을 추구합니다. 공감 능력이 뛰어납니다.'},
@@ -591,7 +632,7 @@ function TabMonthly({ ds }: { ds:number }) {
   return (
     <div>
       <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:16,color:'var(--gold)' }}>📅 2026년 월별 운세</h3>
-      <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8 }}>
+      <div className="monthly-grid">
         {Array.from({length:12},(_,i)=>{
           const v=Math.min(5,Math.max(1,((stars[i]+el+i)%3)+3));
           return (
@@ -654,7 +695,7 @@ function TabHealth({ ds }: { ds:number }) {
   return (
     <div>
       <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:14,color:'var(--gold)' }}>🌿 건강 분석 & 관리법</h3>
-      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
+      <div className="tab-grid-2">
         {items.map(it=>(
           <div key={it.label} style={{ background:'rgba(76,190,130,.07)',border:'1px solid rgba(76,190,130,.2)',borderRadius:10,padding:14 }}>
             <div style={{ fontSize:'.72rem',fontWeight:700,color:'#4cbe82',marginBottom:5 }}>{it.icon} {it.label}</div>

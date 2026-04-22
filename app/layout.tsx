@@ -131,6 +131,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           gtag('js',new Date());
           gtag('config','${GA_ID}',{page_path:window.location.pathname});
         `}} />}
+        {/* RSS 자동 발견 — 네이버/구글 크롤러 RSS 인식용 */}
+        <link rel="alternate" type="application/rss+xml" title="사주팔자 무료 분석 RSS" href="https://saju.coupax.co.kr/rss.xml" />
         <link rel="preconnect" href="https://cdn.jsdelivr.net" />
         <link rel="stylesheet" crossOrigin="anonymous"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />

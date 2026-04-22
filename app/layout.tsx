@@ -116,21 +116,21 @@ const WEBAPP_SCHEMA = {
   aggregateRating: { '@type': 'AggregateRating', ratingValue: '4.8', ratingCount: '1200' },
 };
 
-const GA_ID = 'G-XXXXXXXXXX'; // TODO: 실제 GA4 측정 ID로 교체
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
       <head>
         <meta name="naver-site-verification" content="b5a4069102b997a4c8f1463c8231793e29e5eaf0" />
-        {/* Google Analytics */}
-        <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} />
-        <script dangerouslySetInnerHTML={{ __html: `
+        {/* Google Analytics — GA_ID를 .env.local의 NEXT_PUBLIC_GA_ID로 설정하세요 */}
+        {GA_ID && <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} />}
+        {GA_ID && <script dangerouslySetInnerHTML={{ __html: `
           window.dataLayer=window.dataLayer||[];
           function gtag(){dataLayer.push(arguments);}
           gtag('js',new Date());
           gtag('config','${GA_ID}',{page_path:window.location.pathname});
-        `}} />
+        `}} />}
         <link rel="preconnect" href="https://cdn.jsdelivr.net" />
         <link rel="stylesheet" crossOrigin="anonymous"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />

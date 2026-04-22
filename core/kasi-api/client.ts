@@ -22,6 +22,13 @@ export interface LunarInfo {
   lunSecha: string; // 간지 연
 }
 
+function extractItem(json: unknown, label: string): unknown {
+  const item = (json as { response?: { body?: { items?: { item?: unknown } } } })
+    ?.response?.body?.items?.item;
+  if (item === undefined || item === null) throw new Error(`KASI API 응답 파싱 실패: ${label}`);
+  return item;
+}
+
 /** 양력 → 음력 변환 */
 export async function solarToLunar(year: number, month: number, day: number): Promise<LunarInfo> {
   const url = `${BASE}/LrsrCldInfoService/getLunCalInfo?${qs({
@@ -29,8 +36,9 @@ export async function solarToLunar(year: number, month: number, day: number): Pr
     solYear: year, solMonth: String(month).padStart(2,'0'), solDay: String(day).padStart(2,'0'),
   })}`;
   const res  = await fetch(url);
+  if (!res.ok) throw new Error(`KASI HTTP ${res.status}`);
   const json = await res.json();
-  return json.response.body.items.item as LunarInfo;
+  return extractItem(json, 'solarToLunar') as LunarInfo;
 }
 
 /** 음력 → 양력 변환 */
@@ -41,8 +49,9 @@ export async function lunarToSolar(year: number, month: number, day: number, lea
     lunLeapmonth: leap ? 'true' : 'false',
   })}`;
   const res  = await fetch(url);
+  if (!res.ok) throw new Error(`KASI HTTP ${res.status}`);
   const json = await res.json();
-  return json.response.body.items.item;
+  return extractItem(json, 'lunarToSolar') as { solYear:string; solMonth:string; solDay:string };
 }
 
 // ─── 24절기 (LrsrCldInfoService) ───
@@ -60,9 +69,10 @@ export async function getSolarTerms(year: number): Promise<SolarTermInfo[]> {
     solYear: year, numOfRows: 24, pageNo: 1,
   })}`;
   const res  = await fetch(url, { next: { revalidate: 86400 } }); // 하루 캐시
+  if (!res.ok) throw new Error(`KASI HTTP ${res.status}`);
   const json = await res.json();
-  const items = json.response.body.items.item;
-  return Array.isArray(items) ? items : [items];
+  const items = extractItem(json, 'getSolarTerms');
+  return Array.isArray(items) ? items as SolarTermInfo[] : [items as SolarTermInfo];
 }
 
 // ─── 월령 (LunPhInfoService) ───
@@ -78,6 +88,7 @@ export async function getMoonPhase(year: number, month: number, day: number): Pr
     solYear: year, solMonth: String(month).padStart(2,'0'), solDay: String(day).padStart(2,'0'),
   })}`;
   const res  = await fetch(url);
+  if (!res.ok) throw new Error(`KASI HTTP ${res.status}`);
   const json = await res.json();
-  return json.response.body.items.item;
+  return extractItem(json, 'getMoonPhase') as MoonPhase;
 }

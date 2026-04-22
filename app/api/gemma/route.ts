@@ -1,18 +1,12 @@
 import { NextRequest } from 'next/server';
+import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 
 const SYSTEM = `당신은 30년 경력의 명리학(命理學) 전문가입니다.
 사주팔자를 분석할 때 전통 명리학 이론을 정확하게 적용하고, 전문 용어는 한자와 설명을 함께 제공합니다.
 한국어로만 답변합니다.`;
 
-const rlMap = new Map<string, { count: number; reset: number }>();
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = rlMap.get(ip);
-  if (!entry || now > entry.reset) { rlMap.set(ip, { count: 1, reset: now + 600_000 }); return true; }
-  if (entry.count >= 1) return false;
-  entry.count++;
-  return true;
-}
+// IP당 10분에 1회
+const checkRateLimit = makeRateLimiter(1, 600_000);
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';

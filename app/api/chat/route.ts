@@ -1,15 +1,9 @@
 import { NextRequest } from 'next/server';
 import { fetchGroqStream } from '../../../core/config/llm';
+import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 
-const rlMap = new Map<string, { count: number; reset: number }>();
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = rlMap.get(ip);
-  if (!entry || now > entry.reset) { rlMap.set(ip, { count: 1, reset: now + 60_000 }); return true; }
-  if (entry.count >= 20) return false;
-  entry.count++;
-  return true;
-}
+// IP당 1분에 20회
+const checkRateLimit = makeRateLimiter(20, 60_000);
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';

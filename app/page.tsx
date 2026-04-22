@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import ChatWidget from './chat-widget';
 import { calculate, SajuResult } from '../core/pillar-calc/main-calculator';
 import {
@@ -213,10 +213,11 @@ export default function Home() {
   function sendFeedback(rating:number) {
     if (!lastResult.current) return;
     const r = lastResult.current;
-    fetch(process.env.NEXT_PUBLIC_FEEDBACK_URL ?? '/api/feedback', {
+    const p0 = r.pillars[0];
+    fetch('/api/feedback', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        saju:`${STEMS[r.pillars[0]!.s]}${BRANCHES[r.pillars[0]!.b]}`,
+        saju: p0 ? `${STEMS[p0.s]}${BRANCHES[p0.b]}` : '',
         year:r.input.year, month:r.input.month, day:r.input.day, gender:r.input.gender,
         prompt:buildPrompt(r), response:aiText, rating, comment,
       }),
@@ -249,8 +250,8 @@ export default function Home() {
 
   function shareKakao() {
     const url = encodeURIComponent(buildShareUrl());
-    window.open(`https://sharer.kakao.com/talk/friends/picker/link?app_key=&link_ver=4.0&template_id=&url=${url}`,
-      'kakaoShare','width=400,height=600');
+    const text = encodeURIComponent(`${name||'나'}의 사주팔자 분석 결과를 확인해보세요!`);
+    window.open(`https://story.kakao.com/share?url=${url}&text=${text}`, 'kakaoShare', 'width=480,height=600');
   }
 
   function shareBand() {
@@ -259,7 +260,7 @@ export default function Home() {
     window.open(`https://band.us/plugin/share?body=${text}%0A${url}&route=popup`,'bandShare','width=480,height=600');
   }
 
-  function shareX() {
+  function shareFacebook() {
     const url = encodeURIComponent(buildShareUrl());
     window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`,'fbShare','width=580,height=480');
   }
@@ -416,7 +417,7 @@ export default function Home() {
                 border:'1px solid rgba(62,193,117,.4)', borderRadius:100,
                 color:'#3ec175', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
               }}>🎵 밴드</button>
-              <button onClick={shareX} style={{
+              <button onClick={shareFacebook} style={{
                 padding:'7px 18px', background:'rgba(24,119,242,.15)',
                 border:'1px solid rgba(24,119,242,.4)', borderRadius:100,
                 color:'#4a90e2', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
@@ -1193,13 +1194,13 @@ function AiRenderer({ text, loading, result }: {
   text: string; loading: boolean; result?: SajuResult | null;
 }) {
   const ds = result?.pillars[2]?.s ?? 0;
-  const monthlyBriefs: MonthlyBrief[] | null = (() => {
+  const monthlyBriefs: MonthlyBrief[] | null = useMemo(() => {
     if (!result) return null;
     const dayElem = STEM_ELEM[ds];
     const { isWeak } = calcStrength(result.pillars, dayElem);
     const cls = classifyElements(ds, isWeak, result.ohaeng.counts);
     return buildMonthlyBriefs(result, cls, new Date().getFullYear());
-  })();
+  }, [result, ds]);
 
   const SECTION_CHART: Record<string, React.ReactNode> = result ? {
     '1': <div key="c1" style={{ margin:'12px 0' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div>,

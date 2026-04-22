@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import ChatWidget from './chat-widget';
 import { calculate, SajuResult } from '../core/pillar-calc/main-calculator';
 import {
   STEMS, BRANCHES, STEMS_H, BRANCHES_H, ZODIAC,
@@ -13,6 +14,11 @@ import {
 } from '../core/interpretation-db/matcher';
 import { buildPrompt } from '../core/ai-templates/blueprints';
 import { fetchStream } from '../core/http-client/stream-fetcher';
+import { dailyFortune } from '../core/daily-fortune';
+import type { DailyFortuneResult } from '../core/daily-fortune';
+import { calcStrength, getSipsin, classifyElements } from '../core/daily-fortune/classifier';
+import { buildMonthlyBriefs } from '../core/daily-fortune/monthly-brief';
+import type { MonthlyBrief } from '../core/daily-fortune/monthly-brief';
 import type { OhaengResult } from '../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../core/pillar-calc/celestial-relations';
@@ -24,22 +30,38 @@ if (typeof window !== 'undefined') {
   import('manseryeok').then(mod => { _ms = mod as unknown as MsLib; }).catch(() => {});
 }
 
+const THIS_YEAR = new Date().getFullYear();
+// 간지 연도: 갑자(甲子) = 1984 기준
+function yearGanji(y: number): { s: number; b: number } {
+  return { s: ((y - 4) % 10 + 10) % 10, b: ((y - 4) % 12 + 12) % 12 };
+}
+const ZODIAC_EMOJI = ['🐭','🐮','🐯','🐰','🐲','🐍','🐎','🐑','🐒','🐓','🐕','🐷'];
+
+const SI_NAMES = ['자시(子時)','축시(丑時)','인시(寅時)','묘시(卯時)','진시(辰時)','사시(巳時)',
+                  '오시(午時)','미시(未時)','신시(申時)','유시(酉時)','술시(戌時)','해시(亥時)'];
+const fmt = (hh:number,mm:number) => `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+// 00:00~00:30 부터 23:30~00:00 까지 48슬롯, 자시 23:30~01:30 기준
 const HOUR_OPTIONS: {v:number; label:string}[] = [{ v:-1, label:'모름 / 미입력' }];
-for (let i = 0; i <= 46; i++) {
-  const totalMin = i === 46 ? 0 : (i + 1) * 30;
+for (let i = 0; i < 48; i++) {
+  const totalMin = i * 30; // 0, 30, 60, ..., 1410(23:30)
   const h = Math.floor(totalMin / 60), m = totalMin % 60;
   const endMin = totalMin + 30, eh = Math.floor(endMin / 60) % 24, em = endMin % 60;
-  const fmt = (hh:number,mm:number) => `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-  const siNames = ['자시(子時)','축시(丑時)','인시(寅時)','묘시(卯時)','진시(辰時)','사시(巳時)',
-                   '오시(午時)','미시(未時)','신시(申時)','유시(酉時)','술시(戌時)'];
-  let si = '해시(亥時)';
-  if (totalMin >= 30 && totalMin < 1350) si = siNames[Math.floor((totalMin - 30) / 120)];
+  const si = SI_NAMES[Math.floor((totalMin + 30) / 120) % 12];
   HOUR_OPTIONS.push({ v: totalMin, label: `${fmt(h,m)}~${fmt(eh,em)} — ${si}` });
 }
 
 const TAB_NAMES = ['성격','운세','신살','대운','월별','직업','건강'] as const;
 type TabName = typeof TAB_NAMES[number];
 const STEM_ICONS = ['🌳','🌿','☀️','🕯️','⛰️','🌾','🪨','💎','🌊','🌧️'];
+
+// 오행 배지 색상 — 목:초록 화:빨강 토:황금 금:은회색 수:딥네이비(검정물)
+const ELEM_BADGE = [
+  { bg:'rgba(34,160,60,.20)',   border:'rgba(34,160,60,.50)',   text:'#5dce70' }, // 목
+  { bg:'rgba(220,50,50,.20)',   border:'rgba(220,50,50,.50)',   text:'#ff7070' }, // 화
+  { bg:'rgba(200,150,0,.20)',   border:'rgba(200,150,0,.50)',   text:'#e8c840' }, // 토
+  { bg:'rgba(200,200,200,.12)', border:'rgba(200,200,200,.40)', text:'#e0e0e0' }, // 금
+  { bg:'rgba(8,16,40,.88)',     border:'rgba(80,120,220,.50)',  text:'#90b8f0' }, // 수
+] as const;
 
 // ─── 스타일 헬퍼 ───
 const inputStyle: React.CSSProperties = {
@@ -69,6 +91,17 @@ function Field({ label, children }: { label:string; children:React.ReactNode }) 
   );
 }
 
+function ElemBadge({ idx }: { idx:number }) {
+  const { bg, border, text } = ELEM_BADGE[idx];
+  return (
+    <span style={{ background:bg, border:`1px solid ${border}`, color:text,
+      borderRadius:100, padding:'2px 9px', fontSize:'.72rem', fontWeight:700,
+      display:'inline-block', whiteSpace:'nowrap' }}>
+      {ELEM_NAMES[idx]}({ELEM_NAMES_H[idx]})
+    </span>
+  );
+}
+
 export default function Home() {
   const [year,   setYear]   = useState('');
   const [month,  setMonth]  = useState('');
@@ -79,7 +112,8 @@ export default function Home() {
   const [lunar,  setLunar]  = useState(false);
   const [leapM,  setLeapM]  = useState(false);
 
-  const [result,   setResult]   = useState<SajuResult | null>(null);
+  const [result,        setResult]        = useState<SajuResult | null>(null);
+  const [fortuneResult, setFortuneResult] = useState<DailyFortuneResult | null>(null);
   const [loading,  setLoading]  = useState(false);
   const [tab,      setTab]      = useState<TabName>('성격');
   const [aiText,   setAiText]   = useState('');
@@ -87,10 +121,7 @@ export default function Home() {
   const [showFb,   setShowFb]   = useState(false);
   const [fbDone,   setFbDone]   = useState(false);
   const [comment,  setComment]  = useState('');
-  const [showAd,   setShowAd]   = useState(false);
-  const [adCount,  setAdCount]  = useState(5);
-  const [copied,   setCopied]   = useState(false);
-  const adTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [copied,        setCopied]        = useState(false);
 
   const lastResult = useRef<SajuResult | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -126,31 +157,17 @@ export default function Home() {
       catch { alert('음력 날짜 변환 실패. 날짜를 다시 확인해주세요.'); return; }
     }
     save();
-    setLoading(true); setResult(null); setAiText(''); setShowFb(false); setFbDone(false);
+    setLoading(true); setResult(null); setFortuneResult(null); setAiText(''); setShowFb(false); setFbDone(false);
     setTimeout(() => {
       const r = calculate({ year:sy, month:sm, day:sd, hourTotalMin:parseInt(hour), gender });
       lastResult.current = r;
-      setResult(r); setLoading(false);
+      setResult(r);
+      try { setFortuneResult(dailyFortune(r)); } catch { setFortuneResult(null); }
+      setLoading(false);
       setTimeout(() => resultsRef.current?.scrollIntoView({ behavior:'smooth' }), 100);
     }, 600);
   }
 
-  function openAdModal() {
-    if (!lastResult.current || aiLoading) return;
-    setAdCount(5);
-    setShowAd(true);
-    adTimer.current = setInterval(() => {
-      setAdCount(n => {
-        if (n <= 1) {
-          clearInterval(adTimer.current!);
-          setShowAd(false);
-          askAI();
-          return 0;
-        }
-        return n - 1;
-      });
-    }, 1000);
-  }
 
   function askAI() {
     if (!lastResult.current) return;
@@ -161,6 +178,7 @@ export default function Home() {
       onError: () => { setAiText('AI 연결에 실패했습니다. 잠시 후 다시 시도해주세요.'); setAiLoad(false); },
     });
   }
+
 
   function copyResult() {
     if (!result) return;
@@ -206,6 +224,50 @@ export default function Home() {
     setFbDone(true);
   }
 
+  function buildShareUrl() {
+    if (!result) return 'https://saju.coupax.co.kr';
+    const p = new URLSearchParams({
+      y: String(result.input.year),
+      m: String(result.input.month),
+      d: String(result.input.day),
+      h: hour,
+      g: gender,
+    });
+    if (name) p.set('n', name);
+    return `https://saju.coupax.co.kr?${p.toString()}`;
+  }
+
+  function shareNative() {
+    const url = buildShareUrl();
+    const text = `${name||'나'}의 사주팔자 분석 결과를 확인해보세요!`;
+    if (navigator.share) {
+      navigator.share({ title:'사주팔자 무료 분석', text, url }).catch(()=>{});
+    } else {
+      navigator.clipboard.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); });
+    }
+  }
+
+  function shareKakao() {
+    const url = encodeURIComponent(buildShareUrl());
+    window.open(`https://sharer.kakao.com/talk/friends/picker/link?app_key=&link_ver=4.0&template_id=&url=${url}`,
+      'kakaoShare','width=400,height=600');
+  }
+
+  function shareBand() {
+    const url = encodeURIComponent(buildShareUrl());
+    const text = encodeURIComponent(`${name||'나'}의 사주팔자 분석 결과`);
+    window.open(`https://band.us/plugin/share?body=${text}%0A${url}&route=popup`,'bandShare','width=480,height=600');
+  }
+
+  function shareX() {
+    const url = encodeURIComponent(buildShareUrl());
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`,'fbShare','width=580,height=480');
+  }
+
+  function copyShareUrl() {
+    navigator.clipboard.writeText(buildShareUrl()).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); });
+  }
+
   const dp = result?.pillars[2] ?? null;
   const ds = dp?.s ?? 0;
 
@@ -240,7 +302,7 @@ export default function Home() {
           나의 <span style={{ color:'var(--gold)' }}>사주팔자</span>를<br/>알아보세요
         </h1>
         <p style={{ color:'var(--muted)', fontSize:'.95rem', marginBottom:40 }}>
-          생년월일·시간으로 60갑자 일주, 오행, 신살, 대운, 2026년 운세를 상세하게 분석합니다.
+          생년월일·시간으로 60갑자 일주, 오행, 신살, 대운, {THIS_YEAR}년 운세를 상세하게 분석합니다.
         </p>
 
         <div className="form-card" style={{ background:'var(--card2)', border:'1px solid var(--border)',
@@ -329,20 +391,47 @@ export default function Home() {
               <span style={{ color:'var(--gold)' }}>{dp&&STEMS[dp.s]}{dp&&BRANCHES[dp.b]}일주</span>
               {dp&&` — ${getIljooDesc(dp).split('.')[0]}`}
             </h2>
-            <button onClick={copyResult} style={{
-              marginTop:14, padding:'7px 20px',
-              background: copied ? 'rgba(76,190,130,.2)' : 'rgba(255,255,255,.07)',
-              border: `1px solid ${copied ? 'rgba(76,190,130,.5)' : 'var(--border)'}`,
-              borderRadius:100, color: copied ? '#4cbe82' : 'var(--muted)',
-              fontSize:'.8rem', fontWeight:700, cursor:'pointer',
-              transition:'all .25s',
-            }}>
-              {copied ? '✓ 복사됨!' : '📋 결과 복사'}
-            </button>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center', marginTop:14 }}>
+              <button onClick={copyResult} style={{
+                padding:'7px 18px',
+                background: copied ? 'rgba(76,190,130,.2)' : 'rgba(255,255,255,.07)',
+                border: `1px solid ${copied ? 'rgba(76,190,130,.5)' : 'var(--border)'}`,
+                borderRadius:100, color: copied ? '#4cbe82' : 'var(--muted)',
+                fontSize:'.8rem', fontWeight:700, cursor:'pointer', transition:'all .25s',
+              }}>
+                {copied ? '✓ 복사됨!' : '📋 결과 복사'}
+              </button>
+              <button onClick={shareNative} style={{
+                padding:'7px 18px', background:'rgba(255,255,255,.07)',
+                border:'1px solid var(--border)', borderRadius:100,
+                color:'var(--muted)', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
+              }}>📤 공유</button>
+              <button onClick={shareKakao} style={{
+                padding:'7px 18px', background:'rgba(254,229,0,.15)',
+                border:'1px solid rgba(254,229,0,.4)', borderRadius:100,
+                color:'#f5d500', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
+              }}>💬 카카오</button>
+              <button onClick={shareBand} style={{
+                padding:'7px 18px', background:'rgba(62,193,117,.15)',
+                border:'1px solid rgba(62,193,117,.4)', borderRadius:100,
+                color:'#3ec175', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
+              }}>🎵 밴드</button>
+              <button onClick={shareX} style={{
+                padding:'7px 18px', background:'rgba(24,119,242,.15)',
+                border:'1px solid rgba(24,119,242,.4)', borderRadius:100,
+                color:'#4a90e2', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
+              }}>📘 페이스북</button>
+              <button onClick={copyShareUrl} style={{
+                padding:'7px 18px', background:'rgba(74,158,255,.12)',
+                border:'1px solid rgba(74,158,255,.35)', borderRadius:100,
+                color:'#4a9eff', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
+              }}>🔗 링크 복사</button>
+            </div>
           </div>
 
           <PillarGrid pillars={result.pillars} />
           <ScoreCards ds={ds} />
+          {fortuneResult && <DailyFortuneCard fortune={fortuneResult} />}
           {dp&&<IljooCard dp={dp} yearBranch={result.pillars[0]?.b ?? 0} />}
           <OhaengCard ohaeng={result.ohaeng} />
 
@@ -371,48 +460,39 @@ export default function Home() {
           {/* AI 풀이 */}
           <div style={{ margin:'28px 0', background:'rgba(139,111,198,.1)',
             border:'1px solid rgba(139,111,198,.3)', borderRadius:16, padding:28 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
               <span style={{ fontSize:'1.3rem' }}>✦</span>
               <span style={{ fontWeight:800, fontSize:'1rem', color:'var(--gold)' }}>AI 심층 풀이</span>
               <span style={{ fontSize:'.72rem', color:'var(--muted)', background:'rgba(255,255,255,.07)', padding:'2px 8px', borderRadius:20 }}>
-                Groq · llama-3.3-70b
+                Gemini 2.5 Flash
               </span>
             </div>
-            <p style={{ color:'var(--muted)', fontSize:'.85rem', marginBottom:16 }}>
-              짧은 광고를 시청하면 AI 심층 풀이를 무료로 받을 수 있습니다.
-            </p>
-            <div style={{ textAlign:'center' }}>
-            <button onClick={aiText ? askAI : openAdModal} disabled={aiLoading} style={{
-              background:'linear-gradient(135deg,#6b4fa0,#3a7bd5)', border:'none',
-              borderRadius:10, color:'#fff', fontSize:'.92rem', fontWeight:700,
-              padding:'12px 24px', cursor:aiLoading?'not-allowed':'pointer', opacity:aiLoading?.7:1,
-            }}>
-              {aiLoading?'✦ 분석 중...':aiText?'✦ 다시 분석하기':'📺 광고 보고 AI에게 무료 풀이 요청하기'}
-            </button>
+
+            {/* 사주 도표 */}
+            <div style={{ display:'flex', flexWrap:'wrap', gap:20, justifyContent:'center',
+              padding:'18px 12px', background:'rgba(0,0,0,.15)', borderRadius:12, marginBottom:18 }}>
+              <OhaengRadar counts={result.ohaeng.counts} />
+              <div style={{ width:1, background:'rgba(255,255,255,.08)', alignSelf:'stretch' }} />
+              <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', gap:24 }}>
+                <SinGangGauge pillars={result.pillars} dayStemIdx={ds} />
+                <SipsinGrid   pillars={result.pillars} dayStemIdx={ds} />
+              </div>
             </div>
 
-            {/* 광고 모달 */}
-            {showAd&&(
-              <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center' }}>
-                <div style={{ background:'#1a1830',border:'1px solid var(--border)',borderRadius:20,padding:32,maxWidth:400,width:'90%',textAlign:'center' }}>
-                  <div style={{ fontSize:'.75rem',color:'var(--muted)',marginBottom:14,letterSpacing:'.05em' }}>광고 시청 후 AI 풀이가 시작됩니다</div>
-                  {/* 광고 슬롯 — 실제 AdSense 코드로 교체 */}
-                  <div style={{ background:'rgba(255,255,255,.04)',border:'1px dashed rgba(255,255,255,.15)',borderRadius:12,height:160,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:20,fontSize:'.85rem',color:'var(--muted)' }}>
-                    광고 영역
-                  </div>
-                  <div style={{ width:48,height:48,borderRadius:'50%',background:'linear-gradient(135deg,#7c4fc4,#4a9eff)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.3rem',fontWeight:900,color:'#fff',margin:'0 auto 10px' }}>
-                    {adCount}
-                  </div>
-                  <p style={{ fontSize:'.8rem',color:'var(--muted)' }}>{adCount}초 후 자동으로 시작됩니다</p>
-                </div>
-              </div>
-            )}
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center' }}>
+              <button onClick={askAI} disabled={aiLoading} style={{
+                background:'linear-gradient(135deg,#6b4fa0,#3a7bd5)', border:'none',
+                borderRadius:10, color:'#fff', fontSize:'.92rem', fontWeight:700,
+                padding:'12px 24px', cursor:aiLoading?'not-allowed':'pointer', opacity:aiLoading?.7:1,
+              }}>
+                {aiLoading?'✦ 분석 중...':aiText?'✦ 다시 분석하기':'✦ AI 풀이 받기'}
+              </button>
+            </div>
+
+            {/* 프리미엄 게이트 모달 */}
 
             {(aiText||aiLoading)&&(
-              <div style={{ marginTop:20, padding:18, background:'rgba(0,0,0,.2)',
-                borderRadius:10, fontSize:'.9rem', lineHeight:1.9, whiteSpace:'pre-wrap' }}>
-                {aiText}{aiLoading&&<span style={{ color:'var(--muted)' }}>▌</span>}
-              </div>
+              <AiRenderer text={aiText} loading={aiLoading} result={result} />
             )}
 
             {showFb&&!fbDone&&(
@@ -443,6 +523,7 @@ export default function Home() {
         </p>
       </footer>
       </div>{/* /z-index wrapper */}
+      <ChatWidget result={result} />
     </div>
   );
 }
@@ -464,8 +545,9 @@ function PillarGrid({ pillars }: { pillars:(Pillar|null)[] }) {
                 <div style={{ width:54,height:54,borderRadius:11,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.35rem',fontWeight:900,background:sG[i],margin:'2px auto' }}>{STEMS_H[p.s]}</div>
                 <div style={{ width:54,height:54,borderRadius:11,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.35rem',fontWeight:900,background:bG[i],margin:'2px auto' }}>{BRANCHES_H[p.b]}</div>
                 <div style={{ fontSize:'.72rem',color:'var(--muted)' }}>{STEMS[p.s]}{BRANCHES[p.b]}</div>
-                <div style={{ fontSize:'.62rem',fontWeight:700,padding:'2px 7px',borderRadius:100,background:`${ELEM_COLORS[STEM_ELEM[p.s]]}22`,color:ELEM_COLORS[STEM_ELEM[p.s]],border:`1px solid ${ELEM_COLORS[STEM_ELEM[p.s]]}44` }}>
-                  {ELEM_NAMES[STEM_ELEM[p.s]]}·{ELEM_NAMES[BRANCH_ELEM[p.b]]}
+                <div style={{ display:'flex',gap:3,flexWrap:'wrap',justifyContent:'center' }}>
+                  <ElemBadge idx={STEM_ELEM[p.s]} />
+                  <ElemBadge idx={BRANCH_ELEM[p.b]} />
                 </div>
               </>
             ):(
@@ -532,8 +614,7 @@ function OhaengCard({ ohaeng }: { ohaeng:OhaengResult }) {
       <div style={{ fontSize:'.72rem',fontWeight:700,color:'var(--muted)',letterSpacing:'.07em',marginBottom:16 }}>오행 분석 (五行)</div>
       {ohaeng.counts.map((cnt,i)=>(
         <div key={i} style={{ display:'flex',alignItems:'center',gap:10,marginBottom:11 }}>
-          <div style={{ fontSize:'.9rem',fontWeight:700,minWidth:26,color:ELEM_COLORS[i] }}>{ELEM_NAMES[i]}</div>
-          <div style={{ fontSize:'.78rem',color:'var(--muted)',minWidth:14 }}>{ELEM_NAMES_H[i]}</div>
+          <div style={{ minWidth:80 }}><ElemBadge idx={i} /></div>
           <div style={{ flex:1,height:7,background:'rgba(255,255,255,.08)',borderRadius:100,overflow:'hidden' }}>
             <div style={{ height:'100%',borderRadius:100,background:ELEM_COLORS[i],width:`${Math.round(cnt/total*100)}%`,transition:'width 1s' }} />
           </div>
@@ -545,6 +626,99 @@ function OhaengCard({ ohaeng }: { ohaeng:OhaengResult }) {
       </div>
       <div style={{ marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)' }}>
         <p style={{ fontSize:'.83rem',color:'var(--muted)',lineHeight:1.7 }}>{ohaeng.detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function DailyFortuneCard({ fortune }: { fortune: DailyFortuneResult }) {
+  const levelColors: Record<string, string> = {
+    '매우 좋음': '#4cbe82', '좋음': '#82d9a8', '보통': '#e8c46a', '주의': '#e09050', '매우 주의': '#e05555',
+  };
+  const levelDots: Record<string, number> = {
+    '매우 좋음': 5, '좋음': 4, '보통': 3, '주의': 2, '매우 주의': 1,
+  };
+  const color = levelColors[fortune.level] ?? 'var(--muted)';
+  const dots  = levelDots[fortune.level] ?? 3;
+  const cls   = fortune.classification;
+
+  return (
+    <div style={{ background:'linear-gradient(135deg,rgba(74,158,255,.08),rgba(139,111,198,.08))',
+      border:'1px solid rgba(74,158,255,.3)', borderRadius:16, padding:22, marginBottom:16 }}>
+      {/* 헤더 */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14, flexWrap:'wrap', gap:8 }}>
+        <div>
+          <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:4 }}>오늘의 운세 · {fortune.date}</div>
+          <div style={{ fontSize:'1.1rem', fontWeight:800 }}>
+            {STEMS_H[fortune.dayGanji.s]}{BRANCHES_H[fortune.dayGanji.b]}일
+            <span style={{ fontSize:'.82rem', color:'var(--muted)', fontWeight:400, marginLeft:6 }}>
+              ({STEMS[fortune.dayGanji.s]}{BRANCHES[fortune.dayGanji.b]})
+            </span>
+          </div>
+        </div>
+        <div style={{ textAlign:'right' }}>
+          <div style={{ fontSize:'1.1rem', letterSpacing:2, color }}>
+            {'●'.repeat(dots)}<span style={{ opacity:.25 }}>{'●'.repeat(5 - dots)}</span>
+          </div>
+          <div style={{ fontSize:'.82rem', fontWeight:700, color }}>{fortune.level}</div>
+        </div>
+      </div>
+
+      {/* 배경 십신 */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
+        {([
+          { label:'대운', val:fortune.background.daewoonSipsin },
+          { label:'세운', val:fortune.background.yearSipsin },
+          { label:'월운', val:fortune.background.monthSipsin },
+        ] as const).map(({ label, val }) => (
+          <div key={label} style={{ background:'rgba(255,255,255,.06)', border:'1px solid var(--border)',
+            borderRadius:8, padding:'4px 10px', fontSize:'.75rem' }}>
+            <span style={{ color:'var(--muted)' }}>{label} </span>
+            <span style={{ fontWeight:700 }}>{val}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* 일진 십신 + 행동 가이드 */}
+      <div style={{ background:'rgba(255,255,255,.04)', border:'1px solid var(--border)',
+        borderRadius:10, padding:'12px 14px', marginBottom:14 }}>
+        <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:4 }}>일진 십신 · 행동 가이드</div>
+        <div style={{ display:'flex', alignItems:'baseline', gap:10, flexWrap:'wrap' }}>
+          <span style={{ fontSize:'1rem', fontWeight:800, color }}>{fortune.sipsin}</span>
+          <span style={{ fontSize:'.85rem', color:'var(--muted)' }}>{fortune.action}</span>
+        </div>
+      </div>
+
+      {/* 이벤트 뱃지 */}
+      {fortune.events.length > 0 && (
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
+          {fortune.events.map((e, i) => {
+            const bad = e.type === 'chung' || e.type === 'hyeong';
+            const bg  = e.weakened ? 'rgba(255,255,255,.05)' : bad ? 'rgba(224,85,85,.15)' : 'rgba(76,190,130,.15)';
+            const bd  = e.weakened ? '1px solid rgba(255,255,255,.15)' : bad ? '1px solid rgba(224,85,85,.4)' : '1px solid rgba(76,190,130,.4)';
+            const tc  = e.weakened ? 'var(--muted)' : bad ? '#e05555' : '#4cbe82';
+            const lbl = e.type === 'chung' ? '충(沖)' : e.type === 'yughap' ? '육합' : e.type === 'samhap' ? '삼합' : '형(刑)';
+            return (
+              <span key={i} style={{ background:bg, border:bd, borderRadius:100, padding:'3px 10px',
+                fontSize:'.72rem', color:tc, textDecoration:e.weakened?'line-through':'none', opacity:e.weakened?.6:1 }}>
+                {lbl}{e.hwaCandidate ? '·합화?' : ''}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 한줄 요약 */}
+      <div style={{ fontSize:'.83rem', color:'var(--muted)', borderTop:'1px solid var(--border)', paddingTop:10, lineHeight:1.6 }}>
+        {fortune.oneLiner}
+      </div>
+
+      {/* 용신/기신 태그 */}
+      <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginTop:10, alignItems:'center' }}>
+        <span style={{ fontSize:'.7rem', color:'var(--muted)' }}>용신</span>
+        <ElemBadge idx={cls.yongsin} />
+        <span style={{ fontSize:'.7rem', color:'var(--muted)', marginLeft:4 }}>기신</span>
+        {cls.gisin.map(e => <ElemBadge key={e} idx={e} />)}
       </div>
     </div>
   );
@@ -575,9 +749,11 @@ function TabSung({ ds, dp }: { ds:number; dp:Pillar }) {
 }
 
 function TabFortune({ ds }: { ds:number }) {
+  const yg = yearGanji(THIS_YEAR);
+  const yearTitle = `${THIS_YEAR} ${STEMS[yg.s]}${BRANCHES[yg.b]}년(${STEMS_H[yg.s]}${BRANCHES_H[yg.b]}年)`;
   return (
     <div>
-      <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:12,color:'var(--gold)' }}>🐎 2026 병오년(丙午年) 운세</h3>
+      <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:12,color:'var(--gold)' }}>{ZODIAC_EMOJI[yg.b]} {yearTitle} 운세</h3>
       <p style={{ fontSize:'.87rem',color:'rgba(240,238,255,.85)',lineHeight:1.8 }}>{F2026_BY_STEM[ds]}</p>
     </div>
   );
@@ -601,7 +777,7 @@ function TabShinsal({ shinsal }: { shinsal:Shinsal[] }) {
 }
 
 function TabDaeun({ daeun, birthYear }: { daeun:DaeunResult; birthYear:number }) {
-  const thisYear=2026, dir=daeun.forward?'순행(順行)':'역행(逆行)';
+  const thisYear=THIS_YEAR, dir=daeun.forward?'순행(順行)':'역행(逆行)';
   return (
     <div>
       <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:6,color:'var(--gold)' }}>🔄 대운 흐름 (大運)</h3>
@@ -631,7 +807,7 @@ function TabMonthly({ ds }: { ds:number }) {
   const stars=[4,3,5,4,5,3,4,4,3,4,5,4];
   return (
     <div>
-      <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:16,color:'var(--gold)' }}>📅 2026년 월별 운세</h3>
+      <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:16,color:'var(--gold)' }}>📅 {THIS_YEAR}년 월별 운세</h3>
       <div className="monthly-grid">
         {Array.from({length:12},(_,i)=>{
           const v=Math.min(5,Math.max(1,((stars[i]+el+i)%3)+3));
@@ -892,5 +1068,271 @@ function ZodiacBackground({ branch }: { branch: number }) {
         ))}
       </div>
     </>
+  );
+}
+
+// ─── 오행 레이더 차트 (오각형 SVG) ───
+const ELEM_COLORS_VIZ = ['#3db550','#e03030','#d4a800','#c0c0c0','#4488cc'];
+const ELEM_LABELS     = ['목(木)','화(火)','토(土)','금(金)','수(水)'];
+
+function OhaengRadar({ counts }: { counts: number[] }) {
+  const cx = 80, cy = 80, R = 58, r0 = 10;
+  const max = Math.max(...counts, 1);
+  const angles = [-90, -18, 54, 126, 198].map(d => d * Math.PI / 180);
+
+  const gridPts = (ratio: number) =>
+    angles.map(a => [cx + ratio * R * Math.cos(a), cy + ratio * R * Math.sin(a)] as [number,number]);
+
+  const outerPts = gridPts(1);
+  const dataPts  = angles.map((a, i) => {
+    const ratio = r0/R + (1 - r0/R) * counts[i] / max;
+    return [cx + ratio * R * Math.cos(a), cy + ratio * R * Math.sin(a)] as [number,number];
+  });
+
+  const toPath = (pts: [number,number][]) => pts.map((p,i) => `${i===0?'M':'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ') + ' Z';
+
+  return (
+    <div style={{ textAlign:'center' }}>
+      <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:6, fontWeight:700 }}>오행 분포</div>
+      <svg width={160} height={160} viewBox="0 0 160 160">
+        {/* 그리드 */}
+        {[0.25,0.5,0.75,1].map(r => (
+          <polygon key={r} points={gridPts(r).map(p=>p.join(',')).join(' ')}
+            fill="none" stroke="rgba(255,255,255,.1)" strokeWidth={0.8} />
+        ))}
+        {outerPts.map((p,i) => (
+          <line key={i} x1={cx} y1={cy} x2={p[0]} y2={p[1]}
+            stroke="rgba(255,255,255,.1)" strokeWidth={0.8} />
+        ))}
+        {/* 데이터 영역 */}
+        <path d={toPath(dataPts)} fill="rgba(139,111,198,.35)" stroke="#8b6fc6" strokeWidth={1.5} />
+        {/* 점 + 값 */}
+        {dataPts.map((p,i) => (
+          <g key={i}>
+            <circle cx={p[0]} cy={p[1]} r={3} fill={ELEM_COLORS_VIZ[i]} />
+          </g>
+        ))}
+        {/* 레이블 */}
+        {outerPts.map((_p,i) => {
+          const lx = cx + (R+16) * Math.cos(angles[i]);
+          const ly = cy + (R+16) * Math.sin(angles[i]);
+          return (
+            <text key={i} x={lx} y={ly+4} textAnchor="middle"
+              fontSize={9} fontWeight={700} fill={counts[i]>0?ELEM_COLORS_VIZ[i]:'rgba(255,255,255,.3)'}>
+              {ELEM_LABELS[i].split('(')[0]} {counts[i]}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ─── AI 풀이 렌더러 ───
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={i} style={{ color:'#ffffff', fontWeight:700 }}>{part.slice(2,-2)}</strong>
+      : part
+  );
+}
+
+// ─── 월별 운세 막대 차트 ───
+const LEVEL_COL: Record<string, string> = {
+  '매우 좋음': '#4cbe82', '좋음': '#7ac87a',
+  '보통': '#8888b0', '주의': '#e8a054', '매우 주의': '#e05555',
+};
+function MonthlyChart({ briefs }: { briefs: MonthlyBrief[] }) {
+  const maxAbs = Math.max(...briefs.map(b => Math.abs(b.score)), 1);
+  const now = new Date().getMonth() + 1;
+  return (
+    <div style={{ margin:'16px 0 4px', padding:'16px 18px',
+      background:'rgba(0,0,0,.18)', borderRadius:10, border:'1px solid rgba(255,255,255,.07)' }}>
+      <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:12,
+        fontWeight:700, letterSpacing:'.06em' }}>📅 월별 운세 흐름</div>
+      {briefs.map(b => {
+        const pct  = (Math.abs(b.score) / maxAbs) * 100;
+        const col  = LEVEL_COL[b.level] ?? '#8888b0';
+        const cur  = b.month === now;
+        const kw   = b.oneLiner.split('—')[0].split('·')[0].trim();
+        return (
+          <div key={b.month} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}>
+            <div style={{ width:26, fontSize:'.68rem', textAlign:'right', flexShrink:0,
+              color: cur ? '#ffffff' : 'var(--muted)', fontWeight: cur ? 800 : 400 }}>
+              {b.month}월
+            </div>
+            <div style={{ flex:1, height:16, background:'rgba(255,255,255,.05)',
+              borderRadius:4, overflow:'hidden', position:'relative' }}>
+              <div style={{ position:'absolute', left:0, top:0, height:'100%',
+                width:`${pct}%`, background:col, borderRadius:4, opacity: b.score < 0 ? 0.55 : 0.9,
+                transition:'width .4s' }} />
+              {cur && <div style={{ position:'absolute', inset:0, border:`1px solid ${col}`,
+                borderRadius:4, boxSizing:'border-box' }} />}
+            </div>
+            <div style={{ width:90, fontSize:'.68rem', color: col, fontWeight:600,
+              flexShrink:0, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
+              {kw}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ display:'flex', gap:12, marginTop:10, flexWrap:'wrap' }}>
+        {Object.entries(LEVEL_COL).map(([lv, c]) => (
+          <span key={lv} style={{ fontSize:'.62rem', color:c, display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ width:8, height:8, borderRadius:2, background:c, display:'inline-block' }}/>
+            {lv}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AiRenderer({ text, loading, result }: {
+  text: string; loading: boolean; result?: SajuResult | null;
+}) {
+  const ds = result?.pillars[2]?.s ?? 0;
+  const monthlyBriefs: MonthlyBrief[] | null = (() => {
+    if (!result) return null;
+    const dayElem = STEM_ELEM[ds];
+    const { isWeak } = calcStrength(result.pillars, dayElem);
+    const cls = classifyElements(ds, isWeak, result.ohaeng.counts);
+    return buildMonthlyBriefs(result, cls, new Date().getFullYear());
+  })();
+
+  const SECTION_CHART: Record<string, React.ReactNode> = result ? {
+    '1': <div key="c1" style={{ margin:'12px 0' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div>,
+    '4': <div key="c4" style={{ margin:'12px 0', display:'flex', justifyContent:'center' }}><OhaengRadar counts={result.ohaeng.counts} /></div>,
+    '9': monthlyBriefs ? <MonthlyChart key="c9" briefs={monthlyBriefs} /> : null,
+  } : {};
+
+  const lines = text.split('\n');
+  const nodes: React.ReactNode[] = [];
+  let k = 0;
+
+  for (const line of lines) {
+    // [N] 섹션 헤더
+    const sec = line.match(/^\[(\d+)\]\s+(.+)/);
+    if (sec) {
+      nodes.push(
+        <div key={k++} style={{ display:'flex', alignItems:'baseline', gap:10, marginTop:28, marginBottom:10 }}>
+          <span style={{ background:'rgba(139,111,198,.35)', color:'#d0b8ff', fontWeight:900,
+            fontSize:'.72rem', padding:'3px 10px', borderRadius:100, flexShrink:0, lineHeight:1.7,
+            letterSpacing:'.04em' }}>
+            {sec[1]}
+          </span>
+          <span style={{ fontWeight:800, fontSize:'1rem', color:'var(--gold)', lineHeight:1.4 }}>
+            {renderInline(sec[2])}
+          </span>
+        </div>
+      );
+      if (SECTION_CHART[sec[1]]) nodes.push(SECTION_CHART[sec[1]]);
+      continue;
+    }
+    // ━━━ 구분선
+    if (/^━{3,}/.test(line)) {
+      nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.1)', margin:'12px 0' }} />);
+      continue;
+    }
+    // — 불릿
+    if (/^[—•]\s/.test(line)) {
+      nodes.push(
+        <div key={k++} style={{ display:'flex', gap:8, marginBottom:5, paddingLeft:2 }}>
+          <span style={{ color:'var(--purple)', flexShrink:0, marginTop:'3px', fontSize:'.8rem' }}>▸</span>
+          <span style={{ fontSize:'.9rem', color:'rgba(248,246,255,.92)', lineHeight:1.85 }}>
+            {renderInline(line.replace(/^[—•]\s/,''))}
+          </span>
+        </div>
+      );
+      continue;
+    }
+    // 빈 줄
+    if (!line.trim()) {
+      nodes.push(<div key={k++} style={{ height:6 }} />);
+      continue;
+    }
+    // 일반 텍스트
+    nodes.push(
+      <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.92)', lineHeight:1.9, marginBottom:3 }}>
+        {renderInline(line)}
+      </p>
+    );
+  }
+
+  return (
+    <div style={{ marginTop:20, padding:'22px 24px', background:'rgba(0,0,0,.25)',
+      borderRadius:12, border:'1px solid rgba(255,255,255,.08)' }}>
+      {nodes}
+      {loading && <span style={{ color:'var(--purple)', fontWeight:700 }}>▌</span>}
+    </div>
+  );
+}
+
+// ─── 신강/신약 게이지 ───
+function SinGangGauge({ pillars, dayStemIdx }: { pillars: (Pillar|null)[], dayStemIdx: number }) {
+  const dayElem = STEM_ELEM[dayStemIdx];
+  const { score, isWeak } = calcStrength(pillars, dayElem);
+  const clamped = Math.max(-6, Math.min(6, score));
+  const pct     = ((clamped + 6) / 12) * 100;
+  const label   = score <= -3 ? '극신약' : score <= 0 ? '신약' : score <= 3 ? '신강' : '극신강';
+  const color   = isWeak ? '#4a9eff' : '#e8c46a';
+
+  return (
+    <div style={{ textAlign:'center' }}>
+      <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:6, fontWeight:700 }}>일간 강도</div>
+      <div style={{ position:'relative', height:12, borderRadius:6, background:'rgba(255,255,255,.08)', overflow:'hidden', margin:'0 auto', width:140 }}>
+        <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${pct}%`,
+          background:`linear-gradient(90deg,#4a9eff,${color})`, borderRadius:6, transition:'width .6s' }} />
+        <div style={{ position:'absolute', left:'50%', top:0, height:'100%', width:1, background:'rgba(255,255,255,.3)' }} />
+      </div>
+      <div style={{ display:'flex', justifyContent:'space-between', width:140, margin:'4px auto 0', fontSize:'.65rem', color:'var(--muted)' }}>
+        <span>신약</span><span>중화</span><span>신강</span>
+      </div>
+      <div style={{ marginTop:6, fontSize:'.8rem', fontWeight:800, color }}>
+        {label} <span style={{ fontSize:'.7rem', fontWeight:400, color:'var(--muted)' }}>({score > 0 ? '+' : ''}{score})</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── 십신 관계 그리드 ───
+const SIPSIN_COLORS: Record<string,string> = {
+  비견:'#4a9eff',겁재:'#7070c0',식신:'#4cbe82',상관:'#2a9060',
+  편재:'#e8c46a',정재:'#c09030',편관:'#e05555',정관:'#b03030',
+  편인:'#c47bc4',정인:'#8b6fc6',
+};
+
+function SipsinGrid({ pillars, dayStemIdx }: { pillars: (Pillar|null)[], dayStemIdx: number }) {
+  const labels = ['년','월','일','시'];
+  const stems  = ['갑','을','병','정','무','기','경','신','임','계'];
+
+  return (
+    <div style={{ textAlign:'center' }}>
+      <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:8, fontWeight:700 }}>십신 배치</div>
+      <div style={{ display:'flex', gap:6, justifyContent:'center' }}>
+        {pillars.map((p, i) => {
+          if (!p) return (
+            <div key={i} style={{ width:52, padding:'8px 4px', borderRadius:8,
+              background:'rgba(255,255,255,.03)', border:'1px solid var(--border)', textAlign:'center' }}>
+              <div style={{ fontSize:'.6rem', color:'var(--muted)', marginBottom:4 }}>{labels[i]}주</div>
+              <div style={{ fontSize:'.7rem', color:'rgba(255,255,255,.2)' }}>미입력</div>
+            </div>
+          );
+          const ss  = i === 2 ? '일간' : getSipsin(dayStemIdx, p.s);
+          const col = i === 2 ? 'var(--gold)' : (SIPSIN_COLORS[ss] || '#888');
+          return (
+            <div key={i} style={{ width:52, padding:'8px 4px', borderRadius:8,
+              background: i===2 ? 'rgba(232,196,106,.07)' : 'rgba(255,255,255,.03)',
+              border:`1px solid ${i===2?'rgba(232,196,106,.3)':'var(--border)'}`, textAlign:'center' }}>
+              <div style={{ fontSize:'.6rem', color:'var(--muted)', marginBottom:4 }}>{labels[i]}주</div>
+              <div style={{ fontSize:'.95rem', fontWeight:900, color:col, marginBottom:3 }}>{stems[p.s]}</div>
+              <div style={{ fontSize:'.6rem', padding:'1px 4px', borderRadius:4,
+                background:`${col}22`, color:col, display:'inline-block', fontWeight:700 }}>{ss}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

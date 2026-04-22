@@ -12,7 +12,8 @@ export const STEM_ELEM:   number[] = [0,0,1,1,2,2,3,3,4,4];
 export const BRANCH_ELEM: number[] = [4,2,0,0,2,1,1,2,3,3,2,4];
 export const ELEM_NAMES   = ['목','화','토','금','수'] as const;
 export const ELEM_NAMES_H = ['木','火','土','金','水'] as const;
-export const ELEM_COLORS  = ['#4cbe82','#e05555','#e8a030','#9090c0','#4a9eff'] as const;
+export const ELEM_COLORS  = ['#3db550','#e03030','#d4a800','#e0e0e0','#4488cc'] as const;
+// 목=녹(木) 화=적(火) 토=황(土) 금=백(金) 수=청남(水)
 
 export interface Pillar { s: number; b: number; }
 
@@ -55,20 +56,23 @@ export function calcMonth(y: number, m: number, d: number): Pillar {
 }
 
 export function calcDay(y: number, m: number, d: number): Pillar {
-  const ref  = new Date(2000, 0, 1).getTime();
-  const dt   = new Date(y, m - 1, d).getTime();
-  const diff = Math.round((dt - ref) / 86400000);
-  // 기준: 2000.1.1=무자(idx24) → 1984.1.1=갑자(idx0) ✓
-  const idx = (((24 + diff) % 60) + 60) % 60;
+  // UTC 사용: 로컬타임 DST 오차 방지
+  // 기준: 2000-01-01(UTC) = 무오(戊午, idx=54)
+  // 검증: 2026-04-21=을축(1), 2007-12-10=무인(14)
+  const ref  = Date.UTC(2000, 0, 1);
+  const dt   = Date.UTC(y, m - 1, d);
+  const diff = Math.round((dt - ref) / 86_400_000);
+  const idx  = (((54 + diff) % 60) + 60) % 60;
   return { s: idx % 10, b: idx % 12 };
 }
 
+// ⚠️ 야자시(夜子時) 주의: totalMin >= 1410(23:30)이면 호출부에서
+//   calcDay(y, m, d+1).s 를 dayStem으로 넘겨야 함.
+//   현재 메인 경로는 orreryCalc(jasiMethod:'split')이 처리하므로 이 함수는 미사용.
 export function calcHour(totalMin: number, dayStem: number): Pillar | null {
   if (totalMin < 0) return null;
-  // 자시: 00:30~02:30 / 해시: 22:30~00:30
-  let bi: number;
-  if (totalMin >= 1350 || totalMin < 30) bi = 11;
-  else bi = Math.floor((totalMin - 30) / 120);
+  // 자시(子時): 23:30~01:30 / 해시(亥時): 21:30~23:30
+  const bi = Math.floor((totalMin + 30) / 120) % 12;
   const starts = [0, 2, 4, 6, 8];
   const stem = (starts[dayStem % 5] + bi) % 10;
   return { s: stem, b: bi };

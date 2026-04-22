@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { LLM_CONFIG } from '../../../core/config/llm';
+import { fetchGroqStream } from '../../../core/config/llm';
 
 const SYSTEM = `당신은 30년 경력의 명리학(命理學) 전문가입니다.
 사주팔자를 분석할 때 전통 명리학 이론을 정확하게 적용하고, 전문 용어는 한자와 설명을 함께 제공합니다.
@@ -12,7 +12,7 @@ function checkRateLimit(ip: string): boolean {
   const now   = Date.now();
   const entry = rlMap.get(ip);
   if (!entry || now > entry.reset) {
-    rlMap.set(ip, { count: 1, reset: now + 60_000 });
+    rlMap.set(ip, { count: 1, reset: now + 600_000 });
     return true;
   }
   if (entry.count >= 5) return false;
@@ -37,24 +37,14 @@ export async function POST(req: NextRequest) {
   const prompt = body.prompt?.slice(0, 8000);
   if (!prompt) return new Response(JSON.stringify({ error: 'prompt 없음' }), { status: 400 });
 
-  const { url, apiKey, model } = { url: LLM_CONFIG.groq.url, apiKey: LLM_CONFIG.groq.apiKey(), model: LLM_CONFIG.groq.model };
-
-  const upstream = await fetch(url, {
-    method:  'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      stream:      true,
-      max_tokens:  4096,
-      temperature: 0.7,
-      messages: [
-        { role: 'system', content: SYSTEM },
-        { role: 'user',   content: prompt },
-      ],
-    }),
+  const upstream = await fetchGroqStream({
+    stream:      true,
+    max_tokens:  16384,
+    temperature: 0.7,
+    messages: [
+      { role: 'system', content: SYSTEM },
+      { role: 'user',   content: prompt },
+    ],
   });
 
   if (!upstream.ok || !upstream.body) {

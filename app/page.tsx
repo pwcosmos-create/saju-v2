@@ -470,11 +470,11 @@ export default function Home() {
             </div>
 
             {/* 사주 도표 */}
-            <div style={{ display:'flex', flexWrap:'wrap', gap:20, justifyContent:'center',
+            <div style={{ display:'flex', flexWrap:'wrap', gap:20, justifyContent:'center', alignItems:'center',
               padding:'18px 12px', background:'rgba(0,0,0,.15)', borderRadius:12, marginBottom:18 }}>
               <OhaengRadar counts={result.ohaeng.counts} />
               <div style={{ width:1, background:'rgba(255,255,255,.08)', alignSelf:'stretch' }} />
-              <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', gap:24 }}>
+              <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', gap:24 }}>
                 <SinGangGauge pillars={result.pillars} dayStemIdx={ds} />
                 <SipsinGrid   pillars={result.pillars} dayStemIdx={ds} />
               </div>

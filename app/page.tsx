@@ -172,9 +172,24 @@ export default function Home() {
   function askAI() {
     if (!lastResult.current) return;
     setAiLoad(true); setAiText(''); setShowFb(false); setFbDone(false);
+    let buf = '';
     fetchStream(buildPrompt(lastResult.current), {
-      onChunk: t => setAiText(p => p+t),
-      onDone:  () => { setAiLoad(false); setShowFb(true); },
+      onChunk: t => {
+        buf += t;
+        // 마지막 문장 끝 기호까지만 화면에 출력 — 불완전한 토큰 방지
+        const last = Math.max(
+          buf.lastIndexOf('.'), buf.lastIndexOf('!'),
+          buf.lastIndexOf('?'), buf.lastIndexOf('\n'), buf.lastIndexOf('。'),
+        );
+        if (last !== -1) {
+          setAiText(p => p + buf.slice(0, last + 1));
+          buf = buf.slice(last + 1);
+        }
+      },
+      onDone: () => {
+        if (buf) setAiText(p => p + buf); // 남은 버퍼 전부 출력
+        setAiLoad(false); setShowFb(true);
+      },
       onError: () => { setAiText('AI 연결에 실패했습니다. 잠시 후 다시 시도해주세요.'); setAiLoad(false); },
     });
   }

@@ -10,14 +10,14 @@ import './globals.css';
 
 const SITE_URL = 'https://saju.coupax.co.kr';
 const THIS_YEAR = new Date().getFullYear();
-const TITLE = `사주팔자 무료 분석 — ${THIS_YEAR}년 운세 · AI 심층 풀이`;
-const DESC = `${THIS_YEAR}년 사주팔자 무료 분석. 생년월일 입력으로 오행·용신·신살·대운·AI 심층 풀이까지 무료 제공.`;
+const TITLE = `AI사주 — ${THIS_YEAR}년 사주팔자 무료 분석 · AI 심층 풀이`;
+const DESC = `${THIS_YEAR}년 AI사주. 생년월일 입력으로 오행·용신·신살·대운·AI 심층 풀이까지 무료 제공.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: TITLE,
-    template: `%s | 사주팔자 무료 분석`,
+    template: `%s | AI사주`,
   },
   description: DESC,
   keywords: [
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     url: SITE_URL,
     title: TITLE,
     description: DESC,
-    siteName: '사주팔자 무료 분석',
+    siteName: 'AI사주',
     locale: 'ko_KR',
   },
   twitter: {
@@ -106,7 +106,7 @@ const FAQ_SCHEMA = {
 const WEBAPP_SCHEMA = {
   '@context': 'https://schema.org',
   '@type': 'WebApplication',
-  name: '사주팔자 무료 분석',
+  name: 'AI사주',
   url: SITE_URL,
   description: DESC,
   applicationCategory: 'LifestyleApplication',

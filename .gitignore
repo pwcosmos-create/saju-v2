@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.granite
+
+# 토스 미니앱 빌드/인증서
+*.ait
+*.pdf
+*.py
+granite.config.ts
+build-for-toss.mjs
+
+# 로고/스크린샷 에셋
+logo*.png
+logo*.svg
+screenshot*.png
+screenshot*.svg
+thumbnail*.png
+thumbnail*.svg

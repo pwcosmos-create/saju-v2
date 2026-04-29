@@ -14,7 +14,8 @@ export async function fetchStream(prompt: string, callbacks: StreamCallbacks): P
   const { onChunk, onDone, onError } = callbacks;
 
   try {
-    const res = await fetch('/api/fortune-stream', {
+    const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
+    const res = await fetch(`${base}/api/fortune-stream`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ prompt }),

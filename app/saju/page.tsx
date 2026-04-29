@@ -442,6 +442,11 @@ export default function Home() {
                 border:'1px solid rgba(74,158,255,.35)', borderRadius:100,
                 color:'#4a9eff', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
               }}>🔗 링크 복사</button>
+              <button onClick={()=>window.print()} style={{
+                padding:'7px 18px', background:'rgba(255,255,255,.07)',
+                border:'1px solid var(--border)', borderRadius:100,
+                color:'var(--muted)', fontSize:'.8rem', fontWeight:700, cursor:'pointer',
+              }}>🖨️ 인쇄</button>
             </div>
           </div>
 

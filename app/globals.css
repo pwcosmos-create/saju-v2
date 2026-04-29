@@ -85,6 +85,39 @@ select option {
   gap: 8px;
 }
 
+@media print {
+  body {
+    background: #fff !important;
+    background-image: none !important;
+    color: #111 !important;
+  }
+  /* 공유 버튼, 입력폼, 네비 숨김 */
+  .hero-section,
+  button,
+  nav {
+    display: none !important;
+  }
+  /* 카드 테두리 흑백으로 */
+  [style*="var(--card)"],
+  [style*="var(--card2)"] {
+    background: #f8f8f8 !important;
+    border-color: #ddd !important;
+  }
+  /* 텍스트 색상 보정 */
+  * {
+    color: #111 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .results-section {
+    padding: 0 !important;
+  }
+  /* 페이지 여백 */
+  @page {
+    margin: 20mm;
+  }
+}
+
 @media (max-width: 600px) {
   .hero-section {
     padding: 32px 16px 24px;

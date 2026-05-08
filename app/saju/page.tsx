@@ -544,6 +544,8 @@ export default function Home() {
           를 사용합니다.{' '}
           <a href="https://github.com/pwcosmos-create/saju-v2" target="_blank" rel="noopener noreferrer"
             style={{ color:'var(--muted)', textDecoration:'underline' }}>소스코드 공개</a>
+          {' | '}
+          <a href="/privacy" style={{ color:'var(--muted)', textDecoration:'underline' }}>개인정보처리방침</a>
         </p>
       </footer>
       </div>{/* /z-index wrapper */}

@@ -8,9 +8,21 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: '잘못된 요청 형식' }, { status: 400 });
   }
 
-  // 개발 환경에서만 로그 출력
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[feedback]', JSON.stringify(body).slice(0, 200));
+  try {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    
+    const filePath = path.join(process.cwd(), 'feedback.jsonl');
+    const logEntry = JSON.stringify({ timestamp: new Date().toISOString(), ...body }) + '\n';
+    
+    await fs.appendFile(filePath, logEntry, 'utf-8');
+    
+    // 개발 환경에서만 로그 출력
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[feedback] Saved to file:', logEntry.slice(0, 100) + '...');
+    }
+  } catch (err) {
+    console.error('Failed to save feedback:', err);
   }
 
   return Response.json({ ok: true });

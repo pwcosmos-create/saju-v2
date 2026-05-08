@@ -520,11 +520,14 @@ export default function Home() {
               <div style={{ marginTop:16 }}>
                 <p style={{ fontSize:'.82rem', color:'var(--muted)', marginBottom:10 }}>이 풀이가 도움이 됐나요?</p>
                 <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-                  <button onClick={()=>sendFeedback(1)} style={{ background:'rgba(76,190,130,.15)',border:'1px solid rgba(76,190,130,.4)',borderRadius:8,color:'#4cbe82',padding:'7px 18px',cursor:'pointer',fontSize:'.85rem' }}>👍 도움됐어요</button>
-                  <button onClick={()=>sendFeedback(-1)} style={{ background:'rgba(224,85,85,.15)',border:'1px solid rgba(224,85,85,.4)',borderRadius:8,color:'#e05555',padding:'7px 18px',cursor:'pointer',fontSize:'.85rem' }}>👎 별로예요</button>
+                  <button onClick={()=>sendFeedback(1)} style={{ background:'rgba(76,190,130,.15)',border:'1px solid rgba(76,190,130,.4)',borderRadius:8,color:'#4cbe82',padding:'7px 18px',cursor:'pointer',fontSize:'.85rem',flexShrink:0 }}>👍 도움됐어요</button>
+                  <button onClick={()=>sendFeedback(-1)} style={{ background:'rgba(224,85,85,.15)',border:'1px solid rgba(224,85,85,.4)',borderRadius:8,color:'#e05555',padding:'7px 18px',cursor:'pointer',fontSize:'.85rem',flexShrink:0 }}>👎 별로예요</button>
                   <input placeholder="한마디 (선택)" value={comment} onChange={e=>setComment(e.target.value)}
                     style={{ flex:1,minWidth:160,background:'rgba(255,255,255,.06)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:'.85rem',outline:'none' }} />
                 </div>
+                <p style={{ fontSize:'.7rem', color:'var(--muted)', marginTop:8, opacity:0.7, wordBreak:'keep-all' }}>
+                  * 피드백 데이터는 AI 품질 개선 목적으로만 익명 수집됩니다. 이름, 연락처 등 개인정보를 입력하지 마세요.
+                </p>
               </div>
             )}
             {fbDone&&<p style={{ marginTop:10, fontSize:'.82rem', color:'#4cbe82' }}>✓ 피드백 저장됐습니다. 감사합니다!</p>}

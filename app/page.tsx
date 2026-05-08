@@ -115,17 +115,27 @@ export default function LandingPage() {
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 64 }}>
           <Link href="/saju" style={{
+            display: 'flex', alignItems: 'center', gap: 12,
             padding: '16px 40px', borderRadius: 16,
             background: '#8b6fc6', color: '#fff',
             fontSize: '1.05rem', fontWeight: 700, textDecoration: 'none',
             boxShadow: '0 0 40px rgba(139,111,198,0.4)',
           }}>
-            ✦ 사주팔자 무료 분석하기
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+            </svg>
+            사주팔자 무료 분석하기
           </Link>
         </div>
 
-        {/* 음양 심볼 */}
-        <div style={{ fontSize: '5rem', opacity: 0.15, userSelect: 'none' }}>☯</div>
+        {/* 중앙 대형 아이콘 */}
+        <div style={{ marginTop: 40, opacity: 0.25, userSelect: 'none' }}>
+          <svg width="120" height="120" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
+            <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
+            <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
+          </svg>
+        </div>
 
         {/* 통계 */}
         <div style={{
@@ -234,7 +244,11 @@ export default function LandingPage() {
           background: 'radial-gradient(circle, rgba(139,111,198,0.12) 0%, transparent 70%)',
           pointerEvents: 'none',
         }} />
-        <div style={{ fontSize: '3rem', marginBottom: 24, opacity: 0.6 }}>☯</div>
+        <div style={{ marginBottom: 32, opacity: 0.4 }}>
+          <svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
+          </svg>
+        </div>
         <h2 style={{
           fontSize: 'clamp(1.8rem, 4vw, 2.8rem)',
           fontWeight: 900, marginBottom: 16, color: '#e0cfff',
@@ -245,13 +259,16 @@ export default function LandingPage() {
           생년월일만 있으면 됩니다 · 완전 무료
         </p>
         <Link href="/saju" style={{
+          display: 'inline-flex', alignItems: 'center', gap: 10,
           padding: '18px 48px', borderRadius: 16,
           background: '#8b6fc6', color: '#fff',
           fontSize: '1.1rem', fontWeight: 700, textDecoration: 'none',
           boxShadow: '0 0 60px rgba(139,111,198,0.35)',
-          display: 'inline-block',
         }}>
-          ✦ 무료로 사주팔자 보기
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+          </svg>
+          무료로 사주팔자 보기
         </Link>
       </section>
 

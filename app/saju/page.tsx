@@ -178,9 +178,11 @@ export default function Home() {
       onChunk: t => {
         buf += t;
         // 마지막 문장 끝 기호까지만 화면에 출력 — 불완전한 토큰 방지
+        // 마침표, 느낌표, 물음표, 엔터, 또는 특수 기호(◆, [)가 나오면 즉시 출력
         const last = Math.max(
           buf.lastIndexOf('.'), buf.lastIndexOf('!'),
           buf.lastIndexOf('?'), buf.lastIndexOf('\n'), buf.lastIndexOf('。'),
+          buf.lastIndexOf('◆'), buf.lastIndexOf('['), buf.lastIndexOf(']')
         );
         if (last !== -1) {
           setAiText(p => p + buf.slice(0, last + 1));
@@ -1265,7 +1267,29 @@ function AiRenderer({ text, loading, result }: {
     }
     // ━━━ 구분선
     if (/^━{3,}/.test(line)) {
-      nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.1)', margin:'12px 0' }} />);
+      nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.1)', margin:'16px 0' }} />);
+      continue;
+    }
+    // ◆ 소제목 (문장 중간에 있어도 분리해서 처리)
+    if (line.includes('◆')) {
+      const parts = line.split(/(◆[^◆\n]+)/g);
+      parts.forEach(part => {
+        if (part.startsWith('◆')) {
+          nodes.push(
+            <div key={k++} style={{ marginTop:24, marginBottom:12, paddingLeft:4, borderLeft:'3px solid var(--gold)' }}>
+              <h3 style={{ fontSize:'.95rem', fontWeight:800, color:'var(--gold)', margin:0, lineHeight:1.5 }}>
+                {renderInline(part.trim())}
+              </h3>
+            </div>
+          );
+        } else if (part.trim()) {
+          nodes.push(
+            <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.92)', lineHeight:1.9, marginBottom:12 }}>
+              {renderInline(part.trim())}
+            </p>
+          );
+        }
+      });
       continue;
     }
     // — 불릿

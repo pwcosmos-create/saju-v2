@@ -301,13 +301,13 @@ export default function Home() {
         backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:100,
         background:'rgba(13,11,30,.8)',
       }}>
-        <Link href="/" style={{ display:'flex', alignItems:'center', gap:10, textDecoration:'none', color:'var(--text)' }}>
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <Link href="/" style={{ display:'flex', alignItems:'center', gap:12, textDecoration:'none', color:'var(--text)' }}>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
             <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
             <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
           </svg>
-          <span style={{ fontWeight:800, fontSize:'1.2rem', letterSpacing: -1 }}>AI<span style={{ color:'var(--gold)' }}>사주</span></span>
+          <span style={{ fontWeight:900, fontSize:'1.6rem', letterSpacing: -1.5 }}>AI<span style={{ color:'var(--gold)' }}>사주</span></span>
         </Link>
       </header>
 

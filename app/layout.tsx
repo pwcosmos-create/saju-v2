@@ -11,14 +11,14 @@ import { Analytics } from '@vercel/analytics/react';
 
 const SITE_URL = 'https://saju.coupax.co.kr';
 const THIS_YEAR = new Date().getFullYear();
-const TITLE = `AI사주 — ${THIS_YEAR}년 사주팔자 무료 분석 · AI 심층 풀이`;
+const TITLE = `✦ AI사주 — ${THIS_YEAR}년 사주팔자 무료 분석 · AI 심층 풀이`;
 const DESC = `${THIS_YEAR}년 AI사주. 생년월일 입력으로 오행·용신·신살·대운·AI 심층 풀이까지 무료 제공.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: TITLE,
-    template: `%s | AI사주`,
+    template: `%s | ✦ AI사주`,
   },
   description: DESC,
   keywords: [
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     url: SITE_URL,
     title: TITLE,
     description: DESC,
-    siteName: 'AI사주',
+    siteName: '✦ AI사주',
     locale: 'ko_KR',
   },
   twitter: {

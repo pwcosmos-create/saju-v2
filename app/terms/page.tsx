@@ -1,4 +1,4 @@
-export const metadata = { title: '이용약관 | AI사주' };
+export const metadata = { title: '이용약관 | ✦ AI사주' };
 
 export default function TermsPage() {
   return (

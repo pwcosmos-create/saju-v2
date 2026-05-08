@@ -261,7 +261,12 @@ export default function LandingPage() {
         borderTop: '1px solid rgba(139,111,198,0.15)',
         color: '#6b6490', fontSize: '.82rem',
       }}>
-        <div style={{ marginBottom: 8 }}>✦ AI사주 — 사주팔자 무료 분석</div>
+        <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+          </svg>
+          <span style={{ fontWeight: 700 }}>AI사주</span> — 사주팔자 무료 분석
+        </div>
         <div>본 서비스는 전통 동양 철학 기반 참고용 정보입니다.</div>
       </footer>
     </div>

@@ -1,4 +1,4 @@
-export const metadata = { title: '개인정보처리방침 | AI사주' };
+export const metadata = { title: '개인정보처리방침 | ✦ AI사주' };
 
 export default function PrivacyPage() {
   return (

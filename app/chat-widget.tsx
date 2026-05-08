@@ -96,6 +96,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [isPaid, setIsPaid]     = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const paypalRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,9 +106,41 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setIsPaid(localStorage.getItem('saju_chat_paid') === 'true');
+      const paidAt = localStorage.getItem('saju_chat_paid_at');
+      if (paidAt) {
+        const diff = Date.now() - parseInt(paidAt);
+        const limit = 30 * 60 * 1000; // 30 mins
+        if (diff < limit) {
+          setIsPaid(true);
+          setTimeLeft(Math.floor((limit - diff) / 1000));
+        } else {
+          localStorage.removeItem('saju_chat_paid_at');
+        }
+      }
     }
   }, []);
+
+  // Timer for remaining time
+  useEffect(() => {
+    if (!isPaid || timeLeft === null) return;
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev === null || prev <= 0) {
+          setIsPaid(false);
+          localStorage.removeItem('saju_chat_paid_at');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isPaid, timeLeft]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
 
   useEffect(() => {
     if (open && msgs.length === 0) {
@@ -136,9 +169,11 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         onApprove: async (data: any, actions: any) => {
           const order = await actions.order.capture();
           if (order.status === 'COMPLETED') {
+            const now = Date.now();
             setIsPaid(true);
-            localStorage.setItem('saju_chat_paid', 'true');
-            setMsgs(prev => [...prev, { role: 'assistant', content: '결제가 완료되었습니다! 이제 상담을 시작하실 수 있습니다. 😊' }]);
+            setTimeLeft(30 * 60);
+            localStorage.setItem('saju_chat_paid_at', now.toString());
+            setMsgs(prev => [...prev, { role: 'assistant', content: '결제가 완료되었습니다! 30분간 자유롭게 상담하실 수 있습니다. 😊' }]);
           }
         },
         onError: (err: any) => {
@@ -243,18 +278,20 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       }}>
         {/* Header */}
         <div style={{
-          padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,.1)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          background: 'rgba(255,255,255,.04)',
+          padding: '16px 20px', background: 'linear-gradient(135deg, #8b6fc6, #6b52a3)',
+          borderBottom: '1px solid rgba(255,255,255,.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          boxShadow: '0 2px 10px rgba(0,0,0,.2)',
         }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#e8c97e', fontSize: '.95rem' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2L12L9.6 9.6L12 2Z" fill="#fff" />
               </svg>
               AI 사주 명리 상담
             </div>
-            <div style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.45)' }}>사주와 운세에 대한 전문 상담을 제공합니다</div>
+            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
+              {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '사주와 운세에 대한 전문 상담을 제공합니다'}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={stopTTS} title="음성 중지" style={{

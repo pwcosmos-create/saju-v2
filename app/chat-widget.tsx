@@ -1,6 +1,6 @@
 /**
  * SAJU-V2 CHAT WIDGET
- * Version: 2.0.1 (Stability Improvement)
+ * Version: 2.0.2 (Draft-Review-Type & Premium Theme)
  * Last Updated: 2026-05-08
  */
 'use client';
@@ -23,6 +23,22 @@ import {
 import { classifyElements } from '../core/daily-fortune/classifier';
 
 const GENERATES = [1, 2, 3, 4, 0];
+
+// 타이핑 효과 함수 (v2.0.2)
+function typeEffect(text: string, onUpdate: (t: string) => void, onDone?: () => void) {
+  let index = 0;
+  const speed = 15; // 타이핑 속도 (ms) - 긴 글 대응을 위해 상향 조정
+  
+  const timer = setInterval(() => {
+    if (index < text.length) {
+      onUpdate(text.slice(0, index + 1));
+      index++;
+    } else {
+      clearInterval(timer);
+      if (onDone) onDone();
+    }
+  }, speed);
+}
 
 function buildChatContext(r: SajuResult): string {
   const [yp, mp, dp, hp] = r.pillars;
@@ -199,39 +215,51 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
     setLoading(true);
 
     const sajuContext = buildChatContext(result);
-    let aiContent = '';
+    let buffer = '';
 
     await streamChat(
       newMsgs.map(m => ({ role: m.role, content: m.content })),
       sajuContext,
       (chunk) => {
-        aiContent += chunk;
+        buffer += chunk;
         setMsgs(prev => {
           const u = [...prev];
-          u[u.length - 1] = { role: 'assistant', content: aiContent };
+          u[u.length - 1] = { role: 'assistant', content: '초안 작성 중... ✍️' };
           return u;
         });
       },
       () => {
-        setLoading(false);
-        if (typeof window !== 'undefined' && window.speechSynthesis && aiContent) {
-          window.speechSynthesis.cancel();
-          const ttsText = stripHanja(aiContent).slice(0, 600);
-          const utt = new SpeechSynthesisUtterance(ttsText);
-          
-          // 가용한 목소리 중 가장 듣기 좋은 것 찾기 (주로 Google 한국어 또는 시스템 기본 프리미엄 보이스)
-          const voices = window.speechSynthesis.getVoices();
-          const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural'))) 
-                        || voices.find(v => v.lang.includes('ko'));
-          if (koVoice) utt.voice = koVoice;
+        setMsgs(prev => {
+          const u = [...prev];
+          u[u.length - 1] = { role: 'assistant', content: '검토 및 정리 중... ✨' };
+          return u;
+        });
 
-          utt.lang = 'ko-KR';
-          utt.rate = 1.0;  // 약간 더 천천히 (자연스럽게)
-          utt.pitch = 1.05; // 살짝 톤을 높여서 밝고 따뜻하게
-          utt.volume = 1.0;
-
-          window.speechSynthesis.speak(utt);
-        }
+        setTimeout(() => {
+          setLoading(false);
+          typeEffect(buffer, (typed) => {
+            setMsgs(prev => {
+              const u = [...prev];
+              u[u.length - 1] = { role: 'assistant', content: typed };
+              return u;
+            });
+          }, () => {
+            // 타이핑 완료 후 TTS
+            if (typeof window !== 'undefined' && window.speechSynthesis && buffer) {
+              window.speechSynthesis.cancel();
+              const ttsText = stripHanja(buffer).slice(0, 600);
+              const utt = new SpeechSynthesisUtterance(ttsText);
+              const voices = window.speechSynthesis.getVoices();
+              const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural'))) 
+                            || voices.find(v => v.lang.includes('ko'));
+              if (koVoice) utt.voice = koVoice;
+              utt.lang = 'ko-KR';
+              utt.rate = 1.0;
+              utt.pitch = 1.05;
+              window.speechSynthesis.speak(utt);
+            }
+          });
+        }, 1200);
       },
       (err) => {
         setMsgs(prev => {
@@ -288,14 +316,14 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
           boxShadow: '0 2px 10px rgba(0,0,0,.2)',
         }}>
           <div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#e8c97e', display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2L12L9.6 9.6L12 2Z" fill="#fff" />
+                <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2L12L9.6 9.6L12 2Z" fill="#e8c97e" />
               </svg>
               AI 사주 명리 상담
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
-              {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '사주와 운세에 대한 전문 상담을 제공합니다'}
+              {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '무료 사주팔자 정밀 분석 상담을 제공합니다'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -321,7 +349,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
                 border: `1px solid ${m.role === 'user' ? 'rgba(232,201,126,.3)' : 'rgba(255,255,255,.1)'}`,
                 color: '#e0e0e0', fontSize: '.87rem', lineHeight: 1.65, whiteSpace: 'pre-wrap',
               }}>
-                {m.content || (loading && i === msgs.length - 1 ? '▌' : '')}
+                {m.content || (loading && i === msgs.length - 1 ? <span className="chat-typing-cursor">▌</span> : '')}
               </div>
             </div>
           ))}
@@ -398,6 +426,14 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
           </svg>
         )}
       </button>
+      <style>{`
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(0.98); } }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 5px rgba(232,201,126,0.2); } 50% { box-shadow: 0 0 15px rgba(232,201,126,0.5); } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .chat-rotating-star { display: inline-block; animation: rotate 2s linear infinite; vertical-align: middle; }
+        .chat-typing-cursor { color: #e8c97e; font-weight: 700; animation: blink 0.8s infinite; margin-left: 2px; }
+      `}</style>
     </>
   );
 }

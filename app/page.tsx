@@ -1,9 +1,10 @@
 /**
  * SAJU-V2 MAIN PAGE
- * Version: 2.0.1 (AI Rendering & Stream Fix)
+ * Version: 2.0.2 (Animated Loading & Review UX)
  * Last Updated: 2026-05-08
  */
 import Link from 'next/link';
+import { useState, useRef } from 'react';
 
 const FEATURES = [
   {
@@ -39,6 +40,25 @@ const STEPS = [
 ];
 
 export default function LandingPage() {
+  const [aiLoading, setAiLoad] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
+  const steps = ["운명의 기운을 읽는 중...", "천간과 지지의 조화를 검토 중...", "전문적인 조언을 정성껏 작성 중..."];
+
+  function askAI() {
+    setAiLoad(true);
+    setLoadingStep(0);
+    
+    const timer1 = setTimeout(() => setLoadingStep(1), 2500);
+    const timer2 = setTimeout(() => setLoadingStep(2), 5500);
+
+    setTimeout(() => {
+      setAiLoad(false);
+      setLoadingStep(0);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    }, 8000);
+  }
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -47,6 +67,14 @@ export default function LandingPage() {
       fontFamily: "'Apple SD Gothic Neo','Noto Sans KR',sans-serif",
       overflowX: 'hidden',
     }}>
+      <style>{`
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .rotating-star { animation: rotate 2s linear infinite; display: inline-block; }
+        .analyzing-btn { animation: pulse 1.5s infinite; }
+        .btn-shine { position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); animation: shine 2s infinite; }
+        @keyframes shine { to { left: 100%; } }
+      `}</style>
 
       {/* 네비게이션 */}
       <nav style={{
@@ -58,11 +86,11 @@ export default function LandingPage() {
       }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
           <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
+            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#e8c97e"/>
             <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
             <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
           </svg>
-          <span style={{ fontSize: '1.6rem', fontWeight: 900, color: '#c4a8ff', letterSpacing: -1.5 }}>
+          <span style={{ fontSize: '1.6rem', fontWeight: 900, color: '#e8c97e', letterSpacing: -1.5 }}>
             AI사주
           </span>
         </Link>
@@ -82,7 +110,6 @@ export default function LandingPage() {
         textAlign: 'center', padding: '100px 24px 60px',
         position: 'relative',
       }}>
-        {/* 배경 글로우 */}
         <div style={{
           position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)',
           width: 600, height: 600, borderRadius: '50%',
@@ -93,11 +120,11 @@ export default function LandingPage() {
         <div style={{
           display: 'inline-block', marginBottom: 28,
           padding: '6px 20px', borderRadius: 100,
-          background: 'rgba(139,111,198,0.15)',
-          border: '1px solid rgba(139,111,198,0.4)',
-          fontSize: '.82rem', fontWeight: 700, color: '#c4a8ff',
+          background: 'rgba(232, 201, 126, 0.15)',
+          border: '1px solid rgba(232, 201, 126, 0.4)',
+          fontSize: '.82rem', fontWeight: 700, color: '#e8c97e',
         }}>
-          ✦ 완전 무료 · 가입 불필요
+          ✦ 무료 사주팔자 정밀 분석
         </div>
 
         <h1 style={{
@@ -119,21 +146,36 @@ export default function LandingPage() {
         </p>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 64 }}>
-          <Link href="/saju" style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '16px 40px', borderRadius: 16,
-            background: '#8b6fc6', color: '#fff',
-            fontSize: '1.05rem', fontWeight: 700, textDecoration: 'none',
-            boxShadow: '0 0 40px rgba(139,111,198,0.4)',
-          }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
-            </svg>
-            사주팔자 무료 분석하기
-          </Link>
+          <button 
+            onClick={askAI} 
+            disabled={aiLoading} 
+            className={aiLoading ? "analyzing-btn" : ""}
+            style={{
+              background: aiLoading ? 'linear-gradient(135deg, #6b46c1, #3182ce)' : 'linear-gradient(135deg, #805ad5, #4299e1)',
+              color: '#fff', border: 'none', padding: '16px 40px', borderRadius: 16,
+              fontSize: '1.05rem', fontWeight: 700, cursor: aiLoading ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.3s',
+              boxShadow: '0 0 40px rgba(139,111,198,0.4)',
+              position: 'relative', overflow: 'hidden'
+            }}
+          >
+            {aiLoading ? (
+              <>
+                <span className="rotating-star">✦</span>
+                <span>{loadingStep === 3 ? "최종 검토 중..." : steps[loadingStep]}</span>
+              </>
+            ) : (
+              <>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+                </svg>
+                사주팔자 무료 분석하기
+              </>
+            )}
+            {aiLoading && <div className="btn-shine" />}
+          </button>
         </div>
 
-        {/* 중앙 대형 아이콘 */}
         <div style={{ marginTop: 40, opacity: 0.25, userSelect: 'none' }}>
           <svg width="120" height="120" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
@@ -142,7 +184,6 @@ export default function LandingPage() {
           </svg>
         </div>
 
-        {/* 통계 */}
         <div style={{
           display: 'flex', gap: 48, marginTop: 48,
           flexWrap: 'wrap', justifyContent: 'center',
@@ -153,7 +194,7 @@ export default function LandingPage() {
             { num: 'AI', label: '실시간 풀이' },
           ].map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#c4a8ff' }}>{s.num}</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#e8c97e' }}>{s.num}</div>
               <div style={{ fontSize: '.82rem', color: '#6b6490', marginTop: 4 }}>{s.label}</div>
             </div>
           ))}
@@ -290,7 +331,7 @@ export default function LandingPage() {
           <span style={{ fontWeight: 700 }}>AI사주</span> — 사주팔자 무료 분석
         </div>
         <div>본 서비스는 전통 동양 철학 기반 참고용 정보입니다.</div>
-        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v2.0.1</div>
+        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v2.0.2</div>
       </footer>
     </div>
   );

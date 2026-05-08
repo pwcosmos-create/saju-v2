@@ -1,3 +1,9 @@
+/**
+ * AI Saju Stream Fetcher - v2.0.2
+ * 
+ * - 클라이언트 측 스트리밍 데이터 수신 및 버퍼링
+ * - Draft-Review-Type 워크플로우를 위한 전체 데이터 수집 지원
+ */
 // 한국어 외 언어 토큰 제거 (일본어 가나, 베트남 전용 자모, CJK 확장)
 const LEAKED = /[\u3040-\u30FF\u3400-\u4DBF]|[ăâêôơưđ]/gi;
 function filterLeaked(text: string): string {

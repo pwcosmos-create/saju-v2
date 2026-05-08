@@ -1,3 +1,9 @@
+/**
+ * AI Saju LLM Configuration - v2.0.2
+ * 
+ * - Gemini 2.5 Flash 엔드포인트 및 API 키 관리
+ * - Groq 호환 인터페이스 유지
+ */
 // 외부 API 설정 단일 진실 모듈 — 값은 환경변수에서만 읽음 (서버 전용)
 
 function requireEnv(name: string): string {

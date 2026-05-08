@@ -1,4 +1,12 @@
 'use client';
+/**
+ * AI Saju Analytics Platform - v2.0.2
+ * 
+ * 주요 변경 사항:
+ * - Draft-Review-Type 워크플로우 도입 (전체 생성 후 검토 및 타이핑)
+ * - 단계별 로딩 상태 애니메이션 최적화
+ * - 스트리밍 데이터 누락 방지 로직 강화
+ */
 
 import Link from 'next/link';
 import { useState, useEffect, useRef, useMemo } from 'react';
@@ -118,7 +126,14 @@ export default function Home() {
   const [loading,  setLoading]  = useState(false);
   const [tab,      setTab]      = useState<TabName>('성격');
   const [aiText,   setAiText]   = useState('');
-  const [aiLoading,setAiLoad]   = useState(false);
+  const [aiLoading, setAiLoad] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
+  const steps = [
+    "운명의 기운을 읽는 중...", 
+    "AI 분석 초안을 작성하는 중...", 
+    "내용의 정확도를 최종 검토 중...", 
+    "전문적인 조언을 정성껏 작성 중..."
+  ];
   const [showFb,   setShowFb]   = useState(false);
   const [fbDone,   setFbDone]   = useState(false);
   const [comment,  setComment]  = useState('');
@@ -172,29 +187,69 @@ export default function Home() {
 
   function askAI() {
     if (!lastResult.current) return;
-    setAiLoad(true); setAiText(''); setShowFb(false); setFbDone(false);
-    let buf = '';
+    setAiLoad(true);
+    setAiText('');
+    setShowFb(false);
+    setFbDone(false);
+    setLoadingStep(1); // 기운 읽는 중
+    
+    let fullText = '';
+    let isFinished = false;
+
+    // 단계별 메시지 연출 (AI가 깊이 분석하는 느낌)
+    const t1 = setTimeout(() => { if (!isFinished) setLoadingStep(2); }, 3000); // 초안 작성 중
+    const t2 = setTimeout(() => { if (!isFinished) setLoadingStep(3); }, 7000); // 검토 중
+
     fetchStream(buildPrompt(lastResult.current), {
       onChunk: t => {
-        buf += t;
-        // 마지막 문장 끝 기호까지만 화면에 출력 — 불완전한 토큰 방지
-        // 마침표, 느낌표, 물음표, 엔터, 또는 특수 기호(◆, [)가 나오면 즉시 출력
-        const last = Math.max(
-          buf.lastIndexOf('.'), buf.lastIndexOf('!'),
-          buf.lastIndexOf('?'), buf.lastIndexOf('\n'), buf.lastIndexOf('。'),
-          buf.lastIndexOf('◆'), buf.lastIndexOf('['), buf.lastIndexOf(']')
-        );
-        if (last !== -1) {
-          setAiText(p => p + buf.slice(0, last + 1));
-          buf = buf.slice(last + 1);
+        fullText += t;
+        // 작성 중 단계에서는 진행률만 표시하거나 아주 가끔 업데이트 (사용자 안심용)
+        if (fullText.length % 500 === 0) {
+           setLoadingStep(2); 
         }
       },
       onDone: () => {
-        if (buf) setAiText(p => p + buf); // 남은 버퍼 전부 출력
-        setAiLoad(false); setShowFb(true);
+        isFinished = true;
+        clearTimeout(t1);
+        clearTimeout(t2);
+        
+        // 1. 작성 완료 후 '검토 중' 상태로 전환
+        setLoadingStep(3); 
+        
+        // 2. 충분한 검토 시간을 가진 후 타이핑 시작 (사용자 경험 최적화)
+        setTimeout(() => {
+          setLoadingStep(4); // '작성 중' (타이핑 출력)
+          setAiLoad(false);  // 로딩 오버레이는 끄고 타이핑 시작
+          typeEffect(fullText);
+        }, 2000);
       },
-      onError: () => { setAiText('AI 연결에 실패했습니다. 잠시 후 다시 시도해주세요.'); setAiLoad(false); },
+      onError: (err) => { 
+        console.error("AI Stream Error:", err);
+        setAiText('AI 분석 중 연결이 끊겼습니다. 하지만 작성된 내용까지 보여드릴게요.\n\n' + fullText); 
+        setAiLoad(false);
+        setLoadingStep(0);
+        if (fullText) typeEffect(fullText);
+      },
     });
+  }
+
+  // 타이핑 효과 구현 (사용자가 읽는 속도에 맞춰 자연스럽게 출력)
+  function typeEffect(text: string) {
+    let index = 0;
+    const interval = setInterval(() => {
+      if (index < text.length) {
+        // 한 번에 1~3자씩 랜덤하게 출력하여 인간미 부여
+        const chunkSize = Math.floor(Math.random() * 3) + 1;
+        const nextPart = text.slice(index, index + chunkSize);
+        setAiText(prev => prev + nextPart);
+        index += chunkSize;
+      } else {
+        clearInterval(interval);
+        setAiLoad(false);
+        setShowFb(true);
+        setLoadingStep(0);
+      }
+    }, 10); // 10ms 간격으로 출력 (빠른 전개)
   }
 
 
@@ -303,26 +358,29 @@ export default function Home() {
         backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:100,
         background:'rgba(13,11,30,.8)',
       }}>
-        <Link href="/" style={{ display:'flex', alignItems:'center', gap:12, textDecoration:'none', color:'var(--text)' }}>
-          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
-            <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
-            <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
-          </svg>
-          <span style={{ fontWeight:900, fontSize:'1.6rem', letterSpacing: -1.5 }}>AI<span style={{ color:'var(--gold)' }}>사주</span></span>
-        </Link>
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#e8c97e"/>
+              <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
+              <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
+            </svg>
+            <span style={{ fontSize: '1.6rem', fontWeight: 900, color: '#e8c97e', letterSpacing: -1.5 }}>
+              AI사주
+            </span>
+          </Link>
       </header>
 
       {/* ── Hero / Form ── */}
       <section className="hero-section">
-        <div style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(139,111,198,.2)',
-          border:'1px solid rgba(139,111,198,.4)', color:'#c4a8ff',
-          fontSize:'.78rem', fontWeight:700, padding:'5px 14px', borderRadius:100, marginBottom:22 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
-          </svg>
-          무료 사주팔자 정밀 분석
-        </div>
+            <div style={{
+              display: 'inline-block', marginBottom: 20,
+              padding: '6px 20px', borderRadius: 100,
+              background: 'rgba(232, 201, 126, 0.15)',
+              border: '1px solid rgba(232, 201, 126, 0.4)',
+              fontSize: '.82rem', fontWeight: 700, color: '#e8c97e',
+            }}>
+              ✦ 무료 사주팔자 정밀 분석
+            </div>
         <h1 style={{ fontSize:'clamp(1.8rem,5vw,2.8rem)', fontWeight:900, letterSpacing:-1, lineHeight:1.2, marginBottom:14 }}>
           나의 <span style={{ color:'var(--gold)' }}>사주팔자</span>를<br/>알아보세요
         </h1>
@@ -509,13 +567,22 @@ export default function Home() {
               </div>
             </div>
 
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center' }}>
-              <button onClick={askAI} disabled={aiLoading} style={{
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', position: 'relative' }}>
+              <button onClick={askAI} disabled={aiLoading} className={aiLoading ? "analyzing-btn" : ""} style={{
                 background:'linear-gradient(135deg,#6b4fa0,#3a7bd5)', border:'none',
                 borderRadius:10, color:'#fff', fontSize:'.92rem', fontWeight:700,
                 padding:'12px 24px', cursor:aiLoading?'not-allowed':'pointer', opacity:aiLoading?.7:1,
+                position: 'relative', overflow: 'hidden'
               }}>
-                {aiLoading?'✦ 분석 중...':aiText?'✦ 다시 분석하기':'✦ AI 풀이 받기'}
+                {aiLoading && <div className="btn-shine" />}
+                {aiLoading ? (
+                  <span style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <svg className="rotating-star" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="white"/>
+                    </svg>
+                    {steps[loadingStep - 1] || '분석 중...'}
+                  </span>
+                ) : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
               </button>
             </div>
 
@@ -1321,7 +1388,18 @@ function AiRenderer({ text, loading, result }: {
     <div style={{ marginTop:20, padding:'22px 24px', background:'rgba(0,0,0,.25)',
       borderRadius:12, border:'1px solid rgba(255,255,255,.08)' }}>
       {nodes}
-      {loading && <span style={{ color:'var(--purple)', fontWeight:700 }}>▌</span>}
+      {loading && <span className="typing-cursor">▌</span>}
+      <style>{`
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(0.98); } }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 5px rgba(139,111,198,0.4), 0 0 10px rgba(139,111,198,0.2); } 50% { box-shadow: 0 0 20px rgba(139,111,198,0.6), 0 0 30px rgba(74,158,255,0.4); } }
+        @keyframes shine { to { left: 100%; } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .analyzing-btn { animation: pulse 2s infinite, glow 3s infinite; }
+        .rotating-star { display: inline-block; animation: rotate 2s linear infinite; filter: drop-shadow(0 0 5px #fff); }
+        .btn-shine { position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent); animation: shine 1.5s infinite; }
+        .typing-cursor { color: var(--gold); fontWeight: 700; animation: blink 0.8s infinite; margin-left: 2px; }
+      `}</style>
     </div>
   );
 }

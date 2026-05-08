@@ -1,3 +1,9 @@
+/**
+ * AI Saju Feedback API - v2.0.2
+ * 
+ * - 피드백 데이터를 feedback.jsonl 파일에 익명으로 저장
+ * - 오라클 서버 인스턴스 내 로컬 영구 저장 보장
+ */
 import { NextRequest } from 'next/server';
 
 export async function POST(req: NextRequest) {

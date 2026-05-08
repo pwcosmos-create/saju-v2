@@ -119,7 +119,9 @@ const WEBAPP_SCHEMA = {
 };
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
-const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+const PAYPAL_CLIENT_ID =
+  process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
+  'AagriM6wPC0OV-teas4BeZ0rX8G6d-FxAG5H4WisfPMNcabwvMy3Ofdc-iArr91vfin9bFaY4wIhJ1mZ';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

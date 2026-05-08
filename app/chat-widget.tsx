@@ -15,7 +15,7 @@ function stripHanja(text: string): string {
     .replace(/\s{2,}/g, ' ')                                      // 공백 정리
     .trim();
 }
-import type { SajuResult } from '../core/pillar-calc/main-calculator';
+import { calculate, type SajuResult } from '../core/pillar-calc/main-calculator';
 import {
   STEMS, BRANCHES, STEMS_H, BRANCHES_H,
   STEM_ELEM, BRANCH_ELEM, ELEM_NAMES,
@@ -23,6 +23,27 @@ import {
 import { classifyElements } from '../core/daily-fortune/classifier';
 
 const GENERATES = [1, 2, 3, 4, 0];
+const SESSION_SECONDS = 30 * 60;
+const MAX_SESSION_SECONDS = 120 * 60;
+const miniInputStyle = {
+  background: 'rgba(255,255,255,.06)',
+  border: '1px solid rgba(255,255,255,.12)',
+  borderRadius: 8,
+  padding: '8px 10px',
+  color: '#e8e8e8',
+  fontSize: '.78rem',
+  outline: 'none',
+};
+const miniActionBtnStyle = {
+  background: 'rgba(232,201,126,.18)',
+  border: '1px solid rgba(232,201,126,.32)',
+  borderRadius: 8,
+  padding: '8px 10px',
+  color: '#e8c97e',
+  fontSize: '.78rem',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
 
 // 타이핑 효과 함수 (v2.0.3)
 function typeEffect(text: string, onUpdate: (t: string) => void, onDone?: () => void) {
@@ -75,6 +96,7 @@ function buildChatContext(r: SajuResult): string {
 async function streamChat(
   messages: { role: string; content: string }[],
   sajuContext: string,
+  options: { chatMode: 'single' | 'compatibility'; compareSajuContext?: string },
   onChunk: (t: string) => void,
   onDone: () => void,
   onError: (e: string) => void,
@@ -84,7 +106,12 @@ async function streamChat(
     const res = await fetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, sajuContext }),
+      body: JSON.stringify({
+        messages,
+        sajuContext,
+        chatMode: options.chatMode,
+        compareSajuContext: options.compareSajuContext ?? '',
+      }),
     });
     if (!res.ok || !res.body) { onError('연결 실패'); return; }
     const reader = res.body.getReader();
@@ -108,7 +135,30 @@ async function streamChat(
   }
 }
 
+function buildCompatibilityContext(primary: SajuResult, compare: SajuResult): string {
+  return `비교 모드(궁합/관계) 분석입니다.
+
+【A 대상(기준 사용자)】
+${buildChatContext(primary)}
+
+【B 대상(비교 사용자)】
+${buildChatContext(compare)}
+
+아래 항목 중심으로 비교 분석:
+- 관계 강점 3가지
+- 충돌 패턴 3가지
+- 소통 방식 차이와 보완 팁
+- 현실 적용 조언(연애/결혼/업무 협업 관점)`;
+}
+
 interface Msg { role: 'user' | 'assistant'; content: string; }
+interface CompareForm {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  gender: '남' | '여';
+}
 
 export default function ChatWidget({ result }: { result: SajuResult | null }) {
   const [open, setOpen]       = useState(false);
@@ -116,10 +166,23 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   const [input, setInput]     = useState('');
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
+  const [chatMode, setChatMode] = useState<'single' | 'compatibility'>('single');
   const [isPaid, setIsPaid]     = useState(false);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [compareForm, setCompareForm] = useState<CompareForm>({
+    year: '',
+    month: '',
+    day: '',
+    hour: '',
+    gender: '여',
+  });
+  const [compareResult, setCompareResult] = useState<SajuResult | null>(null);
+  const [compareError, setCompareError] = useState('');
+  const [showCompareForm, setShowCompareForm] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const paypalRef = useRef<HTMLDivElement>(null);
+  const paypalExtendRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
 
@@ -127,15 +190,29 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const expires = localStorage.getItem('saju_chat_expires_at');
+      if (expires) {
+        const exp = parseInt(expires, 10);
+        if (exp > Date.now()) {
+          setExpiresAt(exp);
+          setIsPaid(true);
+          setTimeLeft(Math.floor((exp - Date.now()) / 1000));
+          return;
+        }
+      }
       const paidAt = localStorage.getItem('saju_chat_paid_at');
       if (paidAt) {
         const diff = Date.now() - parseInt(paidAt);
-        const limit = 30 * 60 * 1000; // 30 mins
+        const limit = SESSION_SECONDS * 1000;
         if (diff < limit) {
+          const exp = Date.now() + (limit - diff);
+          setExpiresAt(exp);
           setIsPaid(true);
           setTimeLeft(Math.floor((limit - diff) / 1000));
+          localStorage.setItem('saju_chat_expires_at', String(exp));
         } else {
           localStorage.removeItem('saju_chat_paid_at');
+          localStorage.removeItem('saju_chat_expires_at');
         }
       }
     }
@@ -143,25 +220,60 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
 
   // Timer for remaining time
   useEffect(() => {
-    if (!isPaid || timeLeft === null) return;
+    if (!isPaid || !expiresAt) return;
     const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev === null || prev <= 0) {
-          setIsPaid(false);
-          localStorage.removeItem('saju_chat_paid_at');
-          return 0;
-        }
-        return prev - 1;
-      });
+      const remain = Math.floor((expiresAt - Date.now()) / 1000);
+      if (remain <= 0) {
+        setTimeLeft(0);
+        setIsPaid(false);
+        setExpiresAt(null);
+        localStorage.removeItem('saju_chat_paid_at');
+        localStorage.removeItem('saju_chat_expires_at');
+        return;
+      }
+      setTimeLeft(remain);
     }, 1000);
     return () => clearInterval(timer);
-  }, [isPaid, timeLeft]);
+  }, [isPaid, expiresAt]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
+
+  function analyzeCompareTarget() {
+    if (!compareForm.year || !compareForm.month || !compareForm.day) {
+      setCompareError('비교 대상의 생년월일(양력)을 입력해 주세요.');
+      return;
+    }
+    const y = Number(compareForm.year);
+    const m = Number(compareForm.month);
+    const d = Number(compareForm.day);
+    if (!y || !m || !d || y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) {
+      setCompareError('비교 대상 날짜가 올바르지 않습니다.');
+      return;
+    }
+    const hourTotalMin = compareForm.hour === '' ? -1 : Number(compareForm.hour) * 60;
+    try {
+      const r = calculate({
+        year: y,
+        month: m,
+        day: d,
+        hourTotalMin,
+        gender: compareForm.gender,
+      });
+      setCompareResult(r);
+      setCompareError('');
+      setShowCompareForm(false);
+      setMsgs(prev => [...prev, {
+        role: 'assistant',
+        content: `${y}년생 ${compareForm.gender}성 비교 대상이 추가되었습니다. 이제 궁합/비교 질문을 해주세요.`,
+      }]);
+    } catch {
+      setCompareError('비교 대상 분석 중 오류가 발생했습니다.');
+    }
+  }
 
   useEffect(() => {
     if (open && msgs.length === 0) {
@@ -175,39 +287,87 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   }, [open, result]);
 
   useEffect(() => {
+    if (chatMode === 'single') return;
+    if (compareResult) return;
+    setShowCompareForm(true);
+  }, [chatMode, compareResult]);
+
+  useEffect(() => {
+    if (chatMode === 'single') {
+      setCompareError('');
+    }
+  }, [chatMode]);
+
+  useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
-    if (open && !isPaid && result && w.paypal && paypalRef.current && paypalRef.current.innerHTML === '') {
-      w.paypal.Buttons({
-        createOrder: (data: any, actions: any) => {
-          return actions.order.create({
-            purchase_units: [{
-              description: "AI 사주 상담 1회 이용권",
-              amount: { currency_code: "USD", value: "1.00" }
-            }]
-          });
-        },
-        onApprove: async (data: any, actions: any) => {
-          const order = await actions.order.capture();
-          if (order.status === 'COMPLETED') {
-            const now = Date.now();
-            setIsPaid(true);
-            setTimeLeft(30 * 60);
-            localStorage.setItem('saju_chat_paid_at', now.toString());
-            setMsgs(prev => [...prev, { role: 'assistant', content: '결제가 완료되었습니다! 30분간 자유롭게 상담하실 수 있습니다. 😊' }]);
-          }
-        },
-        onError: (err: any) => {
-          console.error('PayPal Error:', err);
-          alert('결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
+    if (!open || isPaid || !result || !w.paypal || !paypalRef.current || paypalRef.current.innerHTML !== '') return;
+    w.paypal.Buttons({
+      createOrder: (_data: any, actions: any) => actions.order.create({
+        purchase_units: [{
+          description: "AI 사주 상담 1회 이용권",
+          amount: { currency_code: "USD", value: "1.00" }
+        }]
+      }),
+      onApprove: async (_data: any, actions: any) => {
+        const order = await actions.order.capture();
+        if (order.status === 'COMPLETED') {
+          const exp = Date.now() + (SESSION_SECONDS * 1000);
+          setIsPaid(true);
+          setExpiresAt(exp);
+          setTimeLeft(SESSION_SECONDS);
+          localStorage.setItem('saju_chat_paid_at', Date.now().toString());
+          localStorage.setItem('saju_chat_expires_at', String(exp));
+          setMsgs(prev => [...prev, { role: 'assistant', content: '결제가 완료되었습니다! 30분간 자유롭게 상담하실 수 있습니다. 😊' }]);
         }
-      }).render(paypalRef.current);
-    }
+      },
+      onError: (err: any) => {
+        console.error('PayPal Error:', err);
+        alert('결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      }
+    }).render(paypalRef.current);
   }, [open, isPaid, result]);
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!open || !isPaid || !result || !w.paypal || !paypalExtendRef.current || paypalExtendRef.current.innerHTML !== '') return;
+    w.paypal.Buttons({
+      createOrder: (_data: any, actions: any) => actions.order.create({
+        purchase_units: [{
+          description: "AI 사주 상담 시간 30분 연장권",
+          amount: { currency_code: "USD", value: "1.00" }
+        }]
+      }),
+      onApprove: async (_data: any, actions: any) => {
+        const order = await actions.order.capture();
+        if (order.status === 'COMPLETED') {
+          const currentRemain = Math.max(0, Math.floor(((expiresAt ?? Date.now()) - Date.now()) / 1000));
+          const nextRemain = Math.min(currentRemain + SESSION_SECONDS, MAX_SESSION_SECONDS);
+          const nextExp = Date.now() + nextRemain * 1000;
+          setExpiresAt(nextExp);
+          setTimeLeft(nextRemain);
+          localStorage.setItem('saju_chat_expires_at', String(nextExp));
+          setMsgs(prev => [...prev, { role: 'assistant', content: '연장 결제가 완료되었습니다! 상담 시간이 30분 늘어났습니다. ⏱️' }]);
+        }
+      },
+      onError: (err: any) => {
+        console.error('PayPal Extend Error:', err);
+        alert('연장 결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      }
+    }).render(paypalExtendRef.current);
+  }, [open, isPaid, result, expiresAt]);
 
   async function send(text: string = input) {
     const trimmed = text.trim();
     if (!trimmed || loading || !result) return;
+    if (chatMode === 'compatibility' && !compareResult) {
+      setMsgs(prev => [...prev, {
+        role: 'assistant',
+        content: '궁합/비교 모드를 사용하려면 먼저 비교 대상 1명을 추가해 주세요.',
+      }]);
+      return;
+    }
     const userMsg: Msg = { role: 'user', content: trimmed };
     const newMsgs = [...msgs, userMsg];
     setMsgs([...newMsgs, { role: 'assistant', content: '' }]);
@@ -215,11 +375,16 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
     setLoading(true);
 
     const sajuContext = buildChatContext(result);
+    const compareSajuContext = compareResult ? buildCompatibilityContext(result, compareResult) : undefined;
     let buffer = '';
 
     await streamChat(
       newMsgs.map(m => ({ role: m.role, content: m.content })),
       sajuContext,
+      {
+        chatMode,
+        compareSajuContext,
+      },
       (chunk) => {
         buffer += chunk;
         setMsgs(prev => {
@@ -323,7 +488,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
               AI 사주 명리 상담
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
-              {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '무료 사주팔자 정밀 분석 상담을 제공합니다'}
+              {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '무료 분석 결과 기반 상담을 제공합니다'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -340,6 +505,109 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
 
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {isPaid && result && (
+            <div style={{
+              display: 'flex',
+              gap: 8,
+              flexWrap: 'wrap',
+              background: 'rgba(255,255,255,.04)',
+              border: '1px solid rgba(255,255,255,.08)',
+              borderRadius: 12,
+              padding: 8,
+            }}>
+              <button
+                onClick={() => setChatMode('single')}
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,.15)',
+                  background: chatMode === 'single' ? 'rgba(232,201,126,.22)' : 'rgba(255,255,255,.05)',
+                  color: chatMode === 'single' ? '#e8c97e' : 'rgba(255,255,255,.85)',
+                  padding: '6px 10px',
+                  fontSize: '.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                일반 상담
+              </button>
+              <button
+                onClick={() => setChatMode('compatibility')}
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,.15)',
+                  background: chatMode === 'compatibility' ? 'rgba(232,201,126,.22)' : 'rgba(255,255,255,.05)',
+                  color: chatMode === 'compatibility' ? '#e8c97e' : 'rgba(255,255,255,.85)',
+                  padding: '6px 10px',
+                  fontSize: '.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                궁합/비교 모드
+              </button>
+              {chatMode === 'compatibility' && (
+                <button
+                  onClick={() => setShowCompareForm(v => !v)}
+                  style={{
+                    marginLeft: 'auto',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255,255,255,.15)',
+                    background: 'rgba(255,255,255,.05)',
+                    color: 'rgba(255,255,255,.85)',
+                    padding: '6px 10px',
+                    fontSize: '.78rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {compareResult ? '비교 대상 수정' : '비교 대상 추가'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {isPaid && chatMode === 'compatibility' && showCompareForm && (
+            <div style={{
+              background: 'rgba(255,255,255,.04)',
+              border: '1px solid rgba(255,255,255,.08)',
+              borderRadius: 12,
+              padding: 10,
+              display: 'grid',
+              gap: 8,
+            }}>
+              <div style={{ fontSize: '.77rem', color: '#e8c97e', fontWeight: 700 }}>
+                비교 대상 1명 (양력 기준)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                <input placeholder="년" value={compareForm.year} onChange={e => setCompareForm(v => ({ ...v, year: e.target.value }))} style={{ ...miniInputStyle }} />
+                <input placeholder="월" value={compareForm.month} onChange={e => setCompareForm(v => ({ ...v, month: e.target.value }))} style={{ ...miniInputStyle }} />
+                <input placeholder="일" value={compareForm.day} onChange={e => setCompareForm(v => ({ ...v, day: e.target.value }))} style={{ ...miniInputStyle }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <input placeholder="시(0~23, 선택)" value={compareForm.hour} onChange={e => setCompareForm(v => ({ ...v, hour: e.target.value }))} style={{ ...miniInputStyle }} />
+                <select value={compareForm.gender} onChange={e => setCompareForm(v => ({ ...v, gender: e.target.value as '남' | '여' }))} style={{ ...miniInputStyle }}>
+                  <option value="남">남성</option>
+                  <option value="여">여성</option>
+                </select>
+              </div>
+              {compareError && <div style={{ fontSize: '.74rem', color: '#ff8080' }}>{compareError}</div>}
+              <button onClick={analyzeCompareTarget} style={miniActionBtnStyle}>비교 대상 분석하기</button>
+            </div>
+          )}
+
+          {isPaid && chatMode === 'compatibility' && compareResult && (
+            <div style={{
+              fontSize: '.76rem',
+              color: 'rgba(255,255,255,.82)',
+              background: 'rgba(232,201,126,.12)',
+              border: '1px solid rgba(232,201,126,.28)',
+              borderRadius: 10,
+              padding: '8px 10px',
+            }}>
+              비교 대상 적용됨: {compareResult.input.year}년생 {compareResult.input.gender}성
+            </div>
+          )}
+
           {msgs.map((m, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
               <div style={{
@@ -368,34 +636,45 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
             <div ref={paypalRef} />
           </div>
         ) : (
-          <div style={{
-            padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,.08)',
-            display: 'flex', gap: 7, background: 'rgba(255,255,255,.02)',
-          }}>
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-              placeholder={result ? '질문을 입력하세요...' : '사주 분석 먼저 해주세요'}
-              disabled={loading || !result || !isPaid}
-              style={{
-                flex: 1, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.12)',
-                borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
-              }}
-            />
-            <button onClick={toggleVoice} title={listening ? '녹음 중지' : '음성 입력'} style={{
-              padding: '9px 11px',
-              background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',
-              border: `1px solid ${listening ? 'rgba(220,80,80,.5)' : 'rgba(255,255,255,.12)'}`,
-              borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
-              cursor: 'pointer', fontSize: '1rem', animation: listening ? 'pulse 1s infinite' : 'none',
-            }}>🎤</button>
-            <button onClick={() => send()} disabled={loading || !input.trim() || !result || !isPaid} style={{
-              padding: '9px 14px',
-              background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
-              borderRadius: 10, color: '#e8c97e', cursor: 'pointer', fontWeight: 700, fontSize: '.87rem',
-              opacity: loading || !input.trim() || !result || !isPaid ? 0.45 : 1,
-            }}>전송</button>
+          <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.02)' }}>
+            {isPaid && timeLeft !== null && (
+              <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,.06)' }}>
+                <div style={{ fontSize: '.74rem', color: 'rgba(255,255,255,.78)', marginBottom: 6 }}>
+                  {timeLeft <= 300 ? '상담 시간이 곧 만료됩니다. 지금 연장할 수 있어요.' : '연장 모드: 필요 시 상담 시간을 30분 추가할 수 있어요.'}
+                </div>
+                <div ref={paypalExtendRef} />
+              </div>
+            )}
+
+            <div style={{
+              padding: '10px 12px',
+              display: 'flex', gap: 7,
+            }}>
+              <input
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
+                placeholder={result ? (chatMode === 'compatibility' ? '궁합/비교 질문을 입력하세요...' : '질문을 입력하세요...') : '사주 분석 먼저 해주세요'}
+                disabled={loading || !result || !isPaid}
+                style={{
+                  flex: 1, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.12)',
+                  borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
+                }}
+              />
+              <button onClick={toggleVoice} title={listening ? '녹음 중지' : '음성 입력'} style={{
+                padding: '9px 11px',
+                background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',
+                border: `1px solid ${listening ? 'rgba(220,80,80,.5)' : 'rgba(255,255,255,.12)'}`,
+                borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
+                cursor: 'pointer', fontSize: '1rem', animation: listening ? 'pulse 1s infinite' : 'none',
+              }}>🎤</button>
+              <button onClick={() => send()} disabled={loading || !input.trim() || !result || !isPaid} style={{
+                padding: '9px 14px',
+                background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
+                borderRadius: 10, color: '#e8c97e', cursor: 'pointer', fontWeight: 700, fontSize: '.87rem',
+                opacity: loading || !input.trim() || !result || !isPaid ? 0.45 : 1,
+              }}>전송</button>
+            </div>
           </div>
         )}
       </div>

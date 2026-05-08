@@ -10,12 +10,28 @@ export async function POST(req: NextRequest) {
   if (!checkRateLimit(ip))
     return new Response(JSON.stringify({ error: '요청 한도 초과. 1분 후 다시 시도해주세요.' }), { status: 429 });
 
-  let body: { messages?: { role: string; content: string }[]; sajuContext?: string };
+  let body: {
+    messages?: { role: string; content: string }[];
+    sajuContext?: string;
+    compareSajuContext?: string;
+    chatMode?: 'single' | 'compatibility';
+  };
   try { body = await req.json(); }
   catch { return new Response(JSON.stringify({ error: '잘못된 요청 형식' }), { status: 400 }); }
 
-  const { messages = [], sajuContext = '' } = body;
+  const { messages = [], sajuContext = '', compareSajuContext = '', chatMode = 'single' } = body;
   if (!messages.length) return new Response(JSON.stringify({ error: 'messages 없음' }), { status: 400 });
+
+  const modeGuide = chatMode === 'compatibility'
+    ? `【비교 상담 모드 규칙】
+- 두 사람의 사주 데이터를 비교해 궁합/관계 중심으로 답변하세요.
+- 반드시 "강점 3가지 / 주의점 3가지 / 실천 팁 3가지"를 포함하세요.
+- 단정적인 파국/운명 표현은 피하고, 선택 가능한 행동 조언으로 마무리하세요.
+
+【비교 대상 데이터】
+${compareSajuContext}
+`
+    : '';
 
   const system = `【상담 원칙】
 - **오직 사주 명리학 및 운세와 관련된 질문에만 답변하세요.**
@@ -30,6 +46,8 @@ export async function POST(req: NextRequest) {
 - 따뜻하고 세련된 어투로, 듣는 사람이 위로받는 느낌이 들게 해주세요
 
 사용자가 한국어로 질문하면 한국어로, 다른 언어로 질문하면 그 언어로 답변하세요. 단, 사주 용어는 한국 명리학 용어를 기준으로 유지하세요.
+
+${modeGuide}
 
 【사주 데이터】
 ${sajuContext}`;

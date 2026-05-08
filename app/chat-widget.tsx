@@ -160,6 +160,11 @@ function isPaymentExemptTarget(r: SajuResult | null): boolean {
   return PAYMENT_EXEMPT_BIRTHDAYS.has(`${r.input.year}-${r.input.month}-${r.input.day}`);
 }
 
+function getTargetKey(r: SajuResult | null): string {
+  if (!r) return 'unknown';
+  return `${r.input.year}-${r.input.month}-${r.input.day}-${r.input.gender}`;
+}
+
 function buildPreviewMessage(r: SajuResult): string {
   const dp = r.pillars[2];
   const ds = dp?.s ?? 0;
@@ -215,38 +220,59 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
   const isExemptUser = isPaymentExemptTarget(result);
+  const targetKey = getTargetKey(result);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const expires = localStorage.getItem('saju_chat_expires_at');
-      if (expires) {
-        const exp = parseInt(expires, 10);
-        if (exp > Date.now()) {
-          setExpiresAt(exp);
-          setIsPaid(true);
-          setTimeLeft(Math.floor((exp - Date.now()) / 1000));
-          return;
-        }
-      }
-      const paidAt = localStorage.getItem('saju_chat_paid_at');
-      if (paidAt) {
-        const diff = Date.now() - parseInt(paidAt);
-        const limit = SESSION_SECONDS * 1000;
-        if (diff < limit) {
-          const exp = Date.now() + (limit - diff);
-          setExpiresAt(exp);
-          setIsPaid(true);
-          setTimeLeft(Math.floor((limit - diff) / 1000));
-          localStorage.setItem('saju_chat_expires_at', String(exp));
-        } else {
-          localStorage.removeItem('saju_chat_paid_at');
-          localStorage.removeItem('saju_chat_expires_at');
-        }
+    if (typeof window === 'undefined' || !result) {
+      setIsPaid(false);
+      setExpiresAt(null);
+      setTimeLeft(null);
+      return;
+    }
+    if (isExemptUser) return;
+
+    const sessionTarget = localStorage.getItem('saju_chat_session_target');
+    if (sessionTarget !== targetKey) {
+      setIsPaid(false);
+      setExpiresAt(null);
+      setTimeLeft(null);
+      localStorage.removeItem('saju_chat_paid_at');
+      localStorage.removeItem('saju_chat_expires_at');
+      return;
+    }
+
+    const expires = localStorage.getItem('saju_chat_expires_at');
+    if (expires) {
+      const exp = parseInt(expires, 10);
+      if (exp > Date.now()) {
+        setExpiresAt(exp);
+        setIsPaid(true);
+        setTimeLeft(Math.floor((exp - Date.now()) / 1000));
+        return;
       }
     }
-  }, []);
+    const paidAt = localStorage.getItem('saju_chat_paid_at');
+    if (paidAt) {
+      const diff = Date.now() - parseInt(paidAt, 10);
+      const limit = SESSION_SECONDS * 1000;
+      if (diff < limit) {
+        const exp = Date.now() + (limit - diff);
+        setExpiresAt(exp);
+        setIsPaid(true);
+        setTimeLeft(Math.floor((limit - diff) / 1000));
+        localStorage.setItem('saju_chat_expires_at', String(exp));
+        return;
+      }
+    }
+
+    setIsPaid(false);
+    setExpiresAt(null);
+    setTimeLeft(null);
+    localStorage.removeItem('saju_chat_paid_at');
+    localStorage.removeItem('saju_chat_expires_at');
+  }, [result, isExemptUser, targetKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !result) {
@@ -345,6 +371,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('saju_chat_paid_at');
       localStorage.removeItem('saju_chat_expires_at');
+      localStorage.removeItem('saju_chat_session_target');
     }
   }, [isExemptUser]);
 
@@ -368,6 +395,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
           setTimeLeft(SESSION_SECONDS);
           localStorage.setItem('saju_chat_paid_at', Date.now().toString());
           localStorage.setItem('saju_chat_expires_at', String(exp));
+          localStorage.setItem('saju_chat_session_target', targetKey);
           setMsgs(prev => [...prev, { role: 'assistant', content: '결제가 완료되었습니다! 30분간 자유롭게 상담하실 수 있습니다. 😊' }]);
         }
       },
@@ -376,7 +404,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         alert('결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
       }
     }).render(paypalRef.current);
-  }, [open, isPaid, result, isExemptUser]);
+  }, [open, isPaid, result, isExemptUser, targetKey]);
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -106,21 +106,20 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         role: 'assistant',
         content: result
           ? `안녕하세요! 사주 AI 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n궁금하신 점을 무엇이든 물어보세요. 🎯`
-          : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
+          : '안녕하세요! 사주 명리에 대해 궁금한 점이 있으신가요? 분석 전이라도 일반적인 사주 질문이나 이용 방법 안내를 도와드릴 수 있습니다. ✨',
       }]);
     }
   }, [open, result]);
 
   async function send(text: string = input) {
     const trimmed = text.trim();
-    if (!trimmed || loading || !result) return;
     const userMsg: Msg = { role: 'user', content: trimmed };
     const newMsgs = [...msgs, userMsg];
     setMsgs([...newMsgs, { role: 'assistant', content: '' }]);
     setInput('');
     setLoading(true);
 
-    const sajuContext = buildChatContext(result);
+    const sajuContext = result ? buildChatContext(result) : '사용자가 아직 사주를 입력하지 않았습니다. 일반적인 명리학 지식이나 서비스 이용 안내를 제공하세요.';
     let aiContent = '';
 
     await streamChat(
@@ -246,8 +245,8 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-            placeholder={result ? '질문을 입력하세요...' : '사주 분석 먼저 해주세요'}
-            disabled={loading || !result}
+            placeholder="궁금한 점을 입력하세요..."
+            disabled={loading}
             style={{
               flex: 1, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.12)',
               borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
@@ -260,11 +259,11 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
             borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
             cursor: 'pointer', fontSize: '1rem', animation: listening ? 'pulse 1s infinite' : 'none',
           }}>🎤</button>
-          <button onClick={() => send()} disabled={loading || !input.trim() || !result} style={{
+          <button onClick={() => send()} disabled={loading || !input.trim()} style={{
             padding: '9px 14px',
             background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
             borderRadius: 10, color: '#e8c97e', cursor: 'pointer', fontWeight: 700, fontSize: '.87rem',
-            opacity: loading || !input.trim() || !result ? 0.45 : 1,
+            opacity: loading || !input.trim() ? 0.45 : 1,
           }}>전송</button>
         </div>
       </div>

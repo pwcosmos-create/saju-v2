@@ -8,6 +8,7 @@ export const viewport: Viewport = {
 };
 import './globals.css';
 import { Analytics } from '@vercel/analytics/react';
+import Script from 'next/script';
 
 const SITE_URL = 'https://saju.coupax.co.kr';
 const THIS_YEAR = new Date().getFullYear();
@@ -143,6 +144,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }} />
       </head>
       <body>
+        <Script 
+          src="https://www.paypal.com/sdk/js?client-id=test&currency=USD" 
+          strategy="beforeInteractive"
+        />
         {children}
         <Analytics />
       </body>

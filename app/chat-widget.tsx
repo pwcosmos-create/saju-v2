@@ -95,22 +95,59 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   const [input, setInput]     = useState('');
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
+  const [isPaid, setIsPaid]     = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const paypalRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsPaid(localStorage.getItem('saju_chat_paid') === 'true');
+    }
+  }, []);
+
+  useEffect(() => {
     if (open && msgs.length === 0) {
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! 사주 AI 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n궁금하신 점을 무엇이든 물어보세요. 🎯`
+          ? `안녕하세요! 사주 AI 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n심층 상담을 위해 $1 결제가 필요합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
   }, [open, result]);
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (open && !isPaid && result && w.paypal && paypalRef.current && paypalRef.current.innerHTML === '') {
+      w.paypal.Buttons({
+        createOrder: (data: any, actions: any) => {
+          return actions.order.create({
+            purchase_units: [{
+              description: "AI 사주 상담 1회 이용권",
+              amount: { currency_code: "USD", value: "1.00" }
+            }]
+          });
+        },
+        onApprove: async (data: any, actions: any) => {
+          const order = await actions.order.capture();
+          if (order.status === 'COMPLETED') {
+            setIsPaid(true);
+            localStorage.setItem('saju_chat_paid', 'true');
+            setMsgs(prev => [...prev, { role: 'assistant', content: '결제가 완료되었습니다! 이제 상담을 시작하실 수 있습니다. 😊' }]);
+          }
+        },
+        onError: (err: any) => {
+          console.error('PayPal Error:', err);
+          alert('결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
+        }
+      }).render(paypalRef.current);
+    }
+  }, [open, isPaid, result]);
 
   async function send(text: string = input) {
     const trimmed = text.trim();
@@ -249,36 +286,48 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
-        <div style={{
-          padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,.08)',
-          display: 'flex', gap: 7, background: 'rgba(255,255,255,.02)',
-        }}>
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-            placeholder={result ? '질문을 입력하세요...' : '사주 분석 먼저 해주세요'}
-            disabled={loading || !result}
-            style={{
-              flex: 1, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.12)',
-              borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
-            }}
-          />
-          <button onClick={toggleVoice} title={listening ? '녹음 중지' : '음성 입력'} style={{
-            padding: '9px 11px',
-            background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',
-            border: `1px solid ${listening ? 'rgba(220,80,80,.5)' : 'rgba(255,255,255,.12)'}`,
-            borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
-            cursor: 'pointer', fontSize: '1rem', animation: listening ? 'pulse 1s infinite' : 'none',
-          }}>🎤</button>
-          <button onClick={() => send()} disabled={loading || !input.trim() || !result} style={{
-            padding: '9px 14px',
-            background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
-            borderRadius: 10, color: '#e8c97e', cursor: 'pointer', fontWeight: 700, fontSize: '.87rem',
-            opacity: loading || !input.trim() || !result ? 0.45 : 1,
-          }}>전송</button>
-        </div>
+        {/* Input or Payment */}
+        {!isPaid && result ? (
+          <div style={{
+            padding: '20px', borderTop: '1px solid rgba(255,255,255,.08)',
+            textAlign: 'center', background: 'rgba(255,255,255,.02)',
+          }}>
+            <div style={{ color: '#e8c97e', fontSize: '.85rem', marginBottom: '15px', fontWeight: 600 }}>
+              AI 심층 상담은 결제($1.00) 후 이용 가능합니다
+            </div>
+            <div ref={paypalRef} />
+          </div>
+        ) : (
+          <div style={{
+            padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,.08)',
+            display: 'flex', gap: 7, background: 'rgba(255,255,255,.02)',
+          }}>
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
+              placeholder={result ? '질문을 입력하세요...' : '사주 분석 먼저 해주세요'}
+              disabled={loading || !result || !isPaid}
+              style={{
+                flex: 1, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.12)',
+                borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
+              }}
+            />
+            <button onClick={toggleVoice} title={listening ? '녹음 중지' : '음성 입력'} style={{
+              padding: '9px 11px',
+              background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',
+              border: `1px solid ${listening ? 'rgba(220,80,80,.5)' : 'rgba(255,255,255,.12)'}`,
+              borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
+              cursor: 'pointer', fontSize: '1rem', animation: listening ? 'pulse 1s infinite' : 'none',
+            }}>🎤</button>
+            <button onClick={() => send()} disabled={loading || !input.trim() || !result || !isPaid} style={{
+              padding: '9px 14px',
+              background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
+              borderRadius: 10, color: '#e8c97e', cursor: 'pointer', fontWeight: 700, fontSize: '.87rem',
+              opacity: loading || !input.trim() || !result || !isPaid ? 0.45 : 1,
+            }}>전송</button>
+          </div>
+        )}
       </div>
 
       {/* Floating Button */}

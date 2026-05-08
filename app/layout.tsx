@@ -145,7 +145,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <Script 
-          src="https://www.paypal.com/sdk/js?client-id=test&currency=USD" 
+          src="https://www.paypal.com/sdk/js?client-id=AagriM6wPC0OV-teas4BeZ0rX8G6d-FxAG5H4WisfPMNcabwvMy3Ofdc-iArr91vfin9bFaY4wIhJ1mZ&currency=USD" 
           strategy="beforeInteractive"
         />
         {children}

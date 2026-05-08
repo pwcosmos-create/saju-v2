@@ -6,6 +6,7 @@
  */
 import Link from 'next/link';
 import { useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 
 const FEATURES = [
   {
@@ -41,23 +42,23 @@ const STEPS = [
 ];
 
 export default function LandingPage() {
+  const router = useRouter();
   const [aiLoading, setAiLoad] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const steps = ["운명의 기운을 읽는 중...", "천간과 지지의 조화를 검토 중...", "전문적인 조언을 정성껏 작성 중..."];
 
   function askAI() {
+    if (aiLoading) return;
     setAiLoad(true);
     setLoadingStep(0);
-    
-    const timer1 = setTimeout(() => setLoadingStep(1), 2500);
-    const timer2 = setTimeout(() => setLoadingStep(2), 5500);
 
+    const timer1 = setTimeout(() => setLoadingStep(1), 250);
+    const timer2 = setTimeout(() => setLoadingStep(2), 550);
     setTimeout(() => {
-      setAiLoad(false);
-      setLoadingStep(0);
       clearTimeout(timer1);
       clearTimeout(timer2);
-    }, 8000);
+      router.push('/saju');
+    }, 800);
   }
 
   return (

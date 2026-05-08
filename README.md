@@ -39,6 +39,29 @@ NEXT_PUBLIC_FEEDBACK_URL=...   # 선택(외부 수집 엔드포인트)
 - Gemini 2.5 Flash API — 스트리밍 SSE
 - KASI 공공데이터 API — 음양력 변환
 
+## 운영 배포 (Oracle 서버)
+
+이 프로젝트의 홈페이지 운영 서버는 Oracle Cloud VM입니다.
+
+- 서버: `ubuntu@168.107.31.153`
+- 운영 경로: `/home/ubuntu/saju-v2`
+- 프로세스 매니저: PM2
+- 앱 프로세스명: `saju-v2`
+- 현재 서비스 포트: `3001` (`npm start -- -p 3001`으로 운영 중)
+- 주의: Toss Appin 배포(`ait`)는 별도 프로젝트에서 운영하며, 이 저장소의 홈페이지 배포와 분리되어 있습니다.
+
+배포 기본 절차:
+
+```bash
+ssh -i ~/.ssh/shinserver.key ubuntu@168.107.31.153
+cd /home/ubuntu/saju-v2
+git pull origin main
+npm install
+npm run build
+pm2 restart saju-v2 --update-env
+pm2 save
+```
+
 ## 버전 릴리즈
 
 Conventional Commit 메시지를 기준으로 버전/체인지로그를 자동 갱신합니다.

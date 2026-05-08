@@ -71,10 +71,16 @@ function splitTtsChunks(text: string, maxLen = 220): string[] {
   return chunks;
 }
 
-function speakKoreanQueued(text: string) {
+function speakKoreanQueued(
+  text: string,
+  options?: { onDone?: () => void; onChunkError?: () => void },
+) {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
   const chunks = splitTtsChunks(text);
-  if (!chunks.length) return;
+  if (!chunks.length) {
+    options?.onDone?.();
+    return;
+  }
 
   const synth = window.speechSynthesis;
   // 새 응답 시작 시에만 이전 발화를 정리한다.
@@ -85,7 +91,10 @@ function speakKoreanQueued(text: string) {
                || voices.find(v => v.lang.includes('ko'));
 
   const speakAt = (idx: number) => {
-    if (idx >= chunks.length) return;
+    if (idx >= chunks.length) {
+      options?.onDone?.();
+      return;
+    }
     const utt = new SpeechSynthesisUtterance(chunks[idx]);
     if (koVoice) utt.voice = koVoice;
     utt.lang = 'ko-KR';
@@ -93,7 +102,10 @@ function speakKoreanQueued(text: string) {
     utt.pitch = TTS_PITCH;
     utt.onend = () => speakAt(idx + 1);
     // 일부 브라우저에서 중간 오류가 나도 다음 청크로 이어서 읽는다.
-    utt.onerror = () => speakAt(idx + 1);
+    utt.onerror = () => {
+      options?.onChunkError?.();
+      speakAt(idx + 1);
+    };
     synth.speak(utt);
   };
 
@@ -292,13 +304,62 @@ export default function ChatWidget({
   const bottomRef = useRef<HTMLDivElement>(null);
   const paypalRef = useRef<HTMLDivElement>(null);
   const paypalExtendRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const wakeLockRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
   const isExemptUser = isPaymentExemptTarget(result);
   const targetKey = getTargetKey(result);
   const canStartCounseling = Boolean(result && aiSummaryReady);
+  const [ttsMode, setTtsMode] = useState<'server' | 'browser'>('server');
+  const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+
+  async function requestWakeLock() {
+    if (!wakeLockEnabled || typeof window === 'undefined') return;
+    try {
+      const w = window as any;
+      if (!w.navigator?.wakeLock?.request) return;
+      wakeLockRef.current = await w.navigator.wakeLock.request('screen');
+      wakeLockRef.current?.addEventListener?.('release', () => {
+        wakeLockRef.current = null;
+      });
+    } catch {
+      // 권한/브라우저 제한은 무시하고 진행
+    }
+  }
+
+  async function releaseWakeLock() {
+    try {
+      await wakeLockRef.current?.release?.();
+    } catch {
+      // noop
+    } finally {
+      wakeLockRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && isSpeaking && wakeLockEnabled) {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [isSpeaking, wakeLockEnabled]);
+
+  useEffect(() => {
+    if (!wakeLockEnabled) {
+      releaseWakeLock();
+      return;
+    }
+    if (isSpeaking) requestWakeLock();
+    return () => { releaseWakeLock(); };
+  }, [wakeLockEnabled, isSpeaking]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !result) {
@@ -571,7 +632,9 @@ export default function ChatWidget({
           const userTurn = newMsgs.filter((m) => m.role === 'user').length;
           const finalized = addFollowUpPrompt(finalizeKoreanAnswer(buffer), userTurn);
           // 실시간 대화감 강화를 위해 타이핑 시작과 동시에 TTS를 재생한다.
-          if (finalized) speakKoreanQueued(finalized);
+          if (finalized) {
+            void speakWithPreferredMode(finalized);
+          }
           typeEffect(finalized, (typed) => {
             setMsgs(prev => {
               const u = [...prev];
@@ -622,6 +685,73 @@ export default function ChatWidget({
 
   function stopTTS() {
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current = null;
+    }
+    setIsSpeaking(false);
+    releaseWakeLock();
+  }
+
+  async function playServerTtsChunk(chunkText: string): Promise<boolean> {
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: chunkText }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json() as { audioBase64?: string; mimeType?: string };
+      if (!data.audioBase64 || !data.mimeType) return false;
+      const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
+      audioRef.current = audio;
+      await new Promise<void>((resolve) => {
+        audio.onended = () => resolve();
+        audio.onerror = () => resolve();
+        audio.play().catch(() => resolve());
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function speakWithPreferredMode(text: string) {
+    if (!text) return;
+    if (isSpeaking) stopTTS();
+    setIsSpeaking(true);
+    await requestWakeLock();
+
+    const done = () => {
+      setIsSpeaking(false);
+      releaseWakeLock();
+    };
+
+    if (ttsMode === 'server') {
+      const chunks = splitTtsChunks(text);
+      if (chunks.length) {
+        let successCount = 0;
+        for (const chunk of chunks) {
+          // eslint-disable-next-line no-await-in-loop
+          const ok = await playServerTtsChunk(chunk);
+          if (ok) successCount++;
+          else break;
+        }
+        if (successCount === chunks.length) {
+          done();
+          return;
+        }
+      }
+      setTtsMode('browser');
+    }
+
+    speakKoreanQueued(text, {
+      onDone: done,
+      onChunkError: () => {
+        // 중간 오류가 나도 큐는 계속 진행되며, 종료 시 onDone에서 wake lock 해제
+      },
+    });
   }
 
   function usePreviewOnce() {
@@ -670,8 +800,15 @@ export default function ChatWidget({
             <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,.62)', marginTop: 2 }}>
               타이핑 {TYPE_SPEED_MS}ms · 읽기 x{TTS_RATE.toFixed(1)}
             </div>
+            <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
+              음성 모드 {ttsMode === 'server' ? '서버 TTS' : '브라우저 TTS'} · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => setWakeLockEnabled(v => !v)} title="화면 꺼짐 방지" style={{
+              background: 'none', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
+              color: wakeLockEnabled ? '#e8c97e' : 'rgba(255,255,255,.5)', fontSize: '.72rem', cursor: 'pointer', padding: '4px 8px',
+            }}>{wakeLockEnabled ? '🔒' : '🔓'}</button>
             <button onClick={stopTTS} title="음성 중지" style={{
               background: 'none', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
               color: 'rgba(255,255,255,.5)', fontSize: '.8rem', cursor: 'pointer', padding: '4px 8px',

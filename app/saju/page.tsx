@@ -465,6 +465,23 @@ export default function Home() {
         </div>
       )}
 
+      {/* ── 전역 애니메이션 스타일 (항상 렌더링) ── */}
+      <style>{`
+        @keyframes btnRotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes btnPulse  { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.85; transform: scale(0.97); } }
+        @keyframes btnGlow   { 0%, 100% { box-shadow: 0 0 6px rgba(107,79,160,0.5), 0 0 12px rgba(58,123,213,0.3); }
+                               50%      { box-shadow: 0 0 22px rgba(107,79,160,0.9), 0 0 36px rgba(58,123,213,0.6); } }
+        @keyframes btnShine  { to { left: 110%; } }
+        @keyframes blink     { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .analyzing-btn  { animation: btnPulse 1.8s ease-in-out infinite, btnGlow 2.5s ease-in-out infinite !important; }
+        .rotating-star  { display: inline-block; animation: btnRotate 1.2s linear infinite; filter: drop-shadow(0 0 4px rgba(255,255,255,0.8)); }
+        .btn-shine      { position: absolute; top: 0; left: -110%; width: 60%; height: 100%;
+                          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+                          animation: btnShine 1.4s ease-in-out infinite; pointer-events: none; }
+        .typing-cursor  { color: #e8c97e; font-weight: 700; animation: blink 0.8s infinite; margin-left: 2px; }
+      `}</style>
+
+
       {/* ── Results ── */}
       {result&&!loading&&(
         <div ref={resultsRef} className="results-section">

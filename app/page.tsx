@@ -150,7 +150,7 @@ export default function LandingPage() {
           color: '#8b6fc6', maxWidth: 520, lineHeight: 1.7, marginBottom: 48,
         }}>
           생년월일과 태어난 시간을 입력하면<br/>
-          AI가 사주팔자를 실시간으로 심층 풀이해드립니다
+          텍스트/음성 채팅으로 성향 분석 기반 AI 심층 상담까지 이어집니다
         </p>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 64 }}>

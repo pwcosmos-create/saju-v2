@@ -280,7 +280,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\nAI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯`
+          ? `안녕하세요! AI 심층 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n텍스트/음성 채팅으로 성향 분석 기반 AI 심층 상담을 제공합니다.\nAI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
@@ -488,7 +488,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
               AI 심층 상담
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
-              {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '무료 분석 결과 기반 상담을 제공합니다'}
+              {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '텍스트/음성 채팅으로 성향 분석 기반 상담을 제공합니다'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -680,31 +680,56 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       </div>
 
       {/* Floating Button */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          position: 'fixed', bottom: 24, right: 20,
-          width: 64, height: 64, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #8b6fc6, #6b4fa6)',
-          border: '1px solid rgba(255,255,255,0.2)',
-          boxShadow: '0 8px 32px rgba(139,111,198,0.4)',
-          cursor: 'pointer', fontSize: '1.4rem',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 999,
-          color: '#fff',
-          transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        title="AI 심층 상담"
-      >
-        {open ? '✕' : (
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
-            <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#fff" fillOpacity="0.8"/>
-          </svg>
+      <div style={{
+        position: 'fixed',
+        bottom: 24,
+        right: 20,
+        zIndex: 999,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}>
+        {!open && (
+          <div className="chat-fab-label" style={{
+            background: 'rgba(13,11,30,0.92)',
+            border: '1px solid rgba(255,255,255,0.16)',
+            borderRadius: 999,
+            padding: '7px 11px',
+            color: '#e8c97e',
+            fontSize: '.76rem',
+            fontWeight: 700,
+            boxShadow: '0 4px 18px rgba(0,0,0,0.35)',
+            whiteSpace: 'nowrap',
+          }}>
+            <span className="chat-fab-label-desktop">AI 심층 상담</span>
+            <span className="chat-fab-label-mobile">AI 상담</span>
+          </div>
         )}
-      </button>
+
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{
+            width: 64, height: 64, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #8b6fc6, #6b4fa6)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            boxShadow: '0 8px 32px rgba(139,111,198,0.4)',
+            cursor: 'pointer', fontSize: '1.4rem',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff',
+            transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          title="AI 심층 상담"
+        >
+          {open ? '✕' : (
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+              <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#fff" fillOpacity="0.8"/>
+            </svg>
+          )}
+        </button>
+      </div>
       <style>{`
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(0.98); } }
@@ -712,6 +737,12 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .chat-rotating-star { display: inline-block; animation: rotate 2s linear infinite; vertical-align: middle; }
         .chat-typing-cursor { color: #e8c97e; font-weight: 700; animation: blink 0.8s infinite; margin-left: 2px; }
+        .chat-fab-label-mobile { display: none; }
+        @media (max-width: 600px) {
+          .chat-fab-label-desktop { display: none; }
+          .chat-fab-label-mobile { display: inline; }
+          .chat-fab-label { padding: 6px 10px; font-size: .72rem; }
+        }
       `}</style>
     </>
   );

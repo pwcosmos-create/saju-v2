@@ -197,15 +197,29 @@ export default function LandingPage() {
           flexWrap: 'wrap', justifyContent: 'center',
         }}>
           {[
-            { num: '무료', label: '완전 무료' },
+            { num: '무료', label: '사주팔자 분석' },
             { num: '7가지', label: '분석 탭' },
-            { num: 'AI', label: '실시간 풀이' },
+            { num: '1,000원', label: 'AI 심층 상담' },
           ].map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#e8c97e' }}>{s.num}</div>
               <div style={{ fontSize: '.82rem', color: '#6b6490', marginTop: 4 }}>{s.label}</div>
             </div>
           ))}
+        </div>
+
+        <div style={{
+          marginTop: 18,
+          padding: '10px 14px',
+          borderRadius: 12,
+          background: 'rgba(232, 201, 126, 0.12)',
+          border: '1px solid rgba(232, 201, 126, 0.35)',
+          color: '#f4d889',
+          fontSize: '.84rem',
+          fontWeight: 700,
+          letterSpacing: '.01em',
+        }}>
+          분석은 무료 · AI 심층 상담은 1,000원 (이벤트 기간: 30,000원 → 1,000원)
         </div>
       </section>
 
@@ -310,7 +324,7 @@ export default function LandingPage() {
           지금 바로 내 사주를<br/>확인해보세요
         </h2>
         <p style={{ color: '#6b6490', marginBottom: 40, fontSize: '.95rem' }}>
-          생년월일만 있으면 됩니다 · 완전 무료
+          분석은 무료로 시작하고, 필요 시 AI 심층 상담(1,000원)으로 이어가세요
         </p>
         <Link href="/saju" style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,

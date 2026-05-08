@@ -149,7 +149,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {PAYPAL_CLIENT_ID && (
           <Script
-            src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD`}
+            src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=KRW`}
             strategy="beforeInteractive"
           />
         )}

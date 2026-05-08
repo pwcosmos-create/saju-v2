@@ -321,6 +321,12 @@ export function buildPrompt(result: SajuResult): string {
     const age = daeun.startAge + i * 10;
     return `${age}세: ${STEMS[p.s]}${BRANCHES[p.b]}`;
   }).join(' / ');
+  const daeunDetailedText = daeun.pillars.slice(0, 8).map((p, i) => {
+    const age = daeun.startAge + i * 10;
+    const startY = input.year + age;
+    const endY = startY + 9;
+    return `- ${age}세(${startY}~${endY}): ${STEMS[p.s]}${BRANCHES[p.b]}(${STEMS_H[p.s]}${BRANCHES_H[p.b]})`;
+  }).join('\n');
 
   const sipsinText = sipsin
     ? `연주:${sipsin[0]} / 월주:${sipsin[1]} / 일주:${sipsin[2]} / 시주:${sipsin[3] ?? '미입력'}`
@@ -349,6 +355,7 @@ export function buildPrompt(result: SajuResult): string {
 8. 각 섹션은 반드시 2~3개의 ◆ 소제목으로 구성.
 9. 특수문자(!@#$%^&*~\`<>|\\/_+=) 사용 금지. ◆·—·**강조**·괄호() 외 기호 사용 시 오류.
 10. 사주 풀이 시작 전 인사말 금지. [1]부터 바로 시작.
+11. 대운은 제공된 8개 구간을 모두 누락 없이 설명하세요. 특정 구간을 생략하면 오류입니다.
 ━━━━━━━━━━━━━━━━━━
 
 ━━━ 사주 원국 ━━━
@@ -448,7 +455,17 @@ ${isJaedaSinyak ? '◆ 감정보다 시스템 — 재다신약의 해결책을 �
 【월별 엔진 데이터】
 ${monthlyPrompt}
 
-[10] 앞으로 어떻게 살면 좋을까요? — 핵심 조언
-◆ 평생 기억할 한 가지 원칙 — 이 사주의 핵심 메시지를 한 문장으로.
+[10] 대운 흐름과 장기 전략
+◆ 10년 단위 대운 전체 해설 — 아래 8개 구간을 순서대로 모두 설명하세요.
+각 구간마다 반드시 2~3문장으로:
+1) 그 시기의 핵심 테마
+2) 강점/기회 1가지
+3) 주의점 1가지
+를 포함하세요.
+
+【대운 데이터(누락 금지)】
+${daeunDetailedText}
+
+◆ 평생 기억할 한 가지 원칙 — 위 대운 흐름을 반영한 핵심 메시지 한 문장.
 ◆ 용신 ${yongsinName}을 일상에서 쓰는 법 — 내일부터 바로 실천할 수 있는 구체적 방법.`;
 }

@@ -280,7 +280,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! 사주 AI 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n심층 상담을 위해 $1 결제가 필요합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯`
+          ? `안녕하세요! AI 심층 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\nAI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
@@ -306,7 +306,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       createOrder: (_data: any, actions: any) => actions.order.create({
         purchase_units: [{
           description: "AI 사주 상담 1회 이용권",
-          amount: { currency_code: "USD", value: "1.00" }
+          amount: { currency_code: "KRW", value: "1000" }
         }]
       }),
       onApprove: async (_data: any, actions: any) => {
@@ -336,7 +336,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       createOrder: (_data: any, actions: any) => actions.order.create({
         purchase_units: [{
           description: "AI 사주 상담 시간 30분 연장권",
-          amount: { currency_code: "USD", value: "1.00" }
+          amount: { currency_code: "KRW", value: "1000" }
         }]
       }),
       onApprove: async (_data: any, actions: any) => {
@@ -485,7 +485,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2L12L9.6 9.6L12 2Z" fill="#e8c97e" />
               </svg>
-              AI 사주 명리 상담
+              AI 심층 상담
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
               {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '무료 분석 결과 기반 상담을 제공합니다'}
@@ -631,7 +631,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
             textAlign: 'center', background: 'rgba(255,255,255,.02)',
           }}>
             <div style={{ color: '#e8c97e', fontSize: '.85rem', marginBottom: '15px', fontWeight: 600 }}>
-              AI 심층 상담은 결제($1.00) 후 이용 가능합니다
+              AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다
             </div>
             <div ref={paypalRef} />
           </div>
@@ -696,7 +696,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         }}
         onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
         onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        title="사주 AI 상담"
+        title="AI 심층 상담"
       >
         {open ? '✕' : (
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

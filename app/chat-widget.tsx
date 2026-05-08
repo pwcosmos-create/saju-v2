@@ -36,6 +36,7 @@ function addFollowUpPrompt(text: string, userTurn: number): string {
     '추가로 궁금한 점이 있으면 이어서 물어봐 주세요.',
     '원하시면 연애·직업·재물 중 한 가지를 더 깊게 봐드릴게요.',
     '다른 질문도 괜찮아요. 편하게 이어가세요.',
+    '음성으로 질문하려면 마이크 버튼을 누른 뒤 말씀해 주세요.',
   ];
   const prompt = prompts[userTurn % prompts.length];
   return `${normalized}\n\n${prompt}`;
@@ -492,7 +493,7 @@ export default function ChatWidget({
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담사입니다.\n이번 상담은 랜덤 상담사 '${selectedCounselor}'가 함께합니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이 상담은 AI 심층 풀이를 기반으로 진행되는 맞춤 상담입니다.\n${isExemptUser ? '결제 예외 대상이므로 바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
+          ? `안녕하세요! AI 심층 상담사입니다.\n이번 상담은 랜덤 상담사 '${selectedCounselor}'가 함께합니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이 상담은 AI 심층 풀이를 기반으로 진행되는 맞춤 상담입니다.\n질문은 텍스트/음성 모두 가능해요. 음성 질문은 마이크 버튼을 누른 뒤 말씀해 주세요.\n${isExemptUser ? '결제 예외 대상이므로 바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
@@ -1037,7 +1038,9 @@ export default function ChatWidget({
                 background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',
                 border: `1px solid ${listening ? 'rgba(220,80,80,.5)' : 'rgba(255,255,255,.12)'}`,
                 borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
-                cursor: 'pointer', fontSize: '1rem', animation: listening ? 'pulse 1s infinite' : 'none',
+                cursor: 'pointer', fontSize: '1rem',
+                animation: listening ? 'pulse 1s infinite, micGlow 1.2s ease-in-out infinite' : 'micGlowIdle 2.2s ease-in-out infinite',
+                boxShadow: listening ? '0 0 14px rgba(255,107,107,.55)' : '0 0 10px rgba(139,111,198,.35)',
               }}>🎤</button>
               <button onClick={() => send()} disabled={loading || !input.trim() || !result || (!isPaid && !previewUnlocked)} style={{
                 padding: '9px 14px',
@@ -1107,6 +1110,8 @@ export default function ChatWidget({
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(0.98); } }
         @keyframes glow { 0%, 100% { box-shadow: 0 0 5px rgba(232,201,126,0.2); } 50% { box-shadow: 0 0 15px rgba(232,201,126,0.5); } }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        @keyframes micGlowIdle { 0%, 100% { box-shadow: 0 0 8px rgba(139,111,198,.28); } 50% { box-shadow: 0 0 14px rgba(139,111,198,.45); } }
+        @keyframes micGlow { 0%, 100% { box-shadow: 0 0 10px rgba(255,107,107,.35); } 50% { box-shadow: 0 0 18px rgba(255,107,107,.7); } }
         .chat-rotating-star { display: inline-block; animation: rotate 2s linear infinite; vertical-align: middle; }
         .chat-typing-cursor { color: #e8c97e; font-weight: 700; animation: blink 0.8s infinite; margin-left: 2px; }
         .chat-fab-label-mobile { display: none; }

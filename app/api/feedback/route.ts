@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     const path = await import('path');
     
     const filePath = path.join(process.cwd(), 'feedback.jsonl');
-    const logEntry = JSON.stringify({ timestamp: new Date().toISOString(), ...body }) + '\n';
+    const logEntry = JSON.stringify({ timestamp: new Date().toISOString(), ...(body as object) }) + '\n';
     
     await fs.appendFile(filePath, logEntry, 'utf-8');
     

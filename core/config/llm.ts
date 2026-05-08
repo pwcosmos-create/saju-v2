@@ -1,8 +1,8 @@
 /**
- * AI Saju LLM Configuration - v2.0.2
- * 
- * - Gemini 2.5 Flash 엔드포인트 및 API 키 관리
- * - Groq 호환 인터페이스 유지
+ * AI Saju LLM configuration
+ *
+ * - Gemini 2.5 Flash endpoint and API key management
+ * - Backward-compatible export for existing call sites
  */
 // 외부 API 설정 단일 진실 모듈 — 값은 환경변수에서만 읽음 (서버 전용)
 
@@ -12,8 +12,8 @@ function requireEnv(name: string): string {
   return val;
 }
 
-// Gemini 2.5 Flash 직접 호출
-export function fetchGroqStream(body: object): Promise<Response> {
+// Gemini 2.5 Flash direct call (OpenAI-compatible endpoint)
+export function fetchLlmStream(body: object): Promise<Response> {
   const geminiKey = requireEnv('GOOGLE_AI_API_KEY');
   return fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
     method:  'POST',
@@ -21,6 +21,9 @@ export function fetchGroqStream(body: object): Promise<Response> {
     body:    JSON.stringify({ model: 'gemini-2.5-flash', ...body }),
   });
 }
+
+// Backward compatibility for existing imports.
+export const fetchGroqStream = fetchLlmStream;
 
 export const LLM_CONFIG = {
   gemini: {

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { fetchGroqStream } from '../../../core/config/llm';
+import { fetchLlmStream } from '../../../core/config/llm';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 
 // IP당 1분에 20회
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 【사주 데이터】
 ${sajuContext}`;
 
-  const upstream = await fetchGroqStream({
+  const upstream = await fetchLlmStream({
     stream: true,
     max_tokens: 1024,
     temperature: 0.7,

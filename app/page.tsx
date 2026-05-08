@@ -332,7 +332,7 @@ export default function LandingPage() {
           <span style={{ fontWeight: 700 }}>AI사주</span> — 사주팔자 무료 분석
         </div>
         <div>본 서비스는 전통 동양 철학 기반 참고용 정보입니다.</div>
-        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v2.0.2</div>
+        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v2.0.3</div>
       </footer>
     </div>
   );

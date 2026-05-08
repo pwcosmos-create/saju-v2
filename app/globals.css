@@ -154,3 +154,77 @@ select option {
     gap: 6px;
   }
 }
+
+/* ── AI 분석 버튼 애니메이션(글로벌) ──
+   기존에는 컴포넌트 내부 <style>로 주입되어, 렌더 경로/에러 타이밍에 따라
+   애니메이션 CSS가 DOM에 없을 수 있어 전역으로 고정한다. */
+@keyframes aiRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes aiPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.985); }
+}
+@keyframes aiGlow {
+  0%, 100% { box-shadow: 0 0 6px rgba(139,111,198,0.35), 0 0 14px rgba(74,158,255,0.18); }
+  50% { box-shadow: 0 0 22px rgba(139,111,198,0.65), 0 0 38px rgba(74,158,255,0.38); }
+}
+@keyframes aiShine {
+  to { left: 110%; }
+}
+@keyframes aiBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.analyzing-btn {
+  animation: aiPulse 2s ease-in-out infinite, aiGlow 3s ease-in-out infinite;
+}
+
+.rotating-star {
+  display: inline-block;
+  animation: aiRotate 1.4s linear infinite;
+  filter: drop-shadow(0 0 5px rgba(255,255,255,0.8));
+  transform-origin: center;
+}
+/* SVG 회전 중심 보정 */
+.rotating-star svg,
+svg.rotating-star {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.btn-shine {
+  position: absolute;
+  top: 0;
+  left: -110%;
+  width: 120%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  animation: aiShine 1.6s linear infinite;
+  pointer-events: none;
+}
+
+.typing-cursor {
+  color: var(--gold);
+  font-weight: 700;
+  animation: aiBlink 0.8s infinite;
+  margin-left: 2px;
+}
+
+@keyframes aiShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.ai-wait-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 0%,
+    rgba(255,255,255,0.10) 40%,
+    rgba(255,255,255,0.04) 80%
+  );
+  background-size: 200% 100%;
+  animation: aiShimmer 1.2s ease-in-out infinite;
+}

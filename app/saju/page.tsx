@@ -1,6 +1,6 @@
 'use client';
 /**
- * AI Saju Analytics Platform - v2.0.2
+ * AI Saju Analytics Platform - v2.0.3
  * 
  * 주요 변경 사항:
  * - Draft-Review-Type 워크플로우 도입 (전체 생성 후 검토 및 타이핑)
@@ -124,10 +124,12 @@ export default function Home() {
   const [result,        setResult]        = useState<SajuResult | null>(null);
   const [fortuneResult, setFortuneResult] = useState<DailyFortuneResult | null>(null);
   const [loading,  setLoading]  = useState(false);
+  const [calcTick, setCalcTick] = useState(0);
   const [tab,      setTab]      = useState<TabName>('성격');
   const [aiText,   setAiText]   = useState('');
   const [aiLoading, setAiLoad] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
+  const [waitTick, setWaitTick] = useState(0);
   const steps = [
     "운명의 기운을 읽는 중...", 
     "AI 분석 초안을 작성하는 중...", 
@@ -141,6 +143,24 @@ export default function Home() {
 
   const lastResult = useRef<SajuResult | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!loading) {
+      setCalcTick(0);
+      return;
+    }
+    const id = setInterval(() => setCalcTick(t => t + 1), 900);
+    return () => clearInterval(id);
+  }, [loading]);
+
+  useEffect(() => {
+    if (!aiLoading) {
+      setWaitTick(0);
+      return;
+    }
+    const id = setInterval(() => setWaitTick(t => t + 1), 1200);
+    return () => clearInterval(id);
+  }, [aiLoading]);
 
   useEffect(() => {
     localStorage.removeItem('saju_year');
@@ -232,6 +252,47 @@ export default function Home() {
       },
     });
   }
+
+  const waitFacts = useMemo(() => {
+    if (!result) return [];
+    const dpLocal = result.pillars[2];
+    if (!dpLocal) return [];
+    const dayStemIdx = dpLocal.s;
+    const dayElemIdx = STEM_ELEM[dayStemIdx];
+    const strength = calcStrength(result.pillars, dayElemIdx);
+    const cls = classifyElements(dayStemIdx, strength.isWeak, result.ohaeng.counts);
+    const elemName = (i: number) => ELEM_NAMES[i] + `(${ELEM_NAMES_H[i]})`;
+    const yongsin = elemName(cls.yongsin);
+    const huisin = cls.huisin.length ? cls.huisin.map(elemName).join(' · ') : '없음';
+    const gisin = cls.gisin.length ? cls.gisin.map(elemName).join(' · ') : '없음';
+    const dom = result.ohaeng.counts
+      .map((c, i) => ({ c, i }))
+      .filter(x => x.c >= 2)
+      .sort((a, b) => b.c - a.c)
+      .slice(0, 2)
+      .map(x => `${elemName(x.i)} ${x.c}개`)
+      .join(', ') || '없음';
+    const lack = result.ohaeng.counts
+      .map((c, i) => ({ c, i }))
+      .filter(x => x.c === 0)
+      .map(x => elemName(x.i))
+      .join(', ') || '없음';
+
+    return [
+      `일간은 ${STEMS[dayStemIdx]}(${STEMS_H[dayStemIdx]})이고, 전체 균형은 ${strength.isWeak ? '신약(身弱)' : '신강(身强)'} 쪽이에요.`,
+      `오행 분포에서 지배 오행은 ${dom}, 부족 오행은 ${lack}로 잡혔어요.`,
+      `용신(用神)은 ${yongsin}이고, 희신(喜神)은 ${huisin}이에요.`,
+      `기신(忌神)은 ${gisin}로 분류돼요. 이 관점으로 전 항목이 일관되게 써져요.`,
+    ];
+  }, [result]);
+
+  const calcSteps = useMemo(() => ([
+    '만세력 기준으로 연·월·일·시 간지를 계산하는 중...',
+    '오행 분포와 음양 균형을 정리하는 중...',
+    '신강·신약을 가중치로 판정하는 중...',
+    '용신·희신·기신 분류 규칙을 적용하는 중...',
+    '신살과 대운 흐름을 매핑하는 중...',
+  ]), []);
 
   // 타이핑 효과 구현 (사용자가 읽는 속도에 맞춰 자연스럽게 출력)
   function typeEffect(text: string) {
@@ -462,6 +523,54 @@ export default function Home() {
             animation:'spin .8s linear infinite', margin:'0 auto 14px' }} />
           <p style={{ color:'var(--muted)', fontSize:'.88rem' }}>사주를 정밀 분석 중입니다...</p>
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+          <div style={{
+            marginTop: 16,
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 14,
+            padding: '14px 16px',
+            maxWidth: 760,
+            marginLeft: 'auto',
+            marginRight: 'auto',
+            textAlign: 'left',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 800, fontSize: '.88rem' }}>지금 사주 원국을 계산하고 있어요</div>
+              <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>잠시만 기다려주세요</div>
+            </div>
+
+            <div style={{ height: 10 }} />
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              {calcSteps.slice(0, Math.min(calcSteps.length, Math.max(1, calcTick))).map((t, i) => (
+                <div key={i} style={{
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'flex-start',
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  background: 'rgba(0,0,0,0.18)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <span className="rotating-star" style={{ marginTop: 1, fontSize: '.9rem', lineHeight: 1 }}>✦</span>
+                  <div style={{ fontSize: '.84rem', color: 'rgba(248,246,255,.92)', lineHeight: 1.75 }}>
+                    {t}
+                  </div>
+                </div>
+              ))}
+
+              {calcTick < calcSteps.length && (
+                <div className="ai-wait-skeleton" style={{
+                  height: 44,
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  background: 'rgba(0,0,0,0.18)',
+                  overflow: 'hidden',
+                }} />
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -602,6 +711,57 @@ export default function Home() {
                 ) : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
               </button>
             </div>
+
+            {aiLoading && (
+              <div style={{
+                marginTop: 14,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                borderRadius: 14,
+                padding: '14px 16px',
+                maxWidth: 760,
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                  <div style={{ fontWeight: 800, fontSize: '.88rem' }}>지금 AI가 사주를 풀이하는 중이에요</div>
+                  <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>
+                    {steps[loadingStep - 1] || '초안 작성 준비 중...'}
+                  </div>
+                </div>
+
+                <div style={{ height: 10 }} />
+
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {waitFacts.slice(0, Math.min(waitFacts.length, Math.max(1, waitTick))).map((t, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      gap: 10,
+                      alignItems: 'flex-start',
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'rgba(0,0,0,0.18)',
+                      border: '1px solid rgba(255,255,255,0.06)',
+                    }}>
+                      <span className="rotating-star" style={{ marginTop: 1, fontSize: '.9rem', lineHeight: 1 }}>✦</span>
+                      <div style={{ fontSize: '.84rem', color: 'rgba(248,246,255,.92)', lineHeight: 1.75 }}>
+                        {t}
+                      </div>
+                    </div>
+                  ))}
+
+                  {waitTick < waitFacts.length && (
+                    <div className="ai-wait-skeleton" style={{
+                      height: 44,
+                      borderRadius: 12,
+                      border: '1px solid rgba(255,255,255,0.06)',
+                      background: 'rgba(0,0,0,0.18)',
+                      overflow: 'hidden',
+                    }} />
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* 프리미엄 게이트 모달 */}
 

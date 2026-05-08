@@ -1,6 +1,6 @@
 # 사주팔자 — AI 심층 풀이
 
-생년월일·시간으로 60갑자 사주팔자를 계산하고, AI(Groq llama-3.3-70b)가 실시간 스트리밍으로 풀이해주는 웹 서비스입니다.
+생년월일·시간으로 60갑자 사주팔자를 계산하고, AI(Gemini 2.5 Flash)가 실시간 스트리밍으로 풀이해주는 웹 서비스입니다.
 
 ## 기능
 
@@ -8,7 +8,7 @@
 - 양력/음력 입력 지원
 - 오행 분석, 신살, 대운
 - 십신·12운성·지장간
-- AI 심층 풀이 (Groq 스트리밍 SSE)
+- AI 심층 풀이 (Gemini 스트리밍 SSE)
 - 건강·직업·운세·월별 탭
 
 ## 로컬 실행
@@ -23,17 +23,52 @@ npm run dev
 
 `.env.local` 파일을 생성하고 아래 값을 입력하세요. (`.env.local`은 gitignore 처리되어 있습니다)
 
-```
-GROQ_API_KEY=...
+```bash
+GOOGLE_AI_API_KEY=...
+ANTHROPIC_API_KEY=...          # 선택(프리미엄 경로용)
 KASI_SERVICE_KEY=...
-NEXT_PUBLIC_FEEDBACK_URL=...   # 피드백 수집 엔드포인트 (선택)
+NEXT_PUBLIC_GA_ID=...          # 선택
+NEXT_PUBLIC_PAYPAL_CLIENT_ID=...
+NEXT_PUBLIC_API_BASE=...       # 선택(기본은 현재 오리진)
+NEXT_PUBLIC_FEEDBACK_URL=...   # 선택(외부 수집 엔드포인트)
 ```
 
 ## 기술 스택
 
 - Next.js 16 (App Router) · TypeScript · Tailwind CSS
-- Groq API (llama-3.3-70b-versatile) — 스트리밍 SSE
+- Gemini 2.5 Flash API — 스트리밍 SSE
 - KASI 공공데이터 API — 음양력 변환
+
+## 버전 릴리즈
+
+Conventional Commit 메시지를 기준으로 버전/체인지로그를 자동 갱신합니다.
+
+```bash
+# 기본(커밋 내역 기준으로 자동 판단)
+npm run release
+
+# 강제 버전 타입 지정
+npm run release:patch
+npm run release:minor
+npm run release:major
+```
+
+실행 시 `package.json`, `CHANGELOG.md`가 업데이트되고 릴리즈 커밋 및 태그가 생성됩니다.
+
+### 커밋 메시지 규칙
+
+Husky + commitlint가 `commit-msg` 훅에서 Conventional Commit 형식을 검사합니다.
+
+- 예시: `feat: add AI analysis retry flow`
+- 예시: `fix: handle empty birth time input`
+
+### pre-commit 품질 게이트
+
+커밋 전에 Husky가 아래 검사를 자동 실행합니다.
+
+- `npm run lint:staged`
+
+`lint-staged` 설정으로 스테이징된 TypeScript(`.ts/.tsx/.mts/.cts`) 파일이 있을 때만 `npm run lint`를 실행하여 커밋 속도를 최적화합니다.
 
 ## 라이선스
 

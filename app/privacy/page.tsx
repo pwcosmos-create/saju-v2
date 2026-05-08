@@ -28,7 +28,7 @@ export default function PrivacyPage() {
 
       <section style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>3. 개인정보의 보유 및 파기</h2>
-        <p>사주 분석 자체를 위한 입력 정보는 즉시 파기됩니다. 다만, 서비스 개선을 위해 수집된 '피드백 데이터'는 개인 식별이 불가능한 상태로 보관되며, 목적 달성 후 지체 없이 파기됩니다.</p>
+        <p>사주 분석 자체를 위한 입력 정보는 즉시 파기됩니다. 다만 서비스 개선용 피드백 데이터는 개인 식별이 불가능한 형태로 서버 로그 파일에 저장될 수 있으며, 배포 환경 특성(재배포/인프라 교체)에 따라 보관 기간이 달라질 수 있습니다. 운영자는 목적 달성 후 지체 없이 파기합니다.</p>
       </section>
 
       <section style={{ marginBottom: 32 }}>

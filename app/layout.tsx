@@ -119,6 +119,7 @@ const WEBAPP_SCHEMA = {
 };
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -144,10 +145,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }} />
       </head>
       <body>
-        <Script 
-          src="https://www.paypal.com/sdk/js?client-id=AagriM6wPC0OV-teas4BeZ0rX8G6d-FxAG5H4WisfPMNcabwvMy3Ofdc-iArr91vfin9bFaY4wIhJ1mZ&currency=USD" 
-          strategy="beforeInteractive"
-        />
+        {PAYPAL_CLIENT_ID && (
+          <Script
+            src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD`}
+            strategy="beforeInteractive"
+          />
+        )}
         {children}
         <Analytics />
       </body>

@@ -1,6 +1,6 @@
 /**
  * SAJU-V2 CHAT WIDGET
- * Version: 2.0.2 (Draft-Review-Type & Premium Theme)
+ * Version: 2.0.3 (Draft-Review-Type & Premium Theme)
  * Last Updated: 2026-05-08
  */
 'use client';
@@ -24,7 +24,7 @@ import { classifyElements } from '../core/daily-fortune/classifier';
 
 const GENERATES = [1, 2, 3, 4, 0];
 
-// 타이핑 효과 함수 (v2.0.2)
+// 타이핑 효과 함수 (v2.0.3)
 function typeEffect(text: string, onUpdate: (t: string) => void, onDone?: () => void) {
   let index = 0;
   const speed = 15; // 타이핑 속도 (ms) - 긴 글 대응을 위해 상향 조정

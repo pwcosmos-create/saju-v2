@@ -1,5 +1,5 @@
 /**
- * AI Saju Stream Fetcher - v2.0.2
+ * AI Saju Stream Fetcher - v2.0.3
  * 
  * - 클라이언트 측 스트리밍 데이터 수신 및 버퍼링
  * - Draft-Review-Type 워크플로우를 위한 전체 데이터 수집 지원

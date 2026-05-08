@@ -28,6 +28,65 @@ function finalizeKoreanAnswer(text: string): string {
   if (/(입니다|해요|돼요|하세요|좋아요|보입니다|가능합니다|필요합니다|있습니다|됩니다|드립니다)$/.test(cleaned)) return `${cleaned}.`;
   return `${cleaned}입니다.`;
 }
+
+function splitTtsChunks(text: string, maxLen = 220): string[] {
+  const normalized = stripHanja(text).replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+  const parts = normalized
+    .split(/(?<=[.!?。！？…])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.length) return [normalized.slice(0, maxLen)];
+
+  const chunks: string[] = [];
+  let current = '';
+  for (const p of parts) {
+    if ((current + ' ' + p).trim().length <= maxLen) {
+      current = (current ? `${current} ` : '') + p;
+      continue;
+    }
+    if (current) chunks.push(current);
+    if (p.length <= maxLen) {
+      current = p;
+      continue;
+    }
+    for (let i = 0; i < p.length; i += maxLen) {
+      chunks.push(p.slice(i, i + maxLen));
+    }
+    current = '';
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function speakKoreanQueued(text: string) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  const chunks = splitTtsChunks(text);
+  if (!chunks.length) return;
+
+  const synth = window.speechSynthesis;
+  // 새 응답 시작 시에만 이전 발화를 정리한다.
+  if (synth.speaking) synth.cancel();
+
+  const voices = synth.getVoices();
+  const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural')))
+               || voices.find(v => v.lang.includes('ko'));
+
+  const speakAt = (idx: number) => {
+    if (idx >= chunks.length) return;
+    const utt = new SpeechSynthesisUtterance(chunks[idx]);
+    if (koVoice) utt.voice = koVoice;
+    utt.lang = 'ko-KR';
+    utt.rate = 1.0;
+    utt.pitch = 1.05;
+    utt.onend = () => speakAt(idx + 1);
+    // 일부 브라우저에서 중간 오류가 나도 다음 청크로 이어서 읽는다.
+    utt.onerror = () => speakAt(idx + 1);
+    synth.speak(utt);
+  };
+
+  speakAt(0);
+}
 import { calculate, type SajuResult } from '../core/pillar-calc/main-calculator';
 import {
   STEMS, BRANCHES, STEMS_H, BRANCHES_H,
@@ -496,19 +555,7 @@ export default function ChatWidget({
           setLoading(false);
           const finalized = finalizeKoreanAnswer(buffer);
           // 실시간 대화감 강화를 위해 타이핑 시작과 동시에 TTS를 재생한다.
-          if (typeof window !== 'undefined' && window.speechSynthesis && finalized) {
-            window.speechSynthesis.cancel();
-            const ttsText = stripHanja(finalized).slice(0, 600);
-            const utt = new SpeechSynthesisUtterance(ttsText);
-            const voices = window.speechSynthesis.getVoices();
-            const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural')))
-                          || voices.find(v => v.lang.includes('ko'));
-            if (koVoice) utt.voice = koVoice;
-            utt.lang = 'ko-KR';
-            utt.rate = 1.0;
-            utt.pitch = 1.05;
-            window.speechSynthesis.speak(utt);
-          }
+          if (finalized) speakKoreanQueued(finalized);
           typeEffect(finalized, (typed) => {
             setMsgs(prev => {
               const u = [...prev];

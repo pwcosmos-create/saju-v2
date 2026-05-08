@@ -186,7 +186,7 @@ export default function Home() {
   function doAnalyze() {
     const y = parseInt(year), m = parseInt(month), d = parseInt(day);
     if (!y||!m||!d) { alert('생년월일을 모두 입력해주세요.'); return; }
-    if (y<1900||y>2025) { alert('년도는 1900~2025 사이로 입력해주세요.'); return; }
+    if (y < 1900 || y > THIS_YEAR) { alert(`년도는 1900~${THIS_YEAR} 사이로 입력해주세요.`); return; }
     let sy=y, sm=m, sd=d;
     if (lunar) {
       if (!_ms) { alert('음력 변환 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
@@ -487,7 +487,7 @@ export default function Home() {
                 )}
               </div>
               <div style={{ display:'flex', gap:8 }}>
-                <input type="number" placeholder="년도 (예: 1990)" min={1900} max={2025}
+                <input type="number" placeholder="년도 (예: 1990)" min={1900} max={THIS_YEAR}
                   value={year} onChange={e=>setYear(e.target.value)} style={{ ...inputStyle, flex:2 }} />
                 <button
                   type="button"

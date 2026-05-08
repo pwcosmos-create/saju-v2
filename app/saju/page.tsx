@@ -140,6 +140,7 @@ export default function Home() {
   const [fbDone,   setFbDone]   = useState(false);
   const [comment,  setComment]  = useState('');
   const [copied,        setCopied]        = useState(false);
+  const [activeDatePicker, setActiveDatePicker] = useState<'month' | 'day' | null>(null);
 
   const lastResult = useRef<SajuResult | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -488,14 +489,20 @@ export default function Home() {
               <div style={{ display:'flex', gap:8 }}>
                 <input type="number" placeholder="년도 (예: 1990)" min={1900} max={2025}
                   value={year} onChange={e=>setYear(e.target.value)} style={{ ...inputStyle, flex:2 }} />
-                <select value={month} onChange={e=>setMonth(e.target.value)} style={{ ...selectStyle, flex:1 }}>
-                  <option value="">월</option>
-                  {Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}월</option>)}
-                </select>
-                <select value={day} onChange={e=>setDay(e.target.value)} style={{ ...selectStyle, flex:1 }}>
-                  <option value="">일</option>
-                  {Array.from({length:31},(_,i)=><option key={i+1} value={i+1}>{i+1}일</option>)}
-                </select>
+                <button
+                  type="button"
+                  onClick={() => setActiveDatePicker('month')}
+                  style={{ ...selectStyle, flex:1, textAlign:'left', cursor:'pointer' }}
+                >
+                  {month ? `${month}월` : '월'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDatePicker('day')}
+                  style={{ ...selectStyle, flex:1, textAlign:'left', cursor:'pointer' }}
+                >
+                  {day ? `${day}일` : '일'}
+                </button>
               </div>
             </div>
 
@@ -513,6 +520,76 @@ export default function Home() {
             borderRadius:10, color:'#fff', fontSize:'.98rem', fontWeight:700, cursor:'pointer',
           }}>✦ 사주팔자 정밀 분석하기</button>
         </div>
+
+        {activeDatePicker && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setActiveDatePicker(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,.55)',
+              zIndex: 1200,
+              display: 'flex',
+              alignItems: 'flex-end',
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: 760,
+                margin: '0 auto',
+                background: '#171433',
+                borderTop: '1px solid var(--border)',
+                borderRadius: '16px 16px 0 0',
+                padding: '14px 14px 18px',
+              }}
+            >
+              <div style={{ fontSize: '.92rem', fontWeight: 800, marginBottom: 10 }}>
+                {activeDatePicker === 'month' ? '월 선택' : '일 선택'}
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                  gap: 8,
+                  maxHeight: '42vh',
+                  overflowY: 'auto',
+                }}
+              >
+                {Array.from({ length: activeDatePicker === 'month' ? 12 : 31 }, (_, i) => {
+                  const value = String(i + 1);
+                  const selected = activeDatePicker === 'month' ? month === value : day === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        if (activeDatePicker === 'month') setMonth(value);
+                        else setDay(value);
+                        setActiveDatePicker(null);
+                      }}
+                      style={{
+                        padding: '10px 6px',
+                        borderRadius: 10,
+                        border: selected ? '1px solid #7f66d8' : '1px solid var(--border)',
+                        background: selected ? 'rgba(127,102,216,.25)' : 'rgba(255,255,255,.05)',
+                        color: selected ? '#ffffff' : 'var(--text)',
+                        fontSize: '.86rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {value}{activeDatePicker === 'month' ? '월' : '일'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ── Loading ── */}

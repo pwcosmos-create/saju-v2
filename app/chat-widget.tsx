@@ -160,6 +160,25 @@ function isPaymentExemptTarget(r: SajuResult | null): boolean {
   return PAYMENT_EXEMPT_BIRTHDAYS.has(`${r.input.year}-${r.input.month}-${r.input.day}`);
 }
 
+function buildPreviewMessage(r: SajuResult): string {
+  const dp = r.pillars[2];
+  const ds = dp?.s ?? 0;
+  const dayElement = ELEM_NAMES[STEM_ELEM[ds]];
+  const topElem = r.ohaeng.counts
+    .map((count, idx) => ({ count, idx }))
+    .sort((a, b) => b.count - a.count)[0]?.idx ?? 0;
+  const weakElem = r.ohaeng.counts
+    .map((count, idx) => ({ count, idx }))
+    .sort((a, b) => a.count - b.count)[0]?.idx ?? 0;
+
+  return `무료 미리보기 1회 결과입니다.
+- 핵심 성향: ${STEMS[ds]} 일간(${dayElement}) 기반으로 주도성과 현실감이 함께 작동합니다.
+- 현재 포인트: 오행 중 ${ELEM_NAMES[topElem]} 기운이 상대적으로 강해 해당 성향이 두드러집니다.
+- 보완 포인트: ${ELEM_NAMES[weakElem]} 기운을 보강하는 생활 루틴을 잡으면 균형이 더 좋아집니다.
+
+심층 상담에서는 연애/관계, 일/직업, 금전/건강까지 질문형으로 더 깊게 이어갈 수 있어요.`;
+}
+
 interface Msg { role: 'user' | 'assistant'; content: string; }
 interface CompareForm {
   year: string;
@@ -189,6 +208,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   const [compareResult, setCompareResult] = useState<SajuResult | null>(null);
   const [compareError, setCompareError] = useState('');
   const [showCompareForm, setShowCompareForm] = useState(false);
+  const [previewUsed, setPreviewUsed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const paypalRef = useRef<HTMLDivElement>(null);
   const paypalExtendRef = useRef<HTMLDivElement>(null);
@@ -227,6 +247,15 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !result) {
+      setPreviewUsed(false);
+      return;
+    }
+    const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
+    setPreviewUsed(localStorage.getItem(key) === '1');
+  }, [result]);
 
   // Timer for remaining time
   useEffect(() => {
@@ -483,6 +512,14 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
   }
 
+  function usePreviewOnce() {
+    if (!result || previewUsed) return;
+    const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
+    setPreviewUsed(true);
+    if (typeof window !== 'undefined') localStorage.setItem(key, '1');
+    setMsgs(prev => [...prev, { role: 'assistant', content: buildPreviewMessage(result) }]);
+  }
+
   return (
     <>
       {/* Chat Panel */}
@@ -658,6 +695,30 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
             <div style={{ color: '#e8c97e', fontSize: '.85rem', marginBottom: '15px', fontWeight: 600 }}>
               심층 풀이 기반 AI 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다
             </div>
+            {!previewUsed && (
+              <button
+                type="button"
+                onClick={usePreviewOnce}
+                style={{
+                  marginBottom: 12,
+                  padding: '9px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(139,111,198,.45)',
+                  background: 'rgba(139,111,198,.16)',
+                  color: '#d9c9ff',
+                  fontSize: '.8rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                무료 미리보기 1회 받기
+              </button>
+            )}
+            {previewUsed && (
+              <div style={{ color: 'rgba(255,255,255,.72)', fontSize: '.76rem', marginBottom: 10 }}>
+                무료 미리보기 1회를 사용했습니다. 계속 상담하려면 결제를 진행해 주세요.
+              </div>
+            )}
             <div ref={paypalRef} />
           </div>
         ) : (

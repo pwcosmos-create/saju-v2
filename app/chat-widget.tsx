@@ -124,6 +124,7 @@ const MAX_SESSION_SECONDS = 120 * 60;
 const TYPE_SPEED_MS = 15;
 const TTS_RATE = 1.0;
 const TTS_PITCH = 1.05;
+const COUNSELOR_NAMES = ['도화', '현월', '지안', '서윤', '유진'] as const;
 const PAYMENT_EXEMPT_BIRTHDAYS = new Set([
   '1974-3-10',
   '1975-6-13',
@@ -315,6 +316,8 @@ export default function ChatWidget({
   const [ttsMode, setTtsMode] = useState<'server' | 'browser'>('server');
   const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [selectedCounselor, setSelectedCounselor] = useState<string>('도화');
+  const [introSpoken, setIntroSpoken] = useState(false);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
@@ -416,11 +419,15 @@ export default function ChatWidget({
     if (typeof window === 'undefined' || !result) {
       setPreviewUsed(false);
       setPreviewUnlocked(false);
+      setIntroSpoken(false);
       return;
     }
     const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
     setPreviewUsed(sessionStorage.getItem(key) === '1');
     setPreviewUnlocked(false);
+    setIntroSpoken(false);
+    const counselor = COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
+    setSelectedCounselor(counselor);
   }, [result]);
 
   // Timer for remaining time
@@ -485,11 +492,18 @@ export default function ChatWidget({
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이 상담은 AI 심층 풀이를 기반으로 진행되는 맞춤 상담입니다.\n${isExemptUser ? '결제 예외 대상이므로 바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
+          ? `안녕하세요! AI 심층 상담사입니다.\n이번 상담은 랜덤 상담사 '${selectedCounselor}'가 함께합니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이 상담은 AI 심층 풀이를 기반으로 진행되는 맞춤 상담입니다.\n${isExemptUser ? '결제 예외 대상이므로 바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
-  }, [open, result, isExemptUser]);
+  }, [open, result, isExemptUser, selectedCounselor]);
+
+  useEffect(() => {
+    if (!open || !result || introSpoken || !canStartCounseling) return;
+    const intro = `이번 상담은 랜덤 상담사 ${selectedCounselor}가 함께합니다. 궁금한 점을 편하게 물어보세요.`;
+    void speakWithPreferredMode(intro);
+    setIntroSpoken(true);
+  }, [open, result, canStartCounseling, introSpoken, selectedCounselor]);
 
   useEffect(() => {
     if (chatMode === 'single') return;
@@ -803,6 +817,9 @@ export default function ChatWidget({
             </div>
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
               음성 모드 {ttsMode === 'server' ? '서버 TTS' : '브라우저 TTS'} · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}
+            </div>
+            <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
+              랜덤 상담사: {selectedCounselor}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>

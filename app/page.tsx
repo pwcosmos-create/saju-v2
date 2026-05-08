@@ -150,7 +150,7 @@ export default function LandingPage() {
           color: '#8b6fc6', maxWidth: 520, lineHeight: 1.7, marginBottom: 48,
         }}>
           생년월일과 태어난 시간을 입력하면<br/>
-          텍스트/음성 채팅으로 성향 분석 기반 AI 심층 상담까지 이어집니다
+          AI 심층 풀이를 바탕으로 텍스트/음성 맞춤 상담까지 이어집니다
         </p>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 64 }}>
@@ -219,7 +219,7 @@ export default function LandingPage() {
           fontWeight: 700,
           letterSpacing: '.01em',
         }}>
-          분석은 무료 · AI 심층 상담은 1,000원 (이벤트 기간: 30,000원 → 1,000원)
+          분석은 무료 · 심층 풀이 기반 AI 상담은 1,000원 (이벤트 기간: 30,000원 → 1,000원)
         </div>
       </section>
 
@@ -324,7 +324,7 @@ export default function LandingPage() {
           지금 바로 내 사주를<br/>확인해보세요
         </h2>
         <p style={{ color: '#6b6490', marginBottom: 40, fontSize: '.95rem' }}>
-          분석은 무료로 시작하고, 필요 시 AI 심층 상담(1,000원)으로 이어가세요
+          무료 분석 후 심층 풀이 기반 AI 상담(1,000원)으로 이어가세요
         </p>
         <Link href="/saju" style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,

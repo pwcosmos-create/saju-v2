@@ -879,7 +879,7 @@ export default function Home() {
         </p>
       </footer>
       </div>{/* /z-index wrapper */}
-      <ChatWidget result={result} />
+      <ChatWidget result={result} aiSummaryReady={Boolean(aiText.trim())} />
     </div>
   );
 }

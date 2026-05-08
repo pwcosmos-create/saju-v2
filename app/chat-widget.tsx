@@ -182,7 +182,13 @@ interface CompareForm {
   gender: '남' | '여';
 }
 
-export default function ChatWidget({ result }: { result: SajuResult | null }) {
+export default function ChatWidget({
+  result,
+  aiSummaryReady,
+}: {
+  result: SajuResult | null;
+  aiSummaryReady: boolean;
+}) {
   const [open, setOpen]       = useState(false);
   const [msgs, setMsgs]       = useState<Msg[]>([]);
   const [input, setInput]     = useState('');
@@ -211,6 +217,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   const recogRef  = useRef<any>(null);
   const isExemptUser = isPaymentExemptTarget(result);
   const targetKey = getTargetKey(result);
+  const canStartCounseling = Boolean(result && aiSummaryReady);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
@@ -583,6 +590,8 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
               {isExemptUser
                 ? '결제 예외 대상 - 바로 상담 가능합니다'
+                : !canStartCounseling
+                  ? '먼저 AI 풀이 받기를 완료해 주세요'
                 : isPaid && timeLeft !== null
                   ? `남은 상담 시간: ${formatTime(timeLeft)}`
                   : 'AI 심층 풀이 기반 텍스트/음성 맞춤 상담'}
@@ -722,7 +731,19 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         </div>
 
         {/* Input or Payment */}
-        {!isPaid && result && !isExemptUser && !previewUnlocked ? (
+        {!canStartCounseling ? (
+          <div style={{
+            padding: '20px', borderTop: '1px solid rgba(255,255,255,.08)',
+            textAlign: 'center', background: 'rgba(255,255,255,.02)',
+          }}>
+            <div style={{ color: '#e8c97e', fontSize: '.85rem', marginBottom: '10px', fontWeight: 700 }}>
+              AI 풀이 받기 완료 후 심층 상담을 시작할 수 있습니다
+            </div>
+            <div style={{ color: 'rgba(255,255,255,.72)', fontSize: '.76rem', lineHeight: 1.5 }}>
+              먼저 AI 풀이를 읽어본 뒤 질문하면 더 정확하고 깊은 상담을 받을 수 있어요.
+            </div>
+          </div>
+        ) : !isPaid && result && !isExemptUser && !previewUnlocked ? (
           <div style={{
             padding: '20px', borderTop: '1px solid rgba(255,255,255,.08)',
             textAlign: 'center', background: 'rgba(255,255,255,.02)',
@@ -837,6 +858,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
             cursor: 'pointer', fontSize: '1.4rem',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff',
+            opacity: canStartCounseling ? 1 : 0.8,
             transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
           onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}

@@ -1,8 +1,13 @@
+/**
+ * SAJU-V2 MAIN PAGE
+ * Version: 2.0.0 (AI Sparkle Branding & Monetization)
+ * Last Updated: 2026-05-08
+ */
 import Link from 'next/link';
 
 const FEATURES = [
   {
-    icon: '☯',
+    icon: '✨',
     title: '사주팔자 정밀 계산',
     desc: '진짜만세력(고영창) 기반 60갑자 사주팔자를 정밀하게 계산합니다. 양력·음력 모두 지원.',
     color: '#f5d67a',
@@ -14,7 +19,7 @@ const FEATURES = [
     color: '#c4a8ff',
   },
   {
-    icon: '◎',
+    icon: '💎',
     title: '오행·신살·대운',
     desc: '오행 분포, 천을귀인 등 신살, 10년 대운 흐름까지 한눈에 분석합니다.',
     color: '#5dce70',
@@ -285,6 +290,7 @@ export default function LandingPage() {
           <span style={{ fontWeight: 700 }}>AI사주</span> — 사주팔자 무료 분석
         </div>
         <div>본 서비스는 전통 동양 철학 기반 참고용 정보입니다.</div>
+        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v2.0.0</div>
       </footer>
     </div>
   );

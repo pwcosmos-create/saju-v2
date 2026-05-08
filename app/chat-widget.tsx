@@ -1,3 +1,8 @@
+/**
+ * SAJU-V2 CHAT WIDGET
+ * Version: 2.0.0 (PayPal Payment & 30m Timer)
+ * Last Updated: 2026-05-08
+ */
 'use client';
 import { useState, useRef, useEffect } from 'react';
 

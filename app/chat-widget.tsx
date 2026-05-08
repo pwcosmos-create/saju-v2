@@ -165,25 +165,6 @@ function getTargetKey(r: SajuResult | null): string {
   return `${r.input.year}-${r.input.month}-${r.input.day}-${r.input.gender}`;
 }
 
-function buildPreviewMessage(r: SajuResult): string {
-  const dp = r.pillars[2];
-  const ds = dp?.s ?? 0;
-  const dayElement = ELEM_NAMES[STEM_ELEM[ds]];
-  const topElem = r.ohaeng.counts
-    .map((count, idx) => ({ count, idx }))
-    .sort((a, b) => b.count - a.count)[0]?.idx ?? 0;
-  const weakElem = r.ohaeng.counts
-    .map((count, idx) => ({ count, idx }))
-    .sort((a, b) => a.count - b.count)[0]?.idx ?? 0;
-
-  return `무료 미리보기 1회 결과입니다.
-- 핵심 성향: ${STEMS[ds]} 일간(${dayElement}) 기반으로 주도성과 현실감이 함께 작동합니다.
-- 현재 포인트: 오행 중 ${ELEM_NAMES[topElem]} 기운이 상대적으로 강해 해당 성향이 두드러집니다.
-- 보완 포인트: ${ELEM_NAMES[weakElem]} 기운을 보강하는 생활 루틴을 잡으면 균형이 더 좋아집니다.
-
-심층 상담에서는 연애/관계, 일/직업, 금전/건강까지 질문형으로 더 깊게 이어갈 수 있어요.`;
-}
-
 interface Msg { role: 'user' | 'assistant'; content: string; }
 interface CompareForm {
   year: string;
@@ -214,6 +195,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   const [compareError, setCompareError] = useState('');
   const [showCompareForm, setShowCompareForm] = useState(false);
   const [previewUsed, setPreviewUsed] = useState(false);
+  const [previewUnlocked, setPreviewUnlocked] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const paypalRef = useRef<HTMLDivElement>(null);
   const paypalExtendRef = useRef<HTMLDivElement>(null);
@@ -277,10 +259,12 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   useEffect(() => {
     if (typeof window === 'undefined' || !result) {
       setPreviewUsed(false);
+      setPreviewUnlocked(false);
       return;
     }
     const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
     setPreviewUsed(sessionStorage.getItem(key) === '1');
+    setPreviewUnlocked(false);
   }, [result]);
 
   // Timer for remaining time
@@ -439,6 +423,13 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   async function send(text: string = input) {
     const trimmed = text.trim();
     if (!trimmed || loading || !result) return;
+    if (!isPaid && !isExemptUser && !previewUnlocked) {
+      setMsgs(prev => [...prev, {
+        role: 'assistant',
+        content: '무료 미리보기 1회를 먼저 시작하거나 결제를 진행해 주세요.',
+      }]);
+      return;
+    }
     if (chatMode === 'compatibility' && !compareResult) {
       setMsgs(prev => [...prev, {
         role: 'assistant',
@@ -501,6 +492,12 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
               utt.pitch = 1.05;
               window.speechSynthesis.speak(utt);
             }
+            if (!isPaid && !isExemptUser && previewUnlocked) {
+              const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
+              setPreviewUnlocked(false);
+              setPreviewUsed(true);
+              if (typeof window !== 'undefined') sessionStorage.setItem(key, '1');
+            }
           });
         }, 1200);
       },
@@ -542,10 +539,11 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
 
   function usePreviewOnce() {
     if (!result || previewUsed) return;
-    const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
-    setPreviewUsed(true);
-    if (typeof window !== 'undefined') sessionStorage.setItem(key, '1');
-    setMsgs(prev => [...prev, { role: 'assistant', content: buildPreviewMessage(result) }]);
+    setPreviewUnlocked(true);
+    setMsgs(prev => [...prev, {
+      role: 'assistant',
+      content: '무료 미리보기 1회가 시작되었습니다. 궁금한 점을 1개 질문해 주세요.',
+    }]);
   }
 
   return (
@@ -715,7 +713,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         </div>
 
         {/* Input or Payment */}
-        {!isPaid && result && !isExemptUser ? (
+        {!isPaid && result && !isExemptUser && !previewUnlocked ? (
           <div style={{
             padding: '20px', borderTop: '1px solid rgba(255,255,255,.08)',
             textAlign: 'center', background: 'rgba(255,255,255,.02)',
@@ -769,7 +767,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
                 placeholder={result ? (chatMode === 'compatibility' ? '궁합/비교 질문을 입력하세요...' : '질문을 입력하세요...') : '사주 분석 먼저 해주세요'}
-                disabled={loading || !result || !isPaid}
+                disabled={loading || !result || (!isPaid && !previewUnlocked)}
                 style={{
                   flex: 1, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.12)',
                   borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
@@ -782,11 +780,11 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
                 borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
                 cursor: 'pointer', fontSize: '1rem', animation: listening ? 'pulse 1s infinite' : 'none',
               }}>🎤</button>
-              <button onClick={() => send()} disabled={loading || !input.trim() || !result || !isPaid} style={{
+              <button onClick={() => send()} disabled={loading || !input.trim() || !result || (!isPaid && !previewUnlocked)} style={{
                 padding: '9px 14px',
                 background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
                 borderRadius: 10, color: '#e8c97e', cursor: 'pointer', fontWeight: 700, fontSize: '.87rem',
-                opacity: loading || !input.trim() || !result || !isPaid ? 0.45 : 1,
+                opacity: loading || !input.trim() || !result || (!isPaid && !previewUnlocked) ? 0.45 : 1,
               }}>전송</button>
             </div>
           </div>

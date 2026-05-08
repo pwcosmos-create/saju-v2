@@ -280,7 +280,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       return;
     }
     const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
-    setPreviewUsed(localStorage.getItem(key) === '1');
+    setPreviewUsed(sessionStorage.getItem(key) === '1');
   }, [result]);
 
   // Timer for remaining time
@@ -544,7 +544,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
     if (!result || previewUsed) return;
     const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
     setPreviewUsed(true);
-    if (typeof window !== 'undefined') localStorage.setItem(key, '1');
+    if (typeof window !== 'undefined') sessionStorage.setItem(key, '1');
     setMsgs(prev => [...prev, { role: 'assistant', content: buildPreviewMessage(result) }]);
   }
 

@@ -29,6 +29,18 @@ function finalizeKoreanAnswer(text: string): string {
   return `${cleaned}입니다.`;
 }
 
+function addFollowUpPrompt(text: string, userTurn: number): string {
+  const normalized = text.trim();
+  if (!normalized) return normalized;
+  const prompts = [
+    '추가로 궁금한 점이 있으면 이어서 물어봐 주세요.',
+    '원하시면 연애·직업·재물 중 한 가지를 더 깊게 봐드릴게요.',
+    '다른 질문도 괜찮아요. 편하게 이어가세요.',
+  ];
+  const prompt = prompts[userTurn % prompts.length];
+  return `${normalized}\n\n${prompt}`;
+}
+
 function splitTtsChunks(text: string, maxLen = 220): string[] {
   const normalized = stripHanja(text).replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
@@ -556,7 +568,8 @@ export default function ChatWidget({
 
         setTimeout(() => {
           setLoading(false);
-          const finalized = finalizeKoreanAnswer(buffer);
+          const userTurn = newMsgs.filter((m) => m.role === 'user').length;
+          const finalized = addFollowUpPrompt(finalizeKoreanAnswer(buffer), userTurn);
           // 실시간 대화감 강화를 위해 타이핑 시작과 동시에 TTS를 재생한다.
           if (finalized) speakKoreanQueued(finalized);
           typeEffect(finalized, (typed) => {

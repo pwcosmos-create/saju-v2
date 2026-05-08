@@ -72,9 +72,15 @@ export default function LandingPage() {
       <style>{`
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes twinkle {
+          0%, 100% { opacity: 0.35; transform: scale(1); filter: drop-shadow(0 0 0 rgba(196,168,255,0)); }
+          40% { opacity: 0.75; transform: scale(1.06); filter: drop-shadow(0 0 8px rgba(196,168,255,0.45)); }
+          70% { opacity: 0.55; transform: scale(0.98); filter: drop-shadow(0 0 4px rgba(196,168,255,0.25)); }
+        }
         .rotating-star { animation: rotate 2s linear infinite; display: inline-block; }
         .analyzing-btn { animation: pulse 1.5s infinite; }
         .btn-shine { position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); animation: shine 2s infinite; }
+        .hero-twinkle { animation: twinkle 2.6s ease-in-out infinite; transform-origin: center; }
         @keyframes shine { to { left: 100%; } }
       `}</style>
 
@@ -178,7 +184,7 @@ export default function LandingPage() {
           </button>
         </div>
 
-        <div style={{ marginTop: 40, opacity: 0.25, userSelect: 'none' }}>
+        <div className="hero-twinkle" style={{ marginTop: 40, opacity: 0.25, userSelect: 'none' }}>
           <svg width="120" height="120" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
             <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>

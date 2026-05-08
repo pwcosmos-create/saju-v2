@@ -127,6 +127,7 @@ const TTS_PITCH = 1.05;
 const PAYMENT_EXEMPT_BIRTHDAYS = new Set([
   '1974-3-10',
   '1975-6-13',
+  '1976-4-25',
 ]);
 const miniInputStyle = {
   background: 'rgba(255,255,255,.06)',

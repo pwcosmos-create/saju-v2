@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import ChatWidget from '../chat-widget';
 import { calculate, SajuResult } from '../../core/pillar-calc/main-calculator';
@@ -300,19 +301,25 @@ export default function Home() {
         backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:100,
         background:'rgba(13,11,30,.8)',
       }}>
-        <a href="#" style={{ display:'flex', alignItems:'center', gap:10, textDecoration:'none', color:'var(--text)' }}>
-          <div style={{ width:36, height:36, background:'linear-gradient(135deg,#8b6fc6,#4a9eff)',
-            borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.1rem' }}>☯</div>
-          <span style={{ fontWeight:800, fontSize:'1.1rem' }}>사주<span style={{ color:'var(--gold)' }}>팔자</span></span>
-        </a>
+        <Link href="/" style={{ display:'flex', alignItems:'center', gap:10, textDecoration:'none', color:'var(--text)' }}>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
+            <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
+            <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
+          </svg>
+          <span style={{ fontWeight:800, fontSize:'1.2rem', letterSpacing: -1 }}>AI<span style={{ color:'var(--gold)' }}>사주</span></span>
+        </Link>
       </header>
 
       {/* ── Hero / Form ── */}
       <section className="hero-section">
-        <div style={{ display:'inline-block', background:'rgba(139,111,198,.2)',
+        <div style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(139,111,198,.2)',
           border:'1px solid rgba(139,111,198,.4)', color:'#c4a8ff',
           fontSize:'.78rem', fontWeight:700, padding:'5px 14px', borderRadius:100, marginBottom:22 }}>
-          ✦ 무료 사주팔자 정밀 분석
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+          </svg>
+          무료 사주팔자 정밀 분석
         </div>
         <h1 style={{ fontSize:'clamp(1.8rem,5vw,2.8rem)', fontWeight:900, letterSpacing:-1, lineHeight:1.2, marginBottom:14 }}>
           나의 <span style={{ color:'var(--gold)' }}>사주팔자</span>를<br/>알아보세요

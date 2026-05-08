@@ -1,6 +1,7 @@
+'use client';
 /**
  * SAJU-V2 MAIN PAGE
- * Version: 2.0.2 (Animated Loading & Review UX)
+ * Version: 2.0.3 (Build Fix: use client directive)
  * Last Updated: 2026-05-08
  */
 import Link from 'next/link';

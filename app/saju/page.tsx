@@ -525,7 +525,7 @@ export default function Home() {
                   <input placeholder="한마디 (선택)" value={comment} onChange={e=>setComment(e.target.value)}
                     style={{ flex:1,minWidth:160,background:'rgba(255,255,255,.06)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:'.85rem',outline:'none' }} />
                 </div>
-                <p style={{ fontSize:'.7rem', color:'var(--muted)', marginTop:8, opacity:0.7, wordBreak:'keep-all' }}>
+                <p style={{ fontSize:'.75rem', color:'#e05555', marginTop:10, wordBreak:'keep-all', fontWeight:500 }}>
                   * 피드백 데이터는 AI 품질 개선 목적으로만 익명 수집됩니다. 이름, 연락처 등 개인정보를 입력하지 마세요.
                 </p>
               </div>

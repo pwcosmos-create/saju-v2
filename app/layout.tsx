@@ -7,6 +7,7 @@ export const viewport: Viewport = {
   themeColor: '#0d0b1e',
 };
 import './globals.css';
+import { Analytics } from '@vercel/analytics/react';
 
 const SITE_URL = 'https://saju.coupax.co.kr';
 const THIS_YEAR = new Date().getFullYear();
@@ -141,7 +142,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }

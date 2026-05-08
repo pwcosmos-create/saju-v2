@@ -6,6 +6,7 @@ function stripHanja(text: string): string {
   return text
     .replace(/\([^)]*[\u4E00-\u9FFF\u3400-\u4DBF][^)]*\)/g, '') // (한자) 괄호째 제거
     .replace(/[\u4E00-\u9FFF\u3400-\u4DBF]/g, '')                // 남은 한자 제거
+    .replace(/[*#\-_>`]/g, '')                                  // 마크다운 기호 제거
     .replace(/\s{2,}/g, ' ')                                      // 공백 정리
     .trim();
 }
@@ -137,9 +138,20 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         setLoading(false);
         if (typeof window !== 'undefined' && window.speechSynthesis && aiContent) {
           window.speechSynthesis.cancel();
-          const ttsText = stripHanja(aiContent).slice(0, 600); // 최대 3분 분량
+          const ttsText = stripHanja(aiContent).slice(0, 600);
           const utt = new SpeechSynthesisUtterance(ttsText);
-          utt.lang = 'ko-KR'; utt.rate = 1.05;
+          
+          // 가용한 목소리 중 가장 듣기 좋은 것 찾기 (주로 Google 한국어 또는 시스템 기본 프리미엄 보이스)
+          const voices = window.speechSynthesis.getVoices();
+          const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural'))) 
+                        || voices.find(v => v.lang.includes('ko'));
+          if (koVoice) utt.voice = koVoice;
+
+          utt.lang = 'ko-KR';
+          utt.rate = 1.0;  // 약간 더 천천히 (자연스럽게)
+          utt.pitch = 1.05; // 살짝 톤을 높여서 밝고 따뜻하게
+          utt.volume = 1.0;
+
           window.speechSynthesis.speak(utt);
         }
       },

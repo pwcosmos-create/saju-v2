@@ -1,5 +1,5 @@
 /**
- * AI Saju Fortune Stream API - v2.0.2
+ * AI Saju Fortune Stream API - v2.0.4
  * 
  * - Gemini 2.5 Flash를 통한 실시간 사주 분석 스트리밍
  * - max_tokens를 충분히 확보하여 끊김 방지 (16384)
@@ -37,12 +37,12 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: '잘못된 요청 형식' }), { status: 400 });
   }
 
-  const prompt = body.prompt?.slice(0, 8000);
+  const prompt = body.prompt?.slice(0, 20000); // blueprints.ts 전체 프롬프트 수용 (월별 데이터 포함)
   if (!prompt) return new Response(JSON.stringify({ error: 'prompt 없음' }), { status: 400 });
 
   const upstream = await fetchGroqStream({
     stream:      true,
-    max_tokens:  16384,
+    max_tokens:  32768, // Gemini 2.5 Flash 최대 출력 토큰
     temperature: 0.7,
     messages: [
       { role: 'system', content: SYSTEM },

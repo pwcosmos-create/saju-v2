@@ -478,20 +478,37 @@ export default function ChatWidget({
         buffer += chunk;
         setMsgs(prev => {
           const u = [...prev];
-          u[u.length - 1] = { role: 'assistant', content: '초안 작성 중... ✍️' };
+          u[u.length - 1] = {
+            role: 'assistant',
+            content: buffer.length < 120 ? '질문 이해 및 답변 작성 중... ✍️' : '답변 초안 정리 중... ✍️',
+          };
           return u;
         });
       },
       () => {
         setMsgs(prev => {
           const u = [...prev];
-          u[u.length - 1] = { role: 'assistant', content: '검토 및 정리 중... ✨' };
+          u[u.length - 1] = { role: 'assistant', content: '최종 검증 중... ✨' };
           return u;
         });
 
         setTimeout(() => {
           setLoading(false);
           const finalized = finalizeKoreanAnswer(buffer);
+          // 실시간 대화감 강화를 위해 타이핑 시작과 동시에 TTS를 재생한다.
+          if (typeof window !== 'undefined' && window.speechSynthesis && finalized) {
+            window.speechSynthesis.cancel();
+            const ttsText = stripHanja(finalized).slice(0, 600);
+            const utt = new SpeechSynthesisUtterance(ttsText);
+            const voices = window.speechSynthesis.getVoices();
+            const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural')))
+                          || voices.find(v => v.lang.includes('ko'));
+            if (koVoice) utt.voice = koVoice;
+            utt.lang = 'ko-KR';
+            utt.rate = 1.0;
+            utt.pitch = 1.05;
+            window.speechSynthesis.speak(utt);
+          }
           typeEffect(finalized, (typed) => {
             setMsgs(prev => {
               const u = [...prev];
@@ -499,20 +516,6 @@ export default function ChatWidget({
               return u;
             });
           }, () => {
-            // 타이핑 완료 후 TTS
-            if (typeof window !== 'undefined' && window.speechSynthesis && finalized) {
-              window.speechSynthesis.cancel();
-              const ttsText = stripHanja(finalized).slice(0, 600);
-              const utt = new SpeechSynthesisUtterance(ttsText);
-              const voices = window.speechSynthesis.getVoices();
-              const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural'))) 
-                            || voices.find(v => v.lang.includes('ko'));
-              if (koVoice) utt.voice = koVoice;
-              utt.lang = 'ko-KR';
-              utt.rate = 1.0;
-              utt.pitch = 1.05;
-              window.speechSynthesis.speak(utt);
-            }
             if (!isPaid && !isExemptUser && previewUnlocked) {
               const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
               setPreviewUnlocked(false);
@@ -520,7 +523,7 @@ export default function ChatWidget({
               if (typeof window !== 'undefined') sessionStorage.setItem(key, '1');
             }
           });
-        }, 1200);
+        }, 450);
       },
       (err) => {
         setMsgs(prev => {

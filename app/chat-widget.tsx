@@ -25,6 +25,10 @@ import { classifyElements } from '../core/daily-fortune/classifier';
 const GENERATES = [1, 2, 3, 4, 0];
 const SESSION_SECONDS = 30 * 60;
 const MAX_SESSION_SECONDS = 120 * 60;
+const PAYMENT_EXEMPT_BIRTHDAYS = new Set([
+  '1974-3-10',
+  '1975-6-13',
+]);
 const miniInputStyle = {
   background: 'rgba(255,255,255,.06)',
   border: '1px solid rgba(255,255,255,.12)',
@@ -151,6 +155,11 @@ ${buildChatContext(compare)}
 - 현실 적용 조언(연애/결혼/업무 협업 관점)`;
 }
 
+function isPaymentExemptTarget(r: SajuResult | null): boolean {
+  if (!r) return false;
+  return PAYMENT_EXEMPT_BIRTHDAYS.has(`${r.input.year}-${r.input.month}-${r.input.day}`);
+}
+
 interface Msg { role: 'user' | 'assistant'; content: string; }
 interface CompareForm {
   year: string;
@@ -185,6 +194,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   const paypalExtendRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
+  const isExemptUser = isPaymentExemptTarget(result);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
@@ -280,11 +290,11 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n텍스트/음성 채팅으로 성향 분석 기반 AI 심층 상담을 제공합니다.\nAI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯`
+          ? `안녕하세요! AI 심층 상담사입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n텍스트/음성 채팅으로 성향 분석 기반 AI 심층 상담을 제공합니다.\n${isExemptUser ? '결제 예외 대상이므로 바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
-  }, [open, result]);
+  }, [open, result, isExemptUser]);
 
   useEffect(() => {
     if (chatMode === 'single') return;
@@ -299,9 +309,20 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
   }, [chatMode]);
 
   useEffect(() => {
+    if (!isExemptUser) return;
+    setIsPaid(true);
+    setTimeLeft(null);
+    setExpiresAt(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('saju_chat_paid_at');
+      localStorage.removeItem('saju_chat_expires_at');
+    }
+  }, [isExemptUser]);
+
+  useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
-    if (!open || isPaid || !result || !w.paypal || !paypalRef.current || paypalRef.current.innerHTML !== '') return;
+    if (!open || isPaid || isExemptUser || !result || !w.paypal || !paypalRef.current || paypalRef.current.innerHTML !== '') return;
     w.paypal.Buttons({
       createOrder: (_data: any, actions: any) => actions.order.create({
         purchase_units: [{
@@ -326,7 +347,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         alert('결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
       }
     }).render(paypalRef.current);
-  }, [open, isPaid, result]);
+  }, [open, isPaid, result, isExemptUser]);
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -488,7 +509,11 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
               AI 심층 상담
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
-              {isPaid && timeLeft !== null ? `남은 상담 시간: ${formatTime(timeLeft)}` : '텍스트/음성 채팅으로 성향 분석 기반 상담을 제공합니다'}
+              {isExemptUser
+                ? '결제 예외 대상 - 바로 상담 가능합니다'
+                : isPaid && timeLeft !== null
+                  ? `남은 상담 시간: ${formatTime(timeLeft)}`
+                  : '텍스트/음성 채팅으로 성향 분석 기반 상담을 제공합니다'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -625,7 +650,7 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         </div>
 
         {/* Input or Payment */}
-        {!isPaid && result ? (
+        {!isPaid && result && !isExemptUser ? (
           <div style={{
             padding: '20px', borderTop: '1px solid rgba(255,255,255,.08)',
             textAlign: 'center', background: 'rgba(255,255,255,.02)',

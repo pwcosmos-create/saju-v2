@@ -19,9 +19,14 @@ function stripHanja(text: string): string {
 function finalizeKoreanAnswer(text: string): string {
   const t = text.trim();
   if (!t) return t;
-  if (/[.!?…]$/.test(t)) return t;
-  if (/(입니다|해요|돼요|하세요|좋아요|보입니다|가능합니다|필요합니다|있습니다)$/.test(t)) return `${t}.`;
-  return `${t}입니다.`;
+  const cleaned = t
+    .replace(/[,\-:;~\s]+$/g, '')
+    .replace(/(그리고|또한|다만|특히|예를 들면|예를 들어|즉|및)$/g, '')
+    .trim();
+  if (!cleaned) return '';
+  if (/[.!?…]$/.test(cleaned)) return cleaned;
+  if (/(입니다|해요|돼요|하세요|좋아요|보입니다|가능합니다|필요합니다|있습니다|됩니다|드립니다)$/.test(cleaned)) return `${cleaned}.`;
+  return `${cleaned}입니다.`;
 }
 import { calculate, type SajuResult } from '../core/pillar-calc/main-calculator';
 import {

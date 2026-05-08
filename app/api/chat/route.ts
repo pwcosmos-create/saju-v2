@@ -44,6 +44,7 @@ ${compareSajuContext}
 - 어려운 용어는 쉬운 말로 먼저 풀어주고, 필요할 때만 한글 뒤에 한자를 병기하세요
 - 3~4문장으로 핵심만 담아 여운 있게 마무리하세요
 - 따뜻하고 세련된 어투로, 듣는 사람이 위로받는 느낌이 들게 해주세요
+- 답변은 반드시 완성된 문장으로 끝내고, 문장 중간에서 끊기지 않게 마무리하세요
 
 사용자가 한국어로 질문하면 한국어로, 다른 언어로 질문하면 그 언어로 답변하세요. 단, 사주 용어는 한국 명리학 용어를 기준으로 유지하세요.
 
@@ -54,7 +55,7 @@ ${sajuContext}`;
 
   const upstream = await fetchLlmStream({
     stream: true,
-    max_tokens: 1024,
+    max_tokens: 1536,
     temperature: 0.7,
     messages: [
       { role: 'system', content: system },

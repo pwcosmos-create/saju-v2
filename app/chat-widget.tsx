@@ -77,8 +77,8 @@ function speakKoreanQueued(text: string) {
     const utt = new SpeechSynthesisUtterance(chunks[idx]);
     if (koVoice) utt.voice = koVoice;
     utt.lang = 'ko-KR';
-    utt.rate = 1.0;
-    utt.pitch = 1.05;
+    utt.rate = TTS_RATE;
+    utt.pitch = TTS_PITCH;
     utt.onend = () => speakAt(idx + 1);
     // 일부 브라우저에서 중간 오류가 나도 다음 청크로 이어서 읽는다.
     utt.onerror = () => speakAt(idx + 1);
@@ -97,6 +97,9 @@ import { classifyElements } from '../core/daily-fortune/classifier';
 const GENERATES = [1, 2, 3, 4, 0];
 const SESSION_SECONDS = 30 * 60;
 const MAX_SESSION_SECONDS = 120 * 60;
+const TYPE_SPEED_MS = 15;
+const TTS_RATE = 1.0;
+const TTS_PITCH = 1.05;
 const PAYMENT_EXEMPT_BIRTHDAYS = new Set([
   '1974-3-10',
   '1975-6-13',
@@ -124,7 +127,7 @@ const miniActionBtnStyle = {
 // 타이핑 효과 함수 (v2.0.3)
 function typeEffect(text: string, onUpdate: (t: string) => void, onDone?: () => void) {
   let index = 0;
-  const speed = 15; // 타이핑 속도 (ms) - 긴 글 대응을 위해 상향 조정
+  const speed = TYPE_SPEED_MS; // 타이핑 속도 (ms)
   
   const timer = setInterval(() => {
     if (index < text.length) {
@@ -650,6 +653,9 @@ export default function ChatWidget({
                 : isPaid && timeLeft !== null
                   ? `남은 상담 시간: ${formatTime(timeLeft)}`
                   : 'AI 심층 풀이 기반 텍스트/음성 맞춤 상담'}
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,.62)', marginTop: 2 }}>
+              타이핑 {TYPE_SPEED_MS}ms · 읽기 x{TTS_RATE.toFixed(1)}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>

@@ -15,6 +15,14 @@ function stripHanja(text: string): string {
     .replace(/\s{2,}/g, ' ')                                      // 공백 정리
     .trim();
 }
+
+function finalizeKoreanAnswer(text: string): string {
+  const t = text.trim();
+  if (!t) return t;
+  if (/[.!?…]$/.test(t)) return t;
+  if (/(입니다|해요|돼요|하세요|좋아요|보입니다|가능합니다|필요합니다|있습니다)$/.test(t)) return `${t}.`;
+  return `${t}입니다.`;
+}
 import { calculate, type SajuResult } from '../core/pillar-calc/main-calculator';
 import {
   STEMS, BRANCHES, STEMS_H, BRANCHES_H,
@@ -471,7 +479,8 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
 
         setTimeout(() => {
           setLoading(false);
-          typeEffect(buffer, (typed) => {
+          const finalized = finalizeKoreanAnswer(buffer);
+          typeEffect(finalized, (typed) => {
             setMsgs(prev => {
               const u = [...prev];
               u[u.length - 1] = { role: 'assistant', content: typed };
@@ -479,9 +488,9 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
             });
           }, () => {
             // 타이핑 완료 후 TTS
-            if (typeof window !== 'undefined' && window.speechSynthesis && buffer) {
+            if (typeof window !== 'undefined' && window.speechSynthesis && finalized) {
               window.speechSynthesis.cancel();
-              const ttsText = stripHanja(buffer).slice(0, 600);
+              const ttsText = stripHanja(finalized).slice(0, 600);
               const utt = new SpeechSynthesisUtterance(ttsText);
               const voices = window.speechSynthesis.getVoices();
               const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural'))) 

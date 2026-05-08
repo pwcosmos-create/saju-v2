@@ -199,8 +199,13 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
           background: 'rgba(255,255,255,.04)',
         }}>
           <div>
-            <div style={{ fontWeight: 700, color: '#e8c97e', fontSize: '.95rem' }}>☯ 사주 AI 상담</div>
-            <div style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.45)' }}>궁금한 점을 자유롭게 질문하세요</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#e8c97e', fontSize: '.95rem' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+              </svg>
+              AI 사주 명리 상담
+            </div>
+            <div style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.45)' }}>사주와 운세에 대한 전문 상담을 제공합니다</div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={stopTTS} title="음성 중지" style={{
@@ -269,16 +274,26 @@ export default function ChatWidget({ result }: { result: SajuResult | null }) {
         onClick={() => setOpen(o => !o)}
         style={{
           position: 'fixed', bottom: 24, right: 20,
-          width: 54, height: 54, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #e8c97e, #c9a84c)',
-          border: 'none', boxShadow: '0 4px 20px rgba(232,201,126,.45)',
+          width: 64, height: 64, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #8b6fc6, #6b4fa6)',
+          border: '1px solid rgba(255,255,255,0.2)',
+          boxShadow: '0 8px 32px rgba(139,111,198,0.4)',
           cursor: 'pointer', fontSize: '1.4rem',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 999,
+          color: '#fff',
+          transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
+        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
         title="사주 AI 상담"
       >
-        {open ? '✕' : '☯'}
+        {open ? '✕' : (
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
+            <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#fff" fillOpacity="0.8"/>
+          </svg>
+        )}
       </button>
     </>
   );

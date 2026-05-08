@@ -1,6 +1,6 @@
 /**
  * SAJU-V2 CHAT WIDGET
- * Version: 2.0.0 (PayPal Payment & 30m Timer)
+ * Version: 2.0.1 (Stability Improvement)
  * Last Updated: 2026-05-08
  */
 'use client';

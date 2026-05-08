@@ -1,6 +1,6 @@
 /**
  * SAJU-V2 MAIN PAGE
- * Version: 2.0.0 (AI Sparkle Branding & Monetization)
+ * Version: 2.0.1 (AI Rendering & Stream Fix)
  * Last Updated: 2026-05-08
  */
 import Link from 'next/link';
@@ -290,7 +290,7 @@ export default function LandingPage() {
           <span style={{ fontWeight: 700 }}>AI사주</span> — 사주팔자 무료 분석
         </div>
         <div>본 서비스는 전통 동양 철학 기반 참고용 정보입니다.</div>
-        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v2.0.0</div>
+        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v2.0.1</div>
       </footer>
     </div>
   );

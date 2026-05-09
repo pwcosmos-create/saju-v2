@@ -122,7 +122,8 @@ import { classifyElements } from '../core/daily-fortune/classifier';
 const GENERATES = [1, 2, 3, 4, 0];
 const SESSION_SECONDS = 30 * 60;
 const MAX_SESSION_SECONDS = 120 * 60;
-const TYPE_SPEED_MS = 15;
+/** 글자당 간격(ms). 너무 짧으면 읽기보다 빠르게 느껴짐 */
+const TYPE_SPEED_MS = 38;
 const TTS_RATE = 1.0;
 const TTS_PITCH = 1.05;
 const COUNSELOR_NAMES = ['도화', '현월', '지안', '서윤', '유진'] as const;
@@ -313,7 +314,7 @@ export default function ChatWidget({
   const recogRef  = useRef<any>(null);
   const isExemptUser = isPaymentExemptTarget(result);
   const targetKey = getTargetKey(result);
-  const canStartCounseling = Boolean(result && aiSummaryReady);
+  const canStartCounseling = Boolean(result && (aiSummaryReady || isExemptUser));
   const [ttsMode, setTtsMode] = useState<'server' | 'browser'>('server');
   const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);

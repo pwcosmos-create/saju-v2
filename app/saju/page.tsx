@@ -87,6 +87,24 @@ const calBtnStyle: React.CSSProperties = {
   padding:'5px 14px', borderRadius:100, border:'1px solid var(--border)',
   background:'rgba(255,255,255,.05)', color:'var(--muted)', fontSize:'.78rem', fontWeight:700, cursor:'pointer',
 };
+/** 월·일 — 네이티브 select는 모바일에서 완료 탭이 필요하므로 즉시 반영용 버튼 */
+const dateChipBase: React.CSSProperties = {
+  padding: '8px 10px',
+  borderRadius: 9,
+  border: '1px solid var(--border)',
+  background: 'rgba(255,255,255,.06)',
+  color: 'var(--text)',
+  fontSize: '.78rem',
+  fontWeight: 700,
+  cursor: 'pointer',
+  minWidth: 44,
+  textAlign: 'center',
+};
+const dateChipSelected: React.CSSProperties = {
+  borderColor: '#7f66d8',
+  background: 'rgba(127,102,216,.28)',
+  color: '#fff',
+};
 const cardStyle: React.CSSProperties = {
   background:'var(--card)', border:'1px solid var(--border)', borderRadius:16, padding:22, marginBottom:16,
 };
@@ -484,33 +502,71 @@ export default function Home() {
                   </label>
                 )}
               </div>
-              <div style={{ display:'flex', gap:8 }}>
-                <input type="number" placeholder="년도 (예: 1990)" min={1900} max={THIS_YEAR}
-                  value={year} onChange={e=>setYear(e.target.value)} style={{ ...inputStyle, flex:2 }} />
-                <select
-                  aria-label="월"
-                  value={month}
-                  onChange={e=>setMonth(e.target.value)}
-                  style={{ ...selectStyle, flex:1, cursor:'pointer' }}
-                >
-                  <option value="">월</option>
-                  {Array.from({ length: 12 }, (_, i) => {
-                    const v = String(i + 1);
-                    return <option key={v} value={v}>{v}월</option>;
-                  })}
-                </select>
-                <select
-                  aria-label="일"
-                  value={day}
-                  onChange={e=>setDay(e.target.value)}
-                  style={{ ...selectStyle, flex:1, cursor:'pointer' }}
-                >
-                  <option value="">일</option>
-                  {Array.from({ length: 31 }, (_, i) => {
-                    const v = String(i + 1);
-                    return <option key={v} value={v}>{v}일</option>;
-                  })}
-                </select>
+              <input
+                type="number"
+                placeholder="년도 (예: 1990)"
+                min={1900}
+                max={THIS_YEAR}
+                value={year}
+                onChange={e=>setYear(e.target.value)}
+                style={{ ...inputStyle, width: '100%', marginBottom: 10 }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--muted)' }}>월</span>
+                {month ? (
+                  <button type="button" onClick={() => setMonth('')} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '.7rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    비우기
+                  </button>
+                ) : null}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {Array.from({ length: 12 }, (_, i) => {
+                  const v = String(i + 1);
+                  const sel = month === v;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setMonth(v)}
+                      style={{ ...dateChipBase, ...(sel ? dateChipSelected : {}) }}
+                    >
+                      {v}월
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--muted)' }}>일</span>
+                {day ? (
+                  <button type="button" onClick={() => setDay('')} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '.7rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    비우기
+                  </button>
+                ) : null}
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(48px, 1fr))',
+                  gap: 6,
+                  maxHeight: 168,
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                }}
+              >
+                {Array.from({ length: 31 }, (_, i) => {
+                  const v = String(i + 1);
+                  const sel = day === v;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setDay(v)}
+                      style={{ ...dateChipBase, ...(sel ? dateChipSelected : {}) }}
+                    >
+                      {v}일
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

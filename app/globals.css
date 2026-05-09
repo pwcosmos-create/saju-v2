@@ -91,6 +91,10 @@ select option {
     background-image: none !important;
     color: #111 !important;
   }
+  /* AI 심층 상담(고정 패널·FAB) — 열려 있을 때 인쇄 미리보기에 모달·PayPal iframe이 잡히지 않게 */
+  .saju-chat-layer {
+    display: none !important;
+  }
   /* 공유 버튼, 입력폼, 네비 숨김 */
   .hero-section,
   button,

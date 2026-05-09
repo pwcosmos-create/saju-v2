@@ -783,7 +783,7 @@ export default function ChatWidget({
   return (
     <>
       {/* Chat Panel */}
-      <div style={{
+      <div className="saju-chat-layer" style={{
         position: 'fixed', bottom: open ? 0 : '-75vh', right: 0, left: 0,
         maxWidth: 480, margin: '0 auto', height: '72vh',
         background: '#0d0b1e', border: '1px solid rgba(255,255,255,.12)',
@@ -1055,7 +1055,7 @@ export default function ChatWidget({
       </div>
 
       {/* Floating Button */}
-      <div style={{
+      <div className="saju-chat-layer" style={{
         position: 'fixed',
         bottom: 24,
         right: 20,

@@ -47,8 +47,8 @@ const TTS_SINGLE_UTTERANCE_MAX_CHARS = 3800;
 /** 한 문장이 이보다 길면 쉼표 등으로 나눈 뒤에만 글자 단위 분할 */
 const TTS_HARD_SENTENCE_CAP = 1600;
 /** 문장 단위 utterance 사이 숨 고르기(ms) — 다음 문장으로 넘어가기 전 짧은 정지 */
-/** 문장 단위 음성 사이 멈춤(1초 이하) */
-const TTS_INTER_SENTENCE_PAUSE_MS = 480;
+/** 브라우저 음성: 문장(조각) 사이 멈춤 */
+const TTS_INTER_SENTENCE_PAUSE_MS = 1000;
 
 function splitIntoSentences(normalized: string): string[] {
   const parts = normalized
@@ -106,7 +106,8 @@ function splitTtsChunks(text: string): string[] {
 
 /** 서버 /api/tts 요청당 글자 상한에 맞춰 문장 단위로 묶음 */
 const SERVER_TTS_CHUNK_CHARS = 480;
-const SERVER_TTS_INTER_CHUNK_MS = 100;
+/** 서버 TTS 청크 사이 멈춤 */
+const SERVER_TTS_INTER_CHUNK_MS = 1000;
 
 function splitForServerTts(text: string): string[] {
   const normalized = stripHanja(text).replace(/\s+/g, ' ').trim();

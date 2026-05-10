@@ -1,4 +1,10 @@
 import { NextRequest } from 'next/server';
+import { makeRateLimiter } from '../../../core/http-client/rate-limit';
+
+/** 긴 답은 여러 청크로 호출되므로 채팅보다 여유 있게 */
+const checkRateLimit = makeRateLimiter(48, 60_000);
+/** 요청당 최대 글자 — 비용·남용 완화 */
+const TTS_BODY_MAX_CHARS = 520;
 
 /** Gemini TTS 기본값: 24kHz mono LE PCM — 브라우저 `Audio()`는 raw PCM data URL 재생을 지원하지 않아 WAV로 감싼다. */
 function pcm16leMonoToWavBuffer(pcm: Buffer, sampleRate: number): Buffer {
@@ -47,6 +53,11 @@ function parsePcmSampleRate(mimeType: string): number | null {
 }
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
+  if (!checkRateLimit(ip)) {
+    return new Response(JSON.stringify({ error: 'TTS 요청 한도 초과. 잠시 후 다시 시도해주세요.' }), { status: 429 });
+  }
+
   let body: { text?: string };
   try {
     body = await req.json();
@@ -57,6 +68,9 @@ export async function POST(req: NextRequest) {
   const text = (body.text ?? '').trim();
   if (!text) {
     return new Response(JSON.stringify({ error: 'text 없음' }), { status: 400 });
+  }
+  if (text.length > TTS_BODY_MAX_CHARS) {
+    return new Response(JSON.stringify({ error: `text는 ${TTS_BODY_MAX_CHARS}자 이하로 나누어 보내주세요` }), { status: 400 });
   }
 
   const key = process.env.GOOGLE_AI_API_KEY;

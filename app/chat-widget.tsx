@@ -42,35 +42,112 @@ function addFollowUpPrompt(text: string, userTurn: number): string {
   return `${normalized}\n\n${prompt}`;
 }
 
-function splitTtsChunks(text: string, maxLen = 220): string[] {
-  const normalized = stripHanja(text).replace(/\s+/g, ' ').trim();
-  if (!normalized) return [];
+/** 이 길이 이하면 한 번에 읽어 문장 사이 인위적 정지 없음 */
+const TTS_SINGLE_UTTERANCE_MAX_CHARS = 3800;
+/** 한 문장이 이보다 길면 쉼표 등으로 나눈 뒤에만 글자 단위 분할 */
+const TTS_HARD_SENTENCE_CAP = 1600;
+/** 문장 단위 utterance 사이 숨 고르기(ms) — 다음 문장으로 넘어가기 전 짧은 정지 */
+/** 문장 단위 음성 사이 멈춤(1초 이하) */
+const TTS_INTER_SENTENCE_PAUSE_MS = 480;
+
+function splitIntoSentences(normalized: string): string[] {
   const parts = normalized
     .split(/(?<=[.!?。！？…])\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!parts.length) return [normalized.slice(0, maxLen)];
+  return parts.length ? parts : normalized ? [normalized] : [];
+}
+
+/** 초장문만 쉼표 단위 → 그래도 길면 글자로 분할(최후 수단). 문장 중간에서 잘리지 않게 우선 시도 */
+function splitOversizedSentence(sentence: string): string[] {
+  if (sentence.length <= TTS_HARD_SENTENCE_CAP) return [sentence];
+  const clauses = sentence.split(/(?<=[,，])\s*/).map((c) => c.trim()).filter(Boolean);
+  if (clauses.length > 1) {
+    const out: string[] = [];
+    let cur = '';
+    for (const c of clauses) {
+      const joined = cur ? `${cur} ${c}` : c;
+      if (joined.length <= TTS_HARD_SENTENCE_CAP) {
+        cur = joined;
+        continue;
+      }
+      if (cur) out.push(cur);
+      if (c.length <= TTS_HARD_SENTENCE_CAP) {
+        cur = c;
+        continue;
+      }
+      for (let i = 0; i < c.length; i += TTS_HARD_SENTENCE_CAP) {
+        out.push(c.slice(i, i + TTS_HARD_SENTENCE_CAP));
+      }
+      cur = '';
+    }
+    if (cur) out.push(cur);
+    return out.length ? out : [sentence.slice(0, TTS_HARD_SENTENCE_CAP)];
+  }
+  const out: string[] = [];
+  for (let i = 0; i < sentence.length; i += TTS_HARD_SENTENCE_CAP) {
+    out.push(sentence.slice(i, i + TTS_HARD_SENTENCE_CAP));
+  }
+  return out;
+}
+
+/** 길면 문장마다 따로 읽고 문장 사이에만 정지. 짧으면 통째로 한 번에 읽음 */
+function splitTtsChunks(text: string): string[] {
+  const normalized = stripHanja(text).replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+  if (normalized.length <= TTS_SINGLE_UTTERANCE_MAX_CHARS) return [normalized];
+
+  const flat: string[] = [];
+  for (const s of splitIntoSentences(normalized)) {
+    flat.push(...splitOversizedSentence(s));
+  }
+  return flat.filter(Boolean);
+}
+
+/** 서버 /api/tts 요청당 글자 상한에 맞춰 문장 단위로 묶음 */
+const SERVER_TTS_CHUNK_CHARS = 480;
+const SERVER_TTS_INTER_CHUNK_MS = 100;
+
+function splitForServerTts(text: string): string[] {
+  const normalized = stripHanja(text).replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+  if (normalized.length <= SERVER_TTS_CHUNK_CHARS) return [normalized];
+
+  const parts = normalized
+    .split(/(?<=[.!?。！？…])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.length) {
+    const out: string[] = [];
+    for (let i = 0; i < normalized.length; i += SERVER_TTS_CHUNK_CHARS) {
+      out.push(normalized.slice(i, i + SERVER_TTS_CHUNK_CHARS));
+    }
+    return out;
+  }
 
   const chunks: string[] = [];
-  let current = '';
+  let cur = '';
   for (const p of parts) {
-    if ((current + ' ' + p).trim().length <= maxLen) {
-      current = (current ? `${current} ` : '') + p;
+    const next = cur ? `${cur} ${p}` : p;
+    if (next.length <= SERVER_TTS_CHUNK_CHARS) {
+      cur = next;
       continue;
     }
-    if (current) chunks.push(current);
-    if (p.length <= maxLen) {
-      current = p;
+    if (cur) chunks.push(cur);
+    if (p.length <= SERVER_TTS_CHUNK_CHARS) {
+      cur = p;
       continue;
     }
-    for (let i = 0; i < p.length; i += maxLen) {
-      chunks.push(p.slice(i, i + maxLen));
+    for (let i = 0; i < p.length; i += SERVER_TTS_CHUNK_CHARS) {
+      chunks.push(p.slice(i, i + SERVER_TTS_CHUNK_CHARS));
     }
-    current = '';
+    cur = '';
   }
-  if (current) chunks.push(current);
+  if (cur) chunks.push(cur);
   return chunks;
 }
+
+const TTS_OUTPUT_MODE_KEY = 'saju_chat_tts_output_mode';
 
 /** 연속 speak 호출 시 이전 voiceschanged 대기만 무효화 — 안 하면 큐가 두 개 동시에 재생됨 */
 let speakKoreanSessionId = 0;
@@ -84,6 +161,39 @@ function clearVoiceWaitRegistration(synth: SpeechSynthesis) {
   synth.removeEventListener('voiceschanged', voiceWaitReg.onVoices);
   window.clearTimeout(voiceWaitReg.timer);
   voiceWaitReg = null;
+}
+
+/** 탭 세션 동안 같은 한국어 음성 유지 — 매 호출마다 다른 목소리 고르는 것 방지 */
+const TTS_KO_VOICE_URI_KEY = 'saju_chat_ko_voice_uri';
+
+function pickStableKoVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | undefined {
+  const voices = synth.getVoices().filter((v) => v.lang.toLowerCase().startsWith('ko'));
+  if (!voices.length) return undefined;
+
+  let savedUri: string | null = null;
+  try {
+    savedUri = sessionStorage.getItem(TTS_KO_VOICE_URI_KEY);
+  } catch {
+    /* 사파리 비공개 등 */
+  }
+  if (savedUri) {
+    const again = voices.find((v) => v.voiceURI === savedUri);
+    if (again) return again;
+  }
+
+  const ranked = [...voices].sort((a, b) => {
+    const score = (n: string) => (/Google|Natural|Microsoft/i.test(n) ? 0 : 1);
+    const d = score(a.name) - score(b.name);
+    if (d !== 0) return d;
+    return a.name.localeCompare(b.name, 'ko');
+  });
+  const chosen = ranked[0];
+  try {
+    sessionStorage.setItem(TTS_KO_VOICE_URI_KEY, chosen.voiceURI);
+  } catch {
+    /* noop */
+  }
+  return chosen;
 }
 
 function speakKoreanQueued(
@@ -114,14 +224,6 @@ function speakKoreanQueued(
     /* noop */
   }
 
-  const pickKoVoice = () => {
-    const voices = synth.getVoices();
-    return (
-      voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural')))
-      || voices.find(v => v.lang.includes('ko'))
-    );
-  };
-
   const runQueue = (koVoice: SpeechSynthesisVoice | undefined) => {
     const speakAt = (idx: number) => {
       if (idx >= chunks.length) {
@@ -133,18 +235,30 @@ function speakKoreanQueued(
       utt.lang = 'ko-KR';
       utt.rate = TTS_RATE;
       utt.pitch = TTS_PITCH;
-      utt.onend = () => speakAt(idx + 1);
-      // 일부 브라우저에서 중간 오류가 나도 다음 청크로 이어서 읽는다.
+      utt.onend = () => {
+        const next = idx + 1;
+        if (next >= chunks.length) {
+          options?.onDone?.();
+          return;
+        }
+        window.setTimeout(() => speakAt(next), TTS_INTER_SENTENCE_PAUSE_MS);
+      };
+      // 일부 브라우저에서 중간 오류가 나도 다음 조각으로 이어서 읽는다.
       utt.onerror = () => {
         options?.onChunkError?.();
-        speakAt(idx + 1);
+        const next = idx + 1;
+        if (next >= chunks.length) {
+          options?.onDone?.();
+          return;
+        }
+        window.setTimeout(() => speakAt(next), TTS_INTER_SENTENCE_PAUSE_MS);
       };
       // cancel 직후 첫 speak가 무시되는 Chrome 동작 회피
       const run = () => {
         synth.speak(utt);
       };
       if (idx === 0) window.setTimeout(run, 0);
-      else run();
+      else window.setTimeout(run, 0);
     };
     speakAt(0);
   };
@@ -156,7 +270,7 @@ function speakKoreanQueued(
       if (sessionId !== speakKoreanSessionId || started) return;
       started = true;
       clearVoiceWaitRegistration(synth);
-      runQueue(pickKoVoice());
+      runQueue(pickStableKoVoice(synth));
     };
     const onVoices = () => start();
     const fallbackTimer = window.setTimeout(() => start(), 800);
@@ -165,7 +279,7 @@ function speakKoreanQueued(
     return;
   }
 
-  runQueue(pickKoVoice());
+  runQueue(pickStableKoVoice(synth));
 }
 import { calculate, type SajuResult } from '../core/pillar-calc/main-calculator';
 import {
@@ -177,10 +291,10 @@ import { classifyElements } from '../core/daily-fortune/classifier';
 const GENERATES = [1, 2, 3, 4, 0];
 const SESSION_SECONDS = 30 * 60;
 const MAX_SESSION_SECONDS = 120 * 60;
-/** 글자당 간격(ms). 너무 짧으면 읽기보다 빠르게 느껴짐 */
-const TYPE_SPEED_MS = 38;
-/** `app/saju/page.tsx` 의 askAI() 와 동일: 스트림 종료 후 검토 연출 */
-const VERIFY_PAUSE_MS = 2000;
+/** 타이핑·브라우저 TTS 체감 속도 맞춤 — 한쪽만 바꾸면 어긋남 */
+const TYPE_SPEED_MS = 128;
+/** 스트림 종료 후 검토 연출 — 타이핑·음성 직전 짧은 멈춤(1초 이하) */
+const VERIFY_PAUSE_MS = 1000;
 /** 상담 스트리밍 단계 라벨 — AI 심층 풀이 버튼 연출과 통일 */
 const CHAT_AI_STEPS = [
   '운명의 기운을 읽는 중...',
@@ -189,8 +303,8 @@ const CHAT_AI_STEPS = [
   '전문적인 조언을 정성껏 작성 중...',
 ] as const;
 const CHAT_STEP_ADVANCE_MS = [3000, 7000] as const; // 2단계, 3단계 진입 타이밍 (askAI 와 동일)
-const TTS_RATE = 1.0;
-const TTS_PITCH = 1.05;
+const TTS_RATE = 0.93;
+const TTS_PITCH = 1.02;
 /** 스트리밍/API 대기 중 — 주기적으로 바뀌며 ‘정지 아님’ 안내 */
 const WAIT_CHAT_HINTS = [
   '정지된 것이 아니에요. 사주 맥락을 함께 읽으며 답을 준비하고 있습니다.',
@@ -201,7 +315,7 @@ const WAIT_CHAT_HINTS = [
 ] as const;
 /** 타이핑 효과로 글자 찍는 동안 */
 const REPLY_TYPING_HINTS = [
-  '화면에 한 글자씩 올리고 있어요. 음성으로도 함께 읽어 드립니다.',
+  '글자 속도와 음성 속도를 비슷하게 맞춰 두었어요. 음성이 앞서거나 너무 늦게 느껴지면 브라우저나 기기마다 조금씩 다를 수 있어요.',
   '긴 답변은 표시에 시간이 걸려요. 스크롤해 천천히 읽으셔도 돼요.',
   '거의 다 나왔을 거예요. 잠시만 기다려 주세요.',
 ] as const;
@@ -282,7 +396,7 @@ function buildChatContext(r: SajuResult): string {
 async function streamChat(
   messages: { role: string; content: string }[],
   sajuContext: string,
-  options: { chatMode: 'single' | 'compatibility'; compareSajuContext?: string },
+  options: { chatMode: 'single' | 'compatibility'; compareSajuContext?: string; counselorName: string },
   onChunk: (t: string) => void,
   onDone: () => void,
   onError: (e: string) => void,
@@ -297,6 +411,7 @@ async function streamChat(
         sajuContext,
         chatMode: options.chatMode,
         compareSajuContext: options.compareSajuContext ?? '',
+        counselorName: options.counselorName,
       }),
     });
     if (!res.ok || !res.body) { onError('연결 실패'); return; }
@@ -388,6 +503,8 @@ export default function ChatWidget({
   const paypalRef = useRef<HTMLDivElement>(null);
   const paypalExtendRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  /** 정지·새 재생 시 이전 비동기 TTS 루프 무효화 */
+  const speakGenRef = useRef(0);
   const wakeLockRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
@@ -404,6 +521,16 @@ export default function ChatWidget({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [selectedCounselor, setSelectedCounselor] = useState<string>('도화');
   const [introSpoken, setIntroSpoken] = useState(false);
+  /** 서버 Gemini 음성 우선 — 실패 시에만 브라우저로 폴백 */
+  const [ttsOutputMode, setTtsOutputMode] = useState<'server' | 'browser'>(() => {
+    if (typeof window === 'undefined') return 'server';
+    try {
+      const v = localStorage.getItem(TTS_OUTPUT_MODE_KEY);
+      return v === 'browser' ? 'browser' : 'server';
+    } catch {
+      return 'server';
+    }
+  });
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
@@ -547,13 +674,21 @@ export default function ChatWidget({
       setIntroSpoken(false);
       return;
     }
-    const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
-    setPreviewUsed(sessionStorage.getItem(key) === '1');
+    const previewKey = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
+    setPreviewUsed(sessionStorage.getItem(previewKey) === '1');
     setPreviewUnlocked(false);
     setIntroSpoken(false);
-    const counselor = COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
-    setSelectedCounselor(counselor);
-  }, [result]);
+
+    const counselorKey = `saju_chat_counselor_${targetKey}`;
+    const saved = localStorage.getItem(counselorKey);
+    if (saved && (COUNSELOR_NAMES as readonly string[]).includes(saved)) {
+      setSelectedCounselor(saved);
+    } else {
+      const counselor = COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
+      localStorage.setItem(counselorKey, counselor);
+      setSelectedCounselor(counselor);
+    }
+  }, [result, targetKey]);
 
   // Timer for remaining time
   useEffect(() => {
@@ -617,7 +752,7 @@ export default function ChatWidget({
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담사입니다.\n이번 상담은 랜덤 상담사 '${selectedCounselor}'가 함께합니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이 상담은 AI 심층 풀이를 기반으로 진행되는 맞춤 상담입니다.\n질문은 텍스트/음성 모두 가능해요. 음성 질문은 마이크 버튼을 누른 뒤 말씀해 주세요.\n${isExemptUser ? '결제 예외 대상이므로 바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
+          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크 버튼을 누른 뒤 말씀해 주세요.\n${isExemptUser ? '결제 예외 대상이므로 바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
@@ -625,7 +760,7 @@ export default function ChatWidget({
 
   useEffect(() => {
     if (!open || !result || introSpoken || !canStartCounseling) return;
-    const intro = `이번 상담은 랜덤 상담사 ${selectedCounselor}가 함께합니다. 궁금한 점을 편하게 물어보세요.`;
+    const intro = `${selectedCounselor} 상담사가 이 세션 내내 함께합니다. 궁금한 점을 편하게 물어보세요.`;
     void speakWithPreferredMode(intro);
     setIntroSpoken(true);
   }, [open, result, canStartCounseling, introSpoken, selectedCounselor]);
@@ -759,6 +894,7 @@ export default function ChatWidget({
       {
         chatMode,
         compareSajuContext,
+        counselorName: selectedCounselor,
       },
       (chunk) => {
         buffer += chunk;
@@ -882,6 +1018,7 @@ export default function ChatWidget({
   }
 
   function stopTTS() {
+    speakGenRef.current += 1;
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
     if (audioRef.current) {
       audioRef.current.pause();
@@ -892,25 +1029,92 @@ export default function ChatWidget({
     releaseWakeLock();
   }
 
+  async function playServerTtsChunk(chunkText: string): Promise<boolean> {
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
+      const res = await fetch(`${base}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: chunkText }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json() as { audioBase64?: string; mimeType?: string; error?: string };
+      if (data.error || !data.audioBase64 || !data.mimeType) return false;
+      const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
+      audioRef.current = audio;
+      try {
+        await audio.play();
+      } catch {
+        return false;
+      }
+      const finishedOk = await new Promise<boolean>((resolve) => {
+        audio.onended = () => resolve(true);
+        audio.onerror = () => resolve(false);
+      });
+      return finishedOk;
+    } catch {
+      return false;
+    }
+  }
+
   async function speakWithPreferredMode(text: string) {
     if (!text) return;
     if (isSpeaking) stopTTS();
+
+    const gen = ++speakGenRef.current;
     setIsSpeaking(true);
     await requestWakeLock();
 
     const done = () => {
+      if (gen !== speakGenRef.current) return;
       setIsSpeaking(false);
       releaseWakeLock();
     };
 
-    // 서버(Gemini) TTS는 HTMLAudio가 답변 완료 이후에 재생되어 자동 재생 정책에 막히는 경우가 대부분이라
-    // 자동 읽기는 Web Speech API만 사용한다. (/api/tts 는 추후 수동 재생 등에 활용 가능)
-    speakKoreanQueued(text, {
-      onDone: done,
-      onChunkError: () => {
-        // 중간 오류가 나도 큐는 계속 진행되며, 종료 시 onDone에서 wake lock 해제
-      },
-    });
+    const runBrowserTts = () => {
+      speakKoreanQueued(text, {
+        onDone: () => {
+          if (gen !== speakGenRef.current) return;
+          done();
+        },
+        onChunkError: () => {},
+      });
+    };
+
+    if (ttsOutputMode === 'browser') {
+      runBrowserTts();
+      return;
+    }
+
+    const chunks = splitForServerTts(text);
+    if (!chunks.length) {
+      done();
+      return;
+    }
+
+    let serverOk = true;
+    for (let i = 0; i < chunks.length; i++) {
+      if (gen !== speakGenRef.current) return;
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await playServerTtsChunk(chunks[i]);
+      if (!ok) {
+        serverOk = false;
+        break;
+      }
+      if (i < chunks.length - 1 && gen === speakGenRef.current) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise<void>((r) => window.setTimeout(r, SERVER_TTS_INTER_CHUNK_MS));
+      }
+    }
+
+    if (gen !== speakGenRef.current) return;
+
+    if (!serverOk) {
+      runBrowserTts();
+      return;
+    }
+
+    done();
   }
 
   function usePreviewOnce() {
@@ -961,22 +1165,41 @@ export default function ChatWidget({
               타이핑 {TYPE_SPEED_MS}ms · 읽기 x{TTS_RATE.toFixed(1)}
             </div>
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
-              읽기: 브라우저 음성 · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}
+              읽기: {ttsOutputMode === 'server' ? '서버 고품질 (실패 시 기기 음성)' : '기기 내장 음성만'} · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}
             </div>
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
-              랜덤 상담사: {selectedCounselor}
+              배정 상담사(세션 고정): {selectedCounselor}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={() => setWakeLockEnabled(v => !v)} title="화면 꺼짐 방지" style={{
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setTtsOutputMode((prev) => {
+                  const next = prev === 'server' ? 'browser' : 'server';
+                  try {
+                    localStorage.setItem(TTS_OUTPUT_MODE_KEY, next);
+                  } catch {
+                    /* noop */
+                  }
+                  return next;
+                });
+              }}
+              title={ttsOutputMode === 'server' ? 'Gemini 고품질 음성 — 네트워크 사용' : '브라우저 내장 음성만 — 데이터 절약'}
+              style={{
+                background: 'none', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
+                color: ttsOutputMode === 'server' ? '#e8c97e' : 'rgba(255,255,255,.55)', fontSize: '.68rem', cursor: 'pointer', padding: '4px 8px',
+              }}
+            >{ttsOutputMode === 'server' ? '🔊 고품질' : '📱 기기음성'}</button>
+            <button type="button" onClick={() => setWakeLockEnabled(v => !v)} title="화면 꺼짐 방지" style={{
               background: 'none', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
               color: wakeLockEnabled ? '#e8c97e' : 'rgba(255,255,255,.5)', fontSize: '.72rem', cursor: 'pointer', padding: '4px 8px',
             }}>{wakeLockEnabled ? '🔒' : '🔓'}</button>
-            <button onClick={stopTTS} title="음성 중지" style={{
+            <button type="button" onClick={stopTTS} title="음성 중지" style={{
               background: 'none', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
               color: 'rgba(255,255,255,.5)', fontSize: '.8rem', cursor: 'pointer', padding: '4px 8px',
             }}>🔇</button>
-            <button onClick={() => setOpen(false)} style={{
+            <button type="button" onClick={() => setOpen(false)} style={{
               background: 'none', border: 'none', color: 'rgba(255,255,255,.5)',
               fontSize: '1.2rem', cursor: 'pointer', padding: '4px 8px',
             }}>✕</button>

@@ -72,6 +72,20 @@ function splitTtsChunks(text: string, maxLen = 220): string[] {
   return chunks;
 }
 
+/** 연속 speak 호출 시 이전 voiceschanged 대기만 무효화 — 안 하면 큐가 두 개 동시에 재생됨 */
+let speakKoreanSessionId = 0;
+let voiceWaitReg: {
+  onVoices: () => void;
+  timer: number;
+} | null = null;
+
+function clearVoiceWaitRegistration(synth: SpeechSynthesis) {
+  if (!voiceWaitReg) return;
+  synth.removeEventListener('voiceschanged', voiceWaitReg.onVoices);
+  window.clearTimeout(voiceWaitReg.timer);
+  voiceWaitReg = null;
+}
+
 function speakKoreanQueued(
   text: string,
   options?: { onDone?: () => void; onChunkError?: () => void },
@@ -86,7 +100,11 @@ function speakKoreanQueued(
     return;
   }
 
+  speakKoreanSessionId += 1;
+  const sessionId = speakKoreanSessionId;
+
   const synth = window.speechSynthesis;
+  clearVoiceWaitRegistration(synth);
   // 새 응답 시작 시에만 이전 발화를 정리한다.
   if (synth.speaking) synth.cancel();
   // Chrome 등에서 큐가 paused로 남아 무음이 되는 경우 방지
@@ -121,23 +139,29 @@ function speakKoreanQueued(
         options?.onChunkError?.();
         speakAt(idx + 1);
       };
-      synth.speak(utt);
+      // cancel 직후 첫 speak가 무시되는 Chrome 동작 회피
+      const run = () => {
+        synth.speak(utt);
+      };
+      if (idx === 0) window.setTimeout(run, 0);
+      else run();
     };
     speakAt(0);
   };
 
-  // 첫 로드 시 getVoices()가 빈 배열인 브라우저(Chrome 등) 대비
+  // 첫 로드 시 getVoices()가 빈 배열인 브라우저(Chrome 등) 대비 (중복 리스너 시 두 목소리 동시 재생 방지)
   if (synth.getVoices().length === 0) {
     let started = false;
     const start = () => {
-      if (started) return;
+      if (sessionId !== speakKoreanSessionId || started) return;
       started = true;
-      synth.removeEventListener('voiceschanged', start);
-      window.clearTimeout(fallbackTimer);
+      clearVoiceWaitRegistration(synth);
       runQueue(pickKoVoice());
     };
-    const fallbackTimer = window.setTimeout(start, 800);
-    synth.addEventListener('voiceschanged', start);
+    const onVoices = () => start();
+    const fallbackTimer = window.setTimeout(() => start(), 800);
+    voiceWaitReg = { onVoices, timer: fallbackTimer };
+    synth.addEventListener('voiceschanged', onVoices);
     return;
   }
 
@@ -155,8 +179,32 @@ const SESSION_SECONDS = 30 * 60;
 const MAX_SESSION_SECONDS = 120 * 60;
 /** 글자당 간격(ms). 너무 짧으면 읽기보다 빠르게 느껴짐 */
 const TYPE_SPEED_MS = 38;
+/** `app/saju/page.tsx` 의 askAI() 와 동일: 스트림 종료 후 검토 연출 */
+const VERIFY_PAUSE_MS = 2000;
+/** 상담 스트리밍 단계 라벨 — AI 심층 풀이 버튼 연출과 통일 */
+const CHAT_AI_STEPS = [
+  '운명의 기운을 읽는 중...',
+  'AI 분석 초안을 작성하는 중...',
+  '내용의 정확도를 최종 검토 중...',
+  '전문적인 조언을 정성껏 작성 중...',
+] as const;
+const CHAT_STEP_ADVANCE_MS = [3000, 7000] as const; // 2단계, 3단계 진입 타이밍 (askAI 와 동일)
 const TTS_RATE = 1.0;
 const TTS_PITCH = 1.05;
+/** 스트리밍/API 대기 중 — 주기적으로 바뀌며 ‘정지 아님’ 안내 */
+const WAIT_CHAT_HINTS = [
+  '정지된 것이 아니에요. 사주 맥락을 함께 읽으며 답을 준비하고 있습니다.',
+  '답이 길수록 시간이 더 걸릴 수 있어요. 창을 닫지 말고 조금만 기다려 주세요.',
+  '연결이 살아 있으면 아래 안내 문구가 가끔 바뀝니다. 그대로 두셔도 됩니다.',
+  '보통 수십 초 안에 글이 나오기 시작해요. 첫 글자가 뜰 때까지 잠시만요.',
+  '사람이 타이핑하는 속도가 아니라 AI 생성이라 간헐적으로 텀이 길 수 있어요.',
+] as const;
+/** 타이핑 효과로 글자 찍는 동안 */
+const REPLY_TYPING_HINTS = [
+  '화면에 한 글자씩 올리고 있어요. 음성으로도 함께 읽어 드립니다.',
+  '긴 답변은 표시에 시간이 걸려요. 스크롤해 천천히 읽으셔도 돼요.',
+  '거의 다 나왔을 거예요. 잠시만 기다려 주세요.',
+] as const;
 const COUNSELOR_NAMES = ['도화', '현월', '지안', '서윤', '유진'] as const;
 const PAYMENT_EXEMPT_BIRTHDAYS = new Set([
   '1974-3-10',
@@ -343,16 +391,30 @@ export default function ChatWidget({
   const wakeLockRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const [progressHintIdx, setProgressHintIdx] = useState(0);
+  const [replyTyping, setReplyTyping] = useState(false);
+  /** 1~3: 스트림·검토 연출, 4: 타이핑 출력 (사주 페이지 AI 풀이 단계와 동일 흐름) */
+  const [chatLoadingStep, setChatLoadingStep] = useState(0);
+  const ttsPrimedRef = useRef(false);
   const isExemptUser = isPaymentExemptTarget(result);
   const targetKey = getTargetKey(result);
   const canStartCounseling = Boolean(result && (aiSummaryReady || isExemptUser));
-  const [ttsMode, setTtsMode] = useState<'server' | 'browser'>('server');
   const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [selectedCounselor, setSelectedCounselor] = useState<string>('도화');
   const [introSpoken, setIntroSpoken] = useState(false);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+
+  useEffect(() => {
+    if (!loading && !replyTyping) return;
+    setProgressHintIdx(0);
+    const id = window.setInterval(() => {
+      setProgressHintIdx((n) => n + 1);
+    }, 5200);
+    return () => window.clearInterval(id);
+  }, [loading, replyTyping]);
 
   async function requestWakeLock() {
     if (!wakeLockEnabled || typeof window === 'undefined') return;
@@ -375,6 +437,36 @@ export default function ChatWidget({
       // noop
     } finally {
       wakeLockRef.current = null;
+    }
+  }
+
+  /** 전송/패널 열기 같은 사용자 제스처 안에서 호출 — 이후 비동기 TTS·오디오 정책 완화에 도움 */
+  async function primeMediaForTts() {
+    if (typeof window === 'undefined' || ttsPrimedRef.current) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const AnyWin = window as any;
+      const AC = window.AudioContext || AnyWin.webkitAudioContext;
+      if (AC) {
+        const ctx = new AC();
+        await ctx.resume();
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        gain.connect(ctx.destination);
+        const frames = Math.max(1, Math.floor(0.03 * ctx.sampleRate));
+        const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(gain);
+        src.start();
+        src.stop(ctx.currentTime + 0.03);
+        await new Promise<void>((r) => setTimeout(r, 50));
+        await ctx.close();
+      }
+    } catch {
+      /* noop */
+    } finally {
+      ttsPrimedRef.current = true;
     }
   }
 
@@ -626,6 +718,7 @@ export default function ChatWidget({
   async function send(text: string = input) {
     const trimmed = text.trim();
     if (!trimmed || loading || !result) return;
+    void primeMediaForTts();
     if (!isPaid && !isExemptUser && !previewUnlocked) {
       setMsgs(prev => [...prev, {
         role: 'assistant',
@@ -640,15 +733,25 @@ export default function ChatWidget({
       }]);
       return;
     }
+    setVoiceNote(null);
     const userMsg: Msg = { role: 'user', content: trimmed };
     const newMsgs = [...msgs, userMsg];
     setMsgs([...newMsgs, { role: 'assistant', content: '' }]);
     setInput('');
     setLoading(true);
+    setChatLoadingStep(1);
 
     const sajuContext = buildChatContext(result);
     const compareSajuContext = compareResult ? buildCompatibilityContext(result, compareResult) : undefined;
     let buffer = '';
+    let streamFinished = false;
+
+    const t1 = window.setTimeout(() => {
+      if (!streamFinished) setChatLoadingStep(2);
+    }, CHAT_STEP_ADVANCE_MS[0]);
+    const t2 = window.setTimeout(() => {
+      if (!streamFinished) setChatLoadingStep(3);
+    }, CHAT_STEP_ADVANCE_MS[1]);
 
     await streamChat(
       newMsgs.map(m => ({ role: m.role, content: m.content })),
@@ -659,37 +762,30 @@ export default function ChatWidget({
       },
       (chunk) => {
         buffer += chunk;
-        setMsgs(prev => {
-          const u = [...prev];
-          u[u.length - 1] = {
-            role: 'assistant',
-            content: buffer.length < 120 ? '질문 이해 및 답변 작성 중... ✍️' : '답변 초안 정리 중... ✍️',
-          };
-          return u;
-        });
+        if (buffer.length % 500 === 0 && !streamFinished) setChatLoadingStep(2);
       },
       () => {
-        setMsgs(prev => {
-          const u = [...prev];
-          u[u.length - 1] = { role: 'assistant', content: '최종 검증 중... ✨' };
-          return u;
-        });
+        streamFinished = true;
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+        setChatLoadingStep(3);
 
         setTimeout(() => {
           setLoading(false);
           const userTurn = newMsgs.filter((m) => m.role === 'user').length;
           const finalized = addFollowUpPrompt(finalizeKoreanAnswer(buffer), userTurn);
-          // 실시간 대화감 강화를 위해 타이핑 시작과 동시에 TTS를 재생한다.
-          if (finalized) {
-            void speakWithPreferredMode(finalized);
-          }
+          setChatLoadingStep(4);
+          setReplyTyping(true);
+          if (finalized) void speakWithPreferredMode(finalized);
           typeEffect(finalized, (typed) => {
-            setMsgs(prev => {
+            setMsgs((prev) => {
               const u = [...prev];
               u[u.length - 1] = { role: 'assistant', content: typed };
               return u;
             });
           }, () => {
+            setReplyTyping(false);
+            setChatLoadingStep(0);
             if (!isPaid && !isExemptUser && previewUnlocked) {
               const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
               setPreviewUnlocked(false);
@@ -697,15 +793,20 @@ export default function ChatWidget({
               if (typeof window !== 'undefined') sessionStorage.setItem(key, '1');
             }
           });
-        }, 450);
+        }, VERIFY_PAUSE_MS);
       },
       (err) => {
+        streamFinished = true;
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+        setChatLoadingStep(0);
         setMsgs(prev => {
           const u = [...prev];
           u[u.length - 1] = { role: 'assistant', content: `오류가 발생했습니다: ${err}` };
           return u;
         });
         setLoading(false);
+        setReplyTyping(false);
       },
     );
   }
@@ -715,20 +816,69 @@ export default function ChatWidget({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) { alert('이 브라우저는 음성 인식을 지원하지 않습니다. (Chrome 권장)'); return; }
-    if (listening) { recogRef.current?.stop(); setListening(false); return; }
-    const recog = new SR();
-    recog.lang = 'ko-KR'; recog.continuous = false; recog.interimResults = false;
-    recog.onresult = (e: any) => {
-      const t = e.results[0][0].transcript;
+    if (!SR) {
+      setVoiceNote('이 브라우저는 음성 입력을 지원하지 않습니다. Chrome 또는 Edge(데스크톱)를 사용해 주세요.');
+      return;
+    }
+    if (!window.isSecureContext) {
+      setVoiceNote('음성 입력은 보안 연결(HTTPS)에서만 동작합니다.');
+      return;
+    }
+    if (listening) {
+      recogRef.current?.stop();
       setListening(false);
-      send(t);
+      setVoiceNote(null);
+      return;
+    }
+    if (loading) {
+      setVoiceNote('답변을 받는 중입니다. 잠시 후 다시 눌러 주세요.');
+      return;
+    }
+    if (!result) return;
+    if (!isPaid && !isExemptUser && !previewUnlocked) {
+      setVoiceNote('무료 미리보기를 시작하거나 결제 후 음성 질문을 사용할 수 있어요.');
+      return;
+    }
+    setVoiceNote(null);
+    const recog = new SR();
+    recog.lang = 'ko-KR';
+    recog.continuous = false;
+    recog.interimResults = false;
+    recog.maxAlternatives = 1;
+    recog.onresult = (e: any) => {
+      const t = String(e.results?.[0]?.[0]?.transcript ?? '').trim();
+      setListening(false);
+      setVoiceNote(null);
+      if (t) {
+        void send(t);
+      } else {
+        setVoiceNote('인식된 말이 없습니다. 마이크 버튼을 누른 뒤 잠시 기다렸다가 말씀해 주세요.');
+      }
     };
-    recog.onerror = () => setListening(false);
-    recog.onend   = () => setListening(false);
+    recog.onerror = (ev: any) => {
+      const code = String(ev?.error ?? '');
+      const hints: Record<string, string> = {
+        'not-allowed': '마이크 사용이 거부되었습니다. 주소창 자물쇠에서 마이크를 허용해 주세요.',
+        'no-speech': '말씀이 감지되지 않았습니다. 버튼을 누른 뒤 1초 정도 기다렸다가 말해 보세요.',
+        'audio-capture': '마이크를 사용할 수 없습니다. 다른 앱이 마이크를 점유 중인지 확인해 주세요.',
+        network: '음성 인식 서버에 연결하지 못했습니다. 네트워크를 확인하거나 잠시 후 다시 시도해 주세요.',
+        aborted: '',
+        'service-not-allowed': '음성 인식 서비스를 사용할 수 없습니다. 브라우저 설정이나 네트워크를 확인해 주세요.',
+      };
+      const msg = hints[code] ?? (code ? `음성 인식 오류: ${code}` : '음성 인식 중 오류가 발생했습니다.');
+      if (msg) setVoiceNote(msg);
+      setListening(false);
+    };
+    recog.onend = () => setListening(false);
     recogRef.current = recog;
-    recog.start();
-    setListening(true);
+    try {
+      recog.start();
+      setListening(true);
+      setVoiceNote('듣고 있어요. 말씀하신 뒤 자동으로 전송됩니다. (조금 길게 말해도 괜찮아요)');
+    } catch {
+      setVoiceNote('음성 입력을 시작할 수 없습니다. 잠시 후 다시 눌러 주세요.');
+      setListening(false);
+    }
   }
 
   function stopTTS() {
@@ -742,34 +892,6 @@ export default function ChatWidget({
     releaseWakeLock();
   }
 
-  async function playServerTtsChunk(chunkText: string): Promise<boolean> {
-    try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: chunkText }),
-      });
-      if (!res.ok) return false;
-      const data = await res.json() as { audioBase64?: string; mimeType?: string };
-      if (!data.audioBase64 || !data.mimeType) return false;
-      const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
-      audioRef.current = audio;
-      try {
-        await audio.play();
-      } catch {
-        // 비동기 콜백 이후 재생은 브라우저 자동 재생 정책에 막히는 경우가 많음 → 브라우저 TTS로 넘김
-        return false;
-      }
-      const finishedOk = await new Promise<boolean>((resolve) => {
-        audio.onended = () => resolve(true);
-        audio.onerror = () => resolve(false);
-      });
-      return finishedOk;
-    } catch {
-      return false;
-    }
-  }
-
   async function speakWithPreferredMode(text: string) {
     if (!text) return;
     if (isSpeaking) stopTTS();
@@ -781,24 +903,8 @@ export default function ChatWidget({
       releaseWakeLock();
     };
 
-    if (ttsMode === 'server') {
-      const chunks = splitTtsChunks(text);
-      if (chunks.length) {
-        let successCount = 0;
-        for (const chunk of chunks) {
-          // eslint-disable-next-line no-await-in-loop
-          const ok = await playServerTtsChunk(chunk);
-          if (ok) successCount++;
-          else break;
-        }
-        if (successCount === chunks.length) {
-          done();
-          return;
-        }
-      }
-      setTtsMode('browser');
-    }
-
+    // 서버(Gemini) TTS는 HTMLAudio가 답변 완료 이후에 재생되어 자동 재생 정책에 막히는 경우가 대부분이라
+    // 자동 읽기는 Web Speech API만 사용한다. (/api/tts 는 추후 수동 재생 등에 활용 가능)
     speakKoreanQueued(text, {
       onDone: done,
       onChunkError: () => {
@@ -809,6 +915,7 @@ export default function ChatWidget({
 
   function usePreviewOnce() {
     if (!result || previewUsed) return;
+    void primeMediaForTts();
     setPreviewUnlocked(true);
     setMsgs(prev => [...prev, {
       role: 'assistant',
@@ -854,7 +961,7 @@ export default function ChatWidget({
               타이핑 {TYPE_SPEED_MS}ms · 읽기 x{TTS_RATE.toFixed(1)}
             </div>
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
-              음성 모드 {ttsMode === 'server' ? '서버 TTS' : '브라우저 TTS'} · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}
+              읽기: 브라우저 음성 · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}
             </div>
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
               랜덤 상담사: {selectedCounselor}
@@ -981,19 +1088,51 @@ export default function ChatWidget({
             </div>
           )}
 
-          {msgs.map((m, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-              <div style={{
-                maxWidth: '82%', padding: '10px 14px',
-                borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                background: m.role === 'user' ? 'rgba(232,201,126,.15)' : 'rgba(255,255,255,.07)',
-                border: `1px solid ${m.role === 'user' ? 'rgba(232,201,126,.3)' : 'rgba(255,255,255,.1)'}`,
-                color: '#e0e0e0', fontSize: '.87rem', lineHeight: 1.65, whiteSpace: 'pre-wrap',
-              }}>
-                {m.content || (loading && i === msgs.length - 1 ? <span className="chat-typing-cursor">▌</span> : '')}
+          {msgs.map((m, i) => {
+            const isLast = i === msgs.length - 1;
+            const showStepBubble = m.role === 'assistant' && loading && isLast && chatLoadingStep >= 1 && chatLoadingStep <= 3;
+            const displayMain = m.role === 'user'
+              ? m.content
+              : showStepBubble
+                ? `${CHAT_AI_STEPS[chatLoadingStep - 1]}\n\n— ${selectedCounselor} 상담사 · 심층 상담 —\n\n화면 아래 안내도 함께 바뀝니다. 검토가 끝나면 글이 한 글자씩 올라오며 음성으로도 들려 드려요.`
+                : m.content;
+            const isLastAssistantWait = m.role === 'assistant' && isLast && (loading || replyTyping);
+            const rotatingHint = (loading ? WAIT_CHAT_HINTS : REPLY_TYPING_HINTS)[progressHintIdx % (loading ? WAIT_CHAT_HINTS.length : REPLY_TYPING_HINTS.length)];
+            return (
+              <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '82%', padding: '10px 14px',
+                  borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  background: m.role === 'user' ? 'rgba(232,201,126,.15)' : 'rgba(255,255,255,.07)',
+                  border: `1px solid ${m.role === 'user' ? 'rgba(232,201,126,.3)' : 'rgba(255,255,255,.1)'}`,
+                  color: '#e0e0e0', fontSize: '.87rem', lineHeight: 1.65, whiteSpace: 'pre-wrap',
+                }}>
+                  {displayMain
+                    ? (
+                      <>
+                        {displayMain}
+                        {isLastAssistantWait && (
+                          <div style={{
+                            marginTop: 10,
+                            paddingTop: 10,
+                            borderTop: '1px solid rgba(255,255,255,.1)',
+                            fontSize: '.78rem',
+                            color: 'rgba(255,224,190,.88)',
+                            lineHeight: 1.55,
+                          }}>
+                            <span aria-hidden>💬 </span>
+                            {rotatingHint}
+                          </div>
+                        )}
+                      </>
+                      )
+                    : (loading && isLast && m.role === 'assistant'
+                      ? <span className="chat-typing-cursor">연결 중… ▌</span>
+                      : '')}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div ref={bottomRef} />
         </div>
 
@@ -1055,6 +1194,48 @@ export default function ChatWidget({
               </div>
             )}
 
+            {voiceNote && (
+              <div style={{
+                padding: '8px 12px 0',
+                fontSize: '.74rem',
+                color: '#ffb3a0',
+                lineHeight: 1.45,
+              }}>
+                {voiceNote}
+              </div>
+            )}
+
+            {(loading || replyTyping) && (
+              <div style={{
+                padding: '6px 12px 2px',
+                fontSize: '.72rem',
+                color: 'rgba(232,201,126,.88)',
+                lineHeight: 1.45,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}>
+                <span className="chat-rotating-star" aria-hidden style={{ fontSize: '.85rem' }}>✦</span>
+                <span>
+                  {loading ? (
+                    <>
+                      <span style={{ color: 'rgba(255,255,255,.72)' }}>
+                        {chatLoadingStep >= 1 ? CHAT_AI_STEPS[chatLoadingStep - 1] : '상담사 답변을 준비 중이에요.'}
+                      </span>
+                      {' '}
+                      <span style={{ color: 'rgba(255,255,255,.55)' }}>멈춘 상태가 아니에요.</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ color: 'rgba(255,255,255,.72)' }}>{CHAT_AI_STEPS[3]}</span>
+                      {' '}
+                      <span style={{ color: 'rgba(255,255,255,.55)' }}>음성과 함께 재생 중일 수 있어요.</span>
+                    </>
+                  )}
+                </span>
+              </div>
+            )}
+
             <div style={{
               padding: '10px 12px',
               display: 'flex', gap: 7,
@@ -1070,15 +1251,22 @@ export default function ChatWidget({
                   borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
                 }}
               />
-              <button onClick={toggleVoice} title={listening ? '녹음 중지' : '음성 입력'} style={{
-                padding: '9px 11px',
-                background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',
-                border: `1px solid ${listening ? 'rgba(220,80,80,.5)' : 'rgba(255,255,255,.12)'}`,
-                borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
-                cursor: 'pointer', fontSize: '1rem',
-                animation: listening ? 'pulse 1s infinite, micGlow 1.2s ease-in-out infinite' : 'micGlowIdle 2.2s ease-in-out infinite',
-                boxShadow: listening ? '0 0 14px rgba(255,107,107,.55)' : '0 0 10px rgba(139,111,198,.35)',
-              }}>🎤</button>
+              <button
+                type="button"
+                onClick={toggleVoice}
+                disabled={loading}
+                title={loading ? '답변 수신 중' : listening ? '녹음 중지' : '음성 입력'}
+                style={{
+                  padding: '9px 11px',
+                  background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',
+                  border: `1px solid ${listening ? 'rgba(220,80,80,.5)' : 'rgba(255,255,255,.12)'}`,
+                  borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
+                  cursor: loading ? 'not-allowed' : 'pointer', fontSize: '1rem',
+                  opacity: loading ? 0.45 : 1,
+                  animation: listening ? 'pulse 1s infinite, micGlow 1.2s ease-in-out infinite' : 'micGlowIdle 2.2s ease-in-out infinite',
+                  boxShadow: listening ? '0 0 14px rgba(255,107,107,.55)' : '0 0 10px rgba(139,111,198,.35)',
+                }}
+              >🎤</button>
               <button onClick={() => send()} disabled={loading || !input.trim() || !result || (!isPaid && !previewUnlocked)} style={{
                 padding: '9px 14px',
                 background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
@@ -1118,7 +1306,13 @@ export default function ChatWidget({
         )}
 
         <button
-          onClick={() => setOpen(o => !o)}
+          type="button"
+          onClick={() => {
+            setOpen((o) => {
+              if (!o) void primeMediaForTts();
+              return !o;
+            });
+          }}
           style={{
             width: 64, height: 64, borderRadius: '50%',
             background: 'linear-gradient(135deg, #8b6fc6, #6b4fa6)',

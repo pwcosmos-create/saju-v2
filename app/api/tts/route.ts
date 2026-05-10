@@ -90,9 +90,11 @@ export async function POST(req: NextRequest) {
     }
 
     const json = JSON.parse(raw) as any;
-    const inlineData = json?.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData;
+    const parts = json?.candidates?.[0]?.content?.parts as any[] | undefined;
+    const partWithAudio = parts?.find((p: any) => p?.inlineData?.data || p?.inline_data?.data);
+    const inlineData = partWithAudio?.inlineData ?? partWithAudio?.inline_data;
     const audioBase64 = inlineData?.data as string | undefined;
-    const mimeType = inlineData?.mimeType as string | undefined;
+    const mimeType = (inlineData?.mimeType ?? inlineData?.mime_type) as string | undefined;
 
     if (!audioBase64 || !mimeType) {
       return new Response(JSON.stringify({ error: 'TTS 오디오 데이터 없음' }), { status: 502 });

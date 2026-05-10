@@ -76,7 +76,10 @@ function speakKoreanQueued(
   text: string,
   options?: { onDone?: () => void; onChunkError?: () => void },
 ) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    options?.onDone?.();
+    return;
+  }
   const chunks = splitTtsChunks(text);
   if (!chunks.length) {
     options?.onDone?.();
@@ -86,31 +89,59 @@ function speakKoreanQueued(
   const synth = window.speechSynthesis;
   // 새 응답 시작 시에만 이전 발화를 정리한다.
   if (synth.speaking) synth.cancel();
+  // Chrome 등에서 큐가 paused로 남아 무음이 되는 경우 방지
+  try {
+    if (synth.paused) synth.resume();
+  } catch {
+    /* noop */
+  }
 
-  const voices = synth.getVoices();
-  const koVoice = voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural')))
-               || voices.find(v => v.lang.includes('ko'));
-
-  const speakAt = (idx: number) => {
-    if (idx >= chunks.length) {
-      options?.onDone?.();
-      return;
-    }
-    const utt = new SpeechSynthesisUtterance(chunks[idx]);
-    if (koVoice) utt.voice = koVoice;
-    utt.lang = 'ko-KR';
-    utt.rate = TTS_RATE;
-    utt.pitch = TTS_PITCH;
-    utt.onend = () => speakAt(idx + 1);
-    // 일부 브라우저에서 중간 오류가 나도 다음 청크로 이어서 읽는다.
-    utt.onerror = () => {
-      options?.onChunkError?.();
-      speakAt(idx + 1);
-    };
-    synth.speak(utt);
+  const pickKoVoice = () => {
+    const voices = synth.getVoices();
+    return (
+      voices.find(v => v.lang.includes('ko') && (v.name.includes('Google') || v.name.includes('Natural')))
+      || voices.find(v => v.lang.includes('ko'))
+    );
   };
 
-  speakAt(0);
+  const runQueue = (koVoice: SpeechSynthesisVoice | undefined) => {
+    const speakAt = (idx: number) => {
+      if (idx >= chunks.length) {
+        options?.onDone?.();
+        return;
+      }
+      const utt = new SpeechSynthesisUtterance(chunks[idx]);
+      if (koVoice) utt.voice = koVoice;
+      utt.lang = 'ko-KR';
+      utt.rate = TTS_RATE;
+      utt.pitch = TTS_PITCH;
+      utt.onend = () => speakAt(idx + 1);
+      // 일부 브라우저에서 중간 오류가 나도 다음 청크로 이어서 읽는다.
+      utt.onerror = () => {
+        options?.onChunkError?.();
+        speakAt(idx + 1);
+      };
+      synth.speak(utt);
+    };
+    speakAt(0);
+  };
+
+  // 첫 로드 시 getVoices()가 빈 배열인 브라우저(Chrome 등) 대비
+  if (synth.getVoices().length === 0) {
+    let started = false;
+    const start = () => {
+      if (started) return;
+      started = true;
+      synth.removeEventListener('voiceschanged', start);
+      window.clearTimeout(fallbackTimer);
+      runQueue(pickKoVoice());
+    };
+    const fallbackTimer = window.setTimeout(start, 800);
+    synth.addEventListener('voiceschanged', start);
+    return;
+  }
+
+  runQueue(pickKoVoice());
 }
 import { calculate, type SajuResult } from '../core/pillar-calc/main-calculator';
 import {
@@ -723,12 +754,17 @@ export default function ChatWidget({
       if (!data.audioBase64 || !data.mimeType) return false;
       const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
       audioRef.current = audio;
-      await new Promise<void>((resolve) => {
-        audio.onended = () => resolve();
-        audio.onerror = () => resolve();
-        audio.play().catch(() => resolve());
+      try {
+        await audio.play();
+      } catch {
+        // 비동기 콜백 이후 재생은 브라우저 자동 재생 정책에 막히는 경우가 많음 → 브라우저 TTS로 넘김
+        return false;
+      }
+      const finishedOk = await new Promise<boolean>((resolve) => {
+        audio.onended = () => resolve(true);
+        audio.onerror = () => resolve(false);
       });
-      return true;
+      return finishedOk;
     } catch {
       return false;
     }

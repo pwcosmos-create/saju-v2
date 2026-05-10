@@ -1,5 +1,51 @@
 import { NextRequest } from 'next/server';
 
+/** Gemini TTS 기본값: 24kHz mono LE PCM — 브라우저 `Audio()`는 raw PCM data URL 재생을 지원하지 않아 WAV로 감싼다. */
+function pcm16leMonoToWavBuffer(pcm: Buffer, sampleRate: number): Buffer {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = pcm.length;
+  const out = Buffer.alloc(44 + dataSize);
+  let o = 0;
+  out.write('RIFF', o);
+  o += 4;
+  out.writeUInt32LE(36 + dataSize, o);
+  o += 4;
+  out.write('WAVE', o);
+  o += 4;
+  out.write('fmt ', o);
+  o += 4;
+  out.writeUInt32LE(16, o);
+  o += 4;
+  out.writeUInt16LE(1, o);
+  o += 2;
+  out.writeUInt16LE(numChannels, o);
+  o += 2;
+  out.writeUInt32LE(sampleRate, o);
+  o += 4;
+  out.writeUInt32LE(byteRate, o);
+  o += 4;
+  out.writeUInt16LE(blockAlign, o);
+  o += 2;
+  out.writeUInt16LE(bitsPerSample, o);
+  o += 2;
+  out.write('data', o);
+  o += 4;
+  out.writeUInt32LE(dataSize, o);
+  o += 4;
+  pcm.copy(out, o);
+  return out;
+}
+
+function parsePcmSampleRate(mimeType: string): number | null {
+  const m = /rate=(\d+)/i.exec(mimeType);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export async function POST(req: NextRequest) {
   let body: { text?: string };
   try {
@@ -52,7 +98,24 @@ export async function POST(req: NextRequest) {
       return new Response(JSON.stringify({ error: 'TTS 오디오 데이터 없음' }), { status: 502 });
     }
 
-    return new Response(JSON.stringify({ audioBase64, mimeType }), {
+    let outMime = mimeType;
+    let outB64 = audioBase64;
+    const isRawPcm =
+      /audio\/L\d+/i.test(mimeType) ||
+      (mimeType.toLowerCase().includes('pcm') && !mimeType.toLowerCase().includes('wav'));
+    if (isRawPcm) {
+      const rate = parsePcmSampleRate(mimeType) ?? 24000;
+      try {
+        const pcmBuf = Buffer.from(audioBase64, 'base64');
+        const wavBuf = pcm16leMonoToWavBuffer(pcmBuf, rate);
+        outB64 = wavBuf.toString('base64');
+        outMime = 'audio/wav';
+      } catch {
+        return new Response(JSON.stringify({ error: 'TTS PCM → WAV 변환 실패' }), { status: 500 });
+      }
+    }
+
+    return new Response(JSON.stringify({ audioBase64: outB64, mimeType: outMime }), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (e) {

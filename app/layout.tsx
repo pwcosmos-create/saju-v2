@@ -42,10 +42,8 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' },
   },
-  alternates: { canonical: SITE_URL },
   openGraph: {
     type: 'website',
-    url: SITE_URL,
     title: TITLE,
     description: DESC,
     siteName: '✦ AI사주',
@@ -115,7 +113,6 @@ const WEBAPP_SCHEMA = {
   operatingSystem: 'All',
   inLanguage: 'ko',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'KRW' },
-  aggregateRating: { '@type': 'AggregateRating', ratingValue: '4.8', ratingCount: '1200' },
 };
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;

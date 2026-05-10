@@ -1,4 +1,20 @@
-export const metadata = { title: '이용약관 | ✦ AI사주' };
+import type { Metadata } from 'next';
+
+const SITE = 'https://saju.coupax.co.kr';
+
+export const metadata: Metadata = {
+  title: '이용약관',
+  description: 'AI사주(saju.coupax.co.kr) 이용약관 — 사주팔자 분석 서비스 이용 조건 및 면책 안내.',
+  alternates: { canonical: `${SITE}/terms` },
+  robots: { index: true, follow: true },
+  openGraph: {
+    title: '이용약관 | ✦ AI사주',
+    description: 'AI사주 서비스 이용약관입니다.',
+    url: `${SITE}/terms`,
+    siteName: '✦ AI사주',
+    locale: 'ko_KR',
+  },
+};
 
 export default function TermsPage() {
   return (

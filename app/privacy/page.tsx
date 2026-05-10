@@ -1,4 +1,20 @@
-export const metadata = { title: '개인정보처리방침 | ✦ AI사주' };
+import type { Metadata } from 'next';
+
+const SITE = 'https://saju.coupax.co.kr';
+
+export const metadata: Metadata = {
+  title: '개인정보처리방침',
+  description: 'AI사주(saju.coupax.co.kr) 개인정보처리방침 — 사주 분석 입력 정보 및 피드백 처리 안내.',
+  alternates: { canonical: `${SITE}/privacy` },
+  robots: { index: true, follow: true },
+  openGraph: {
+    title: '개인정보처리방침 | ✦ AI사주',
+    description: 'AI사주 서비스 개인정보처리방침입니다.',
+    url: `${SITE}/privacy`,
+    siteName: '✦ AI사주',
+    locale: 'ko_KR',
+  },
+};
 
 export default function PrivacyPage() {
   return (

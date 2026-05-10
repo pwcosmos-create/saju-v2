@@ -30,8 +30,16 @@ function finalizeKoreanAnswer(text: string): string {
     .trim();
   if (!cleaned) return '';
   if (/[.!?…]$/.test(cleaned)) return cleaned;
-  if (/(입니다|해요|돼요|하세요|좋아요|보입니다|가능합니다|필요합니다|있습니다|됩니다|드립니다)$/.test(cleaned)) return `${cleaned}.`;
-  return `${cleaned}입니다.`;
+  /** 이미 완결된 어미 — 마침표만 없으면 추가. 불완전 스트림 끝(예: …마음먹)에 억지로 「입니다」를 붙이면 비문이 됨 */
+  if (
+    /(입니다|입니까|합니다|됩니다|있습니다|없습니다|보입니다|가능합니다|필요합니다|드립니다|맞습니다|같습니다)$/.test(cleaned)
+    || /(해요|예요|애요|세요|죠|지요|까요|네요|어요|아요|돼요|ㄹ게요|을게요|할게요|ㄴ데요|거예요|거죠|펼쳐져요|있어요|없어요|같아요|좋아요|맞아요|할 수 있어요|경향이 있어요)$/.test(
+      cleaned,
+    )
+  ) {
+    return `${cleaned}.`;
+  }
+  return cleaned;
 }
 
 function addFollowUpPrompt(text: string, userTurn: number): string {

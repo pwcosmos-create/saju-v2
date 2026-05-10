@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
+import { resolveGeminiTtsVoiceForCounselor } from '../../../core/counselor-config';
 
 /** 긴 답은 여러 청크로 호출되므로 채팅보다 여유 있게 */
 const checkRateLimit = makeRateLimiter(48, 60_000);
@@ -58,12 +59,16 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'TTS 요청 한도 초과. 잠시 후 다시 시도해주세요.' }), { status: 429 });
   }
 
-  let body: { text?: string };
+  let body: { text?: string; counselorName?: string };
   try {
     body = await req.json();
   } catch {
     return new Response(JSON.stringify({ error: '잘못된 요청 형식' }), { status: 400 });
   }
+
+  const voiceName = resolveGeminiTtsVoiceForCounselor(
+    typeof body.counselorName === 'string' ? body.counselorName : '',
+  );
 
   const text = (body.text ?? '').trim();
   if (!text) {
@@ -90,7 +95,7 @@ export async function POST(req: NextRequest) {
             responseModalities: ['AUDIO'],
             speechConfig: {
               voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Kore' },
+                prebuiltVoiceConfig: { voiceName },
               },
             },
           },

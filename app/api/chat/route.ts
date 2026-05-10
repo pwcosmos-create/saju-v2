@@ -1,9 +1,7 @@
 import { NextRequest } from 'next/server';
 import { fetchLlmStream } from '../../../core/config/llm';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
-
-/** 클라이언트 상담사 목록과 동일해야 함 — 주입 방지용 화이트리스트 */
-const COUNSELOR_ALLOWLIST = new Set(['도화', '현월', '지안', '서윤', '유진']);
+import { COUNSELOR_ALLOWLIST } from '../../../core/counselor-config';
 
 // IP당 1분에 20회
 const checkRateLimit = makeRateLimiter(20, 60_000);

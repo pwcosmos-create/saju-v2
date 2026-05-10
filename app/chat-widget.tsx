@@ -5,6 +5,11 @@
  */
 'use client';
 import { useState, useRef, useEffect } from 'react';
+import {
+  COUNSELOR_BROWSER_VOICE_GENDER,
+  COUNSELOR_NAMES,
+  type CounselorName,
+} from '../core/counselor-config';
 
 // 한자·괄호 한자 제거 — TTS 전용
 function stripHanja(text: string): string {
@@ -42,20 +47,25 @@ function addFollowUpPrompt(text: string, userTurn: number): string {
   return `${normalized}\n\n${prompt}`;
 }
 
-/** 이 길이 이하면 한 번에 읽어 문장 사이 인위적 정지 없음 */
-const TTS_SINGLE_UTTERANCE_MAX_CHARS = 3800;
 /** 한 문장이 이보다 길면 쉼표 등으로 나눈 뒤에만 글자 단위 분할 */
 const TTS_HARD_SENTENCE_CAP = 1600;
-/** 문장 단위 utterance 사이 숨 고르기(ms) — 다음 문장으로 넘어가기 전 짧은 정지 */
-/** 브라우저 음성: 문장(조각) 사이 멈춤 */
+/** 브라우저 음성: 완성된 문장 단위 재생 후 다음 문장으로 넘어가기 전 멈춤 */
 const TTS_INTER_SENTENCE_PAUSE_MS = 1000;
+const TTS_RATE = 0.93;
+const TTS_PITCH = 1.02;
 
 function splitIntoSentences(normalized: string): string[] {
-  const parts = normalized
-    .split(/(?<=[.!?。！？…])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return parts.length ? parts : normalized ? [normalized] : [];
+  const blocks = normalized.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const out: string[] = [];
+  for (const block of blocks) {
+    const parts = block
+      .split(/(?<=[.!?。！？…])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length) out.push(...parts);
+    else out.push(block);
+  }
+  return out.length ? out : normalized ? [normalized] : [];
 }
 
 /** 초장문만 쉼표 단위 → 그래도 길면 글자로 분할(최후 수단). 문장 중간에서 잘리지 않게 우선 시도 */
@@ -91,12 +101,10 @@ function splitOversizedSentence(sentence: string): string[] {
   return out;
 }
 
-/** 길면 문장마다 따로 읽고 문장 사이에만 정지. 짧으면 통째로 한 번에 읽음 */
+/** 문장(과 초장문 조각)마다 따로 읽고 문장 사이에는 TTS_INTER_SENTENCE_PAUSE_MS 만큼 쉼 */
 function splitTtsChunks(text: string): string[] {
   const normalized = stripHanja(text).replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
-  if (normalized.length <= TTS_SINGLE_UTTERANCE_MAX_CHARS) return [normalized];
-
   const flat: string[] = [];
   for (const s of splitIntoSentences(normalized)) {
     flat.push(...splitOversizedSentence(s));
@@ -104,48 +112,106 @@ function splitTtsChunks(text: string): string[] {
   return flat.filter(Boolean);
 }
 
-/** 서버 /api/tts 요청당 글자 상한에 맞춰 문장 단위로 묶음 */
-const SERVER_TTS_CHUNK_CHARS = 480;
-/** 서버 TTS 청크 사이 멈춤 */
+/** 서버 /api/tts 요청당 글자 상한 — 한 요청에는 가능하면 완결된 한 문장만 */
+const SERVER_TTS_CHUNK_CHARS = 520;
+/** 문장(청크) 단위 재생이 끝난 뒤 다음 요청까지 대기 */
 const SERVER_TTS_INTER_CHUNK_MS = 1000;
+
+/** 긴 한 문장만 API 글자 상한 이하로 나눔(쉼표·공백 우선, 마지막만 고정 길이) */
+function splitLongSentenceForServer(sentence: string): string[] {
+  const max = SERVER_TTS_CHUNK_CHARS;
+  const trimmed = sentence.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= max) return [trimmed];
+
+  const clauses = trimmed.split(/(?<=[,，])\s*/).map((c) => c.trim()).filter(Boolean);
+  if (clauses.length > 1) {
+    const out: string[] = [];
+    let cur = '';
+    for (const c of clauses) {
+      const joined = cur ? `${cur} ${c}` : c;
+      if (joined.length <= max) {
+        cur = joined;
+        continue;
+      }
+      if (cur) out.push(cur);
+      if (c.length <= max) {
+        cur = c;
+        continue;
+      }
+      out.push(...sliceByWordBoundaryForTts(c, max));
+      cur = '';
+    }
+    if (cur) out.push(cur);
+    return out.length ? out : sliceByWordBoundaryForTts(trimmed, max);
+  }
+  return sliceByWordBoundaryForTts(trimmed, max);
+}
+
+function sliceByWordBoundaryForTts(text: string, max: number): string[] {
+  const out: string[] = [];
+  let rest = text.trim();
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf(' ', max);
+    if (cut < Math.floor(max * 0.45)) cut = max;
+    const piece = rest.slice(0, cut).trim();
+    if (piece) out.push(piece);
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) out.push(rest);
+  return out.filter(Boolean);
+}
 
 function splitForServerTts(text: string): string[] {
   const normalized = stripHanja(text).replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
   if (normalized.length <= SERVER_TTS_CHUNK_CHARS) return [normalized];
 
-  const parts = normalized
-    .split(/(?<=[.!?。！？…])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (!parts.length) {
-    const out: string[] = [];
-    for (let i = 0; i < normalized.length; i += SERVER_TTS_CHUNK_CHARS) {
-      out.push(normalized.slice(i, i + SERVER_TTS_CHUNK_CHARS));
-    }
-    return out;
-  }
-
+  const sentences = splitIntoSentences(normalized);
   const chunks: string[] = [];
-  let cur = '';
-  for (const p of parts) {
-    const next = cur ? `${cur} ${p}` : p;
-    if (next.length <= SERVER_TTS_CHUNK_CHARS) {
-      cur = next;
-      continue;
-    }
-    if (cur) chunks.push(cur);
-    if (p.length <= SERVER_TTS_CHUNK_CHARS) {
-      cur = p;
-      continue;
-    }
-    for (let i = 0; i < p.length; i += SERVER_TTS_CHUNK_CHARS) {
-      chunks.push(p.slice(i, i + SERVER_TTS_CHUNK_CHARS));
-    }
-    cur = '';
+  for (const s of sentences) {
+    chunks.push(...splitLongSentenceForServer(s));
   }
-  if (cur) chunks.push(cur);
-  return chunks;
+  return chunks.filter(Boolean);
+}
+
+/** 한글 낭독 가정(배속 1.0 기준 글자/초) — 타이핑 간격을 음성 길이에 맞출 때 사용 */
+const SPEECH_BASE_CHARS_PER_SEC = 10.8;
+/** 서버 합성음은 브라우저 내장음과 미세하게 다른 경우가 있어 보정 */
+const SERVER_SPEECH_CPS_FACTOR = 1.02;
+
+function estimateBrowserSpeechMs(text: string): number {
+  const chunks = splitTtsChunks(text);
+  if (!chunks.length) return 0;
+  const cps = SPEECH_BASE_CHARS_PER_SEC * TTS_RATE;
+  let ms = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    ms += (chunks[i].length / cps) * 1000;
+    if (i < chunks.length - 1) ms += TTS_INTER_SENTENCE_PAUSE_MS;
+  }
+  return ms;
+}
+
+function estimateServerSpeechMs(text: string): number {
+  const chunks = splitForServerTts(text);
+  if (!chunks.length) return 0;
+  const cps = SPEECH_BASE_CHARS_PER_SEC * TTS_RATE * SERVER_SPEECH_CPS_FACTOR;
+  const gap = SERVER_TTS_INTER_CHUNK_MS + 72;
+  let ms = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    ms += (chunks[i].length / cps) * 1000;
+    if (i < chunks.length - 1) ms += gap;
+  }
+  return ms;
+}
+
+/** 답변 전체 표시 시간 ≈ 선택 모드의 예상 음성 재생 시간 */
+function typeIntervalMsForSpeechSync(text: string, mode: 'browser' | 'server'): number {
+  const n = text.length;
+  if (n <= 0) return 48;
+  const total = mode === 'browser' ? estimateBrowserSpeechMs(text) : estimateServerSpeechMs(text);
+  const perChar = total / n;
+  return Math.round(Math.min(220, Math.max(22, perChar)));
 }
 
 const TTS_OUTPUT_MODE_KEY = 'saju_chat_tts_output_mode';
@@ -164,33 +230,53 @@ function clearVoiceWaitRegistration(synth: SpeechSynthesis) {
   voiceWaitReg = null;
 }
 
-/** 탭 세션 동안 같은 한국어 음성 유지 — 매 호출마다 다른 목소리 고르는 것 방지 */
-const TTS_KO_VOICE_URI_KEY = 'saju_chat_ko_voice_uri';
+/** 상담사별 기기 음성 URI — 브라우저마다 목록이 달라 한 번 고르면 localStorage 에 고정 */
+function counselorKoVoiceStorageKey(counselorName: string): string {
+  return `saju_chat_counselor_voice_uri_v1_${counselorName}`;
+}
 
-function pickStableKoVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | undefined {
-  const voices = synth.getVoices().filter((v) => v.lang.toLowerCase().startsWith('ko'));
-  if (!voices.length) return undefined;
+function inferBrowserKoVoiceGender(v: SpeechSynthesisVoice): 'male' | 'female' | 'unknown' {
+  const blob = `${v.name}\t${v.voiceURI}`.toLowerCase();
+  if (/\binjoon\b|injoon|남성|\bmale\b|hyunsu|hyun-su|민상|석준|태준|준영/i.test(blob)) return 'male';
+  if (/\bheami\b|heami|yuna|유나|여성|\bfemale\b|hyeri|혜리|소연|하음/i.test(blob)) return 'female';
+  return 'unknown';
+}
 
-  let savedUri: string | null = null;
-  try {
-    savedUri = sessionStorage.getItem(TTS_KO_VOICE_URI_KEY);
-  } catch {
-    /* 사파리 비공개 등 */
-  }
-  if (savedUri) {
-    const again = voices.find((v) => v.voiceURI === savedUri);
-    if (again) return again;
-  }
-
-  const ranked = [...voices].sort((a, b) => {
+function rankKoVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
+  return [...voices].sort((a, b) => {
     const score = (n: string) => (/Google|Natural|Microsoft/i.test(n) ? 0 : 1);
     const d = score(a.name) - score(b.name);
     if (d !== 0) return d;
     return a.name.localeCompare(b.name, 'ko');
   });
-  const chosen = ranked[0];
+}
+
+function pickCounselorKoVoice(synth: SpeechSynthesis, counselorName: string): SpeechSynthesisVoice | undefined {
+  const voices = synth.getVoices().filter((v) => v.lang.toLowerCase().startsWith('ko'));
+  if (!voices.length) return undefined;
+
+  const slotKey = counselorKoVoiceStorageKey(counselorName);
   try {
-    sessionStorage.setItem(TTS_KO_VOICE_URI_KEY, chosen.voiceURI);
+    const savedUri = localStorage.getItem(slotKey);
+    if (savedUri) {
+      const again = voices.find((v) => v.voiceURI === savedUri);
+      if (again) return again;
+    }
+  } catch {
+    /* 사파리 비공개 등 */
+  }
+
+  const want =
+    counselorName in COUNSELOR_BROWSER_VOICE_GENDER
+      ? COUNSELOR_BROWSER_VOICE_GENDER[counselorName as CounselorName]
+      : 'female';
+  const byGender = voices.filter((v) => inferBrowserKoVoiceGender(v) === want);
+  const unknown = voices.filter((v) => inferBrowserKoVoiceGender(v) === 'unknown');
+  const pool = byGender.length ? byGender : unknown.length ? unknown : voices;
+  const chosen = rankKoVoices(pool)[0];
+  if (!chosen) return undefined;
+  try {
+    localStorage.setItem(slotKey, chosen.voiceURI);
   } catch {
     /* noop */
   }
@@ -199,15 +285,15 @@ function pickStableKoVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | undef
 
 function speakKoreanQueued(
   text: string,
-  options?: { onDone?: () => void; onChunkError?: () => void },
+  options: { counselorName: string; onDone?: () => void; onChunkError?: () => void },
 ) {
   if (typeof window === 'undefined' || !window.speechSynthesis) {
-    options?.onDone?.();
+    options.onDone?.();
     return;
   }
   const chunks = splitTtsChunks(text);
   if (!chunks.length) {
-    options?.onDone?.();
+    options.onDone?.();
     return;
   }
 
@@ -271,7 +357,7 @@ function speakKoreanQueued(
       if (sessionId !== speakKoreanSessionId || started) return;
       started = true;
       clearVoiceWaitRegistration(synth);
-      runQueue(pickStableKoVoice(synth));
+      runQueue(pickCounselorKoVoice(synth, options.counselorName));
     };
     const onVoices = () => start();
     const fallbackTimer = window.setTimeout(() => start(), 800);
@@ -280,7 +366,7 @@ function speakKoreanQueued(
     return;
   }
 
-  runQueue(pickStableKoVoice(synth));
+  runQueue(pickCounselorKoVoice(synth, options.counselorName));
 }
 import { calculate, type SajuResult } from '../core/pillar-calc/main-calculator';
 import {
@@ -292,20 +378,16 @@ import { classifyElements } from '../core/daily-fortune/classifier';
 const GENERATES = [1, 2, 3, 4, 0];
 const SESSION_SECONDS = 30 * 60;
 const MAX_SESSION_SECONDS = 120 * 60;
-/** 타이핑·브라우저 TTS 체감 속도 맞춤 — 한쪽만 바꾸면 어긋남 */
-const TYPE_SPEED_MS = 128;
-/** 스트림 종료 후 검토 연출 — 타이핑·음성 직전 짧은 멈춤(1초 이하) */
-const VERIFY_PAUSE_MS = 1000;
+/** 스트림 종료 후 검토 연출 — 사주 페이지 askAI(2000ms)와 동일 */
+const VERIFY_PAUSE_MS = 2000;
 /** 상담 스트리밍 단계 라벨 — AI 심층 풀이 버튼 연출과 통일 */
 const CHAT_AI_STEPS = [
   '운명의 기운을 읽는 중...',
-  'AI 분석 초안을 작성하는 중...',
-  '내용의 정확도를 최종 검토 중...',
-  '전문적인 조언을 정성껏 작성 중...',
+  '답변 초안을 작성하는 중...',
+  '초안을 검토하고 다듬는 중...',
+  '검토를 마치고 화면에 순서대로 보여드리는 중...',
 ] as const;
 const CHAT_STEP_ADVANCE_MS = [3000, 7000] as const; // 2단계, 3단계 진입 타이밍 (askAI 와 동일)
-const TTS_RATE = 0.93;
-const TTS_PITCH = 1.02;
 /** 스트리밍/API 대기 중 — 주기적으로 바뀌며 ‘정지 아님’ 안내 */
 const WAIT_CHAT_HINTS = [
   '정지된 것이 아니에요. 사주 맥락을 함께 읽으며 답을 준비하고 있습니다.',
@@ -316,11 +398,10 @@ const WAIT_CHAT_HINTS = [
 ] as const;
 /** 타이핑 효과로 글자 찍는 동안 */
 const REPLY_TYPING_HINTS = [
-  '글자 속도와 음성 속도를 비슷하게 맞춰 두었어요. 음성이 앞서거나 너무 늦게 느껴지면 브라우저나 기기마다 조금씩 다를 수 있어요.',
+  '이번 답변 길이와 고품질/기기 음성 설정을 기준으로 타이핑 간격을 잡았어요. 합성 엔진·브라우저마다 실제 길이는 조금 달라질 수 있어요.',
   '긴 답변은 표시에 시간이 걸려요. 스크롤해 천천히 읽으셔도 돼요.',
   '거의 다 나왔을 거예요. 잠시만 기다려 주세요.',
 ] as const;
-const COUNSELOR_NAMES = ['도화', '현월', '지안', '서윤', '유진'] as const;
 const PAYMENT_EXEMPT_BIRTHDAYS = new Set([
   '1974-3-10',
   '1975-6-13',
@@ -346,11 +427,13 @@ const miniActionBtnStyle = {
   cursor: 'pointer',
 };
 
-// 타이핑 효과 함수 (v2.0.3)
-function typeEffect(text: string, onUpdate: (t: string) => void, onDone?: () => void) {
+function typeEffect(
+  text: string,
+  charIntervalMs: number,
+  onUpdate: (t: string) => void,
+  onDone?: () => void,
+) {
   let index = 0;
-  const speed = TYPE_SPEED_MS; // 타이핑 속도 (ms)
-  
   const timer = setInterval(() => {
     if (index < text.length) {
       onUpdate(text.slice(0, index + 1));
@@ -359,7 +442,7 @@ function typeEffect(text: string, onUpdate: (t: string) => void, onDone?: () => 
       clearInterval(timer);
       if (onDone) onDone();
     }
-  }, speed);
+  }, charIntervalMs);
 }
 
 function buildChatContext(r: SajuResult): string {
@@ -762,7 +845,7 @@ export default function ChatWidget({
   useEffect(() => {
     if (!open || !result || introSpoken || !canStartCounseling) return;
     const intro = `${selectedCounselor} 상담사가 이 세션 내내 함께합니다. 궁금한 점을 편하게 물어보세요.`;
-    void speakWithPreferredMode(intro);
+    void speakWithPreferredMode(intro, selectedCounselor);
     setIntroSpoken(true);
   }, [open, result, canStartCounseling, introSpoken, selectedCounselor]);
 
@@ -913,8 +996,9 @@ export default function ChatWidget({
           const finalized = addFollowUpPrompt(finalizeKoreanAnswer(buffer), userTurn);
           setChatLoadingStep(4);
           setReplyTyping(true);
-          if (finalized) void speakWithPreferredMode(finalized);
-          typeEffect(finalized, (typed) => {
+          const syncMs = typeIntervalMsForSpeechSync(finalized, ttsOutputMode);
+          if (finalized) void speakWithPreferredMode(finalized, selectedCounselor);
+          typeEffect(finalized, syncMs, (typed) => {
             setMsgs((prev) => {
               const u = [...prev];
               u[u.length - 1] = { role: 'assistant', content: typed };
@@ -1030,18 +1114,29 @@ export default function ChatWidget({
     releaseWakeLock();
   }
 
-  async function playServerTtsChunk(chunkText: string): Promise<boolean> {
+  async function fetchServerTtsPayload(
+    chunkText: string,
+    counselorName: string,
+  ): Promise<{ mimeType: string; audioBase64: string } | null> {
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
       const res = await fetch(`${base}/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: chunkText }),
+        body: JSON.stringify({ text: chunkText, counselorName }),
       });
-      if (!res.ok) return false;
+      if (!res.ok) return null;
       const data = await res.json() as { audioBase64?: string; mimeType?: string; error?: string };
-      if (data.error || !data.audioBase64 || !data.mimeType) return false;
-      const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
+      if (data.error || !data.audioBase64 || !data.mimeType) return null;
+      return { mimeType: data.mimeType, audioBase64: data.audioBase64 };
+    } catch {
+      return null;
+    }
+  }
+
+  async function playServerTtsPayload(payload: { mimeType: string; audioBase64: string }): Promise<boolean> {
+    try {
+      const audio = new Audio(`data:${payload.mimeType};base64,${payload.audioBase64}`);
       audioRef.current = audio;
       try {
         await audio.play();
@@ -1058,7 +1153,7 @@ export default function ChatWidget({
     }
   }
 
-  async function speakWithPreferredMode(text: string) {
+  async function speakWithPreferredMode(text: string, counselorName: string) {
     if (!text) return;
     if (isSpeaking) stopTTS();
 
@@ -1074,6 +1169,7 @@ export default function ChatWidget({
 
     const runBrowserTts = () => {
       speakKoreanQueued(text, {
+        counselorName,
         onDone: () => {
           if (gen !== speakGenRef.current) return;
           done();
@@ -1094,10 +1190,20 @@ export default function ChatWidget({
     }
 
     let serverOk = true;
+    let pendingPayload = fetchServerTtsPayload(chunks[0], counselorName);
     for (let i = 0; i < chunks.length; i++) {
       if (gen !== speakGenRef.current) return;
       // eslint-disable-next-line no-await-in-loop
-      const ok = await playServerTtsChunk(chunks[i]);
+      const payload = await pendingPayload;
+      pendingPayload = i + 1 < chunks.length
+        ? fetchServerTtsPayload(chunks[i + 1], counselorName)
+        : Promise.resolve(null);
+      if (!payload) {
+        serverOk = false;
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await playServerTtsPayload(payload);
       if (!ok) {
         serverOk = false;
         break;
@@ -1163,7 +1269,7 @@ export default function ChatWidget({
                   : 'AI 심층 풀이 기반 텍스트/음성 맞춤 상담'}
             </div>
             <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,.62)', marginTop: 2 }}>
-              타이핑 {TYPE_SPEED_MS}ms · 읽기 x{TTS_RATE.toFixed(1)}
+              타이핑·음성 속도 자동 맞춤(답변 길이·고품질/기기음성 기준) · 읽기 배속 ×{TTS_RATE.toFixed(2)}
             </div>
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
               읽기: {ttsOutputMode === 'server' ? '서버 고품질 (실패 시 기기 음성)' : '기기 내장 음성만'} · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}

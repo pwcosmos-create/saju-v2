@@ -89,7 +89,8 @@ ${items.map(item => `    <item>
   return new NextResponse(rss, {
     headers: {
       'Content-Type': 'application/rss+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=86400',
+      /* 배포 직후 네이버·브라우저가 옛 피드를 너무 오래 들고 가지 않도록 짧게 */
+      'Cache-Control': 'public, max-age=300, s-maxage=300',
     },
   });
 }

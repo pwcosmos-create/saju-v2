@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# 로컬 피드백 덤프 (커밋하지 않음)
+feedback.jsonl
+
 # debug
 npm-debug.log*
 yarn-debug.log*

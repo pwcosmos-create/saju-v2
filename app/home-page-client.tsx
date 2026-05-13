@@ -1,14 +1,16 @@
 'use client';
 /**
  * SAJU-V2 MAIN PAGE
- * Version: 2.0.3 (Build Fix: use client directive)
- * Last Updated: 2026-05-08
+ * 푸터 표시 버전은 package.json 의 version 과 동기화됩니다.
  */
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import packageJson from '../package.json';
 import { FooterBrandRow, SiteNav } from './site-chrome';
 import { BRAND } from './ui-brand';
+
+const APP_VERSION = packageJson.version;
 
 const FEATURES = [
   {
@@ -323,7 +325,7 @@ export default function HomePageClient() {
           <Link href="/terms" style={{ color: '#8b6fc6' }}>이용약관</Link>
         </div>
         <div>본 서비스는 전통 동양 철학 기반 참고용 정보입니다.</div>
-        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v2.0.3</div>
+        <div style={{ marginTop: 12, opacity: 0.6, fontSize: '0.7rem' }}>v{APP_VERSION}</div>
       </footer>
     </div>
   );

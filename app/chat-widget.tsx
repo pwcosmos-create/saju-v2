@@ -1273,8 +1273,8 @@ export default function ChatWidget({
                 : !canStartCounseling
                   ? '먼저 AI 풀이 받기를 완료해 주세요'
                 : isPaid && timeLeft !== null
-                  ? `남은 상담 시간: ${formatTime(timeLeft)}`
-                  : 'AI 심층 풀이 기반 텍스트/음성 맞춤 상담'}
+                  ? `남은 상담 시간: ${formatTime(timeLeft)} · 상담 진행 중`
+                  : '상담 이용 가능 · AI 심층 풀이 기반 텍스트·음성 맞춤 상담'}
             </div>
             <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,.62)', marginTop: 2 }}>
               타이핑·음성 속도 자동 맞춤(답변 길이·고품질/기기음성 기준) · 읽기 배속 ×{TTS_RATE.toFixed(2)}

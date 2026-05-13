@@ -7,6 +7,8 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { FooterBrandRow, SiteNav } from './site-chrome';
+import { BRAND } from './ui-brand';
 
 const FEATURES = [
   {
@@ -64,7 +66,7 @@ export default function HomePageClient() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#0d0b1e',
+      background: BRAND.bg,
       color: '#e0cfff',
       fontFamily: "'Apple SD Gothic Neo','Noto Sans KR',sans-serif",
       overflowX: 'hidden',
@@ -72,44 +74,13 @@ export default function HomePageClient() {
       <style>{`
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        @keyframes twinkle {
-          0%, 100% { opacity: 0.35; transform: scale(1); filter: drop-shadow(0 0 0 rgba(196,168,255,0)); }
-          40% { opacity: 0.75; transform: scale(1.06); filter: drop-shadow(0 0 8px rgba(196,168,255,0.45)); }
-          70% { opacity: 0.55; transform: scale(0.98); filter: drop-shadow(0 0 4px rgba(196,168,255,0.25)); }
-        }
         .rotating-star { animation: rotate 2s linear infinite; display: inline-block; }
         .analyzing-btn { animation: pulse 1.5s infinite; }
         .btn-shine { position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); animation: shine 2s infinite; }
-        .hero-twinkle { animation: twinkle 2.6s ease-in-out infinite; transform-origin: center; }
         @keyframes shine { to { left: 100%; } }
       `}</style>
 
-      {/* 네비게이션 */}
-      <nav style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 24px', height: 60,
-        background: 'rgba(13,11,30,0.85)', backdropFilter: 'blur(16px)',
-        borderBottom: '1px solid rgba(139,111,198,0.2)',
-      }}>
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#e8c97e"/>
-            <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
-            <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
-          </svg>
-          <span style={{ fontSize: '1.6rem', fontWeight: 900, color: '#e8c97e', letterSpacing: -1.5 }}>
-            AI사주
-          </span>
-        </Link>
-        <Link href="/saju" style={{
-          padding: '8px 20px', borderRadius: 100,
-          background: '#8b6fc6', color: '#fff',
-          fontSize: '.88rem', fontWeight: 700, textDecoration: 'none',
-        }}>
-          무료로 보기
-        </Link>
-      </nav>
+      <SiteNav variant="landing" />
 
       {/* Hero */}
       <section style={{
@@ -150,7 +121,7 @@ export default function HomePageClient() {
           color: '#8b6fc6', maxWidth: 520, lineHeight: 1.7, marginBottom: 48,
         }}>
           생년월일과 태어난 시간을 입력하면<br/>
-          AI 심층 풀이를 바탕으로 텍스트/음성 맞춤 상담까지 이어집니다
+          AI 심층 풀이 후 텍스트·음성 맞춤 상담도 이용할 수 있습니다
         </p>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 64 }}>
@@ -346,12 +317,7 @@ export default function HomePageClient() {
         borderTop: '1px solid rgba(139,111,198,0.15)',
         color: '#6b6490', fontSize: '.82rem',
       }}>
-        <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
-          </svg>
-          <span style={{ fontWeight: 700 }}>AI사주</span> — 사주팔자 무료 분석
-        </div>
+        <FooterBrandRow />
         <div style={{ marginBottom: 12 }}>
           <Link href="/privacy" style={{ color: '#8b6fc6', marginRight: 12 }}>개인정보처리방침</Link>
           <Link href="/terms" style={{ color: '#8b6fc6' }}>이용약관</Link>

@@ -13,7 +13,7 @@ import Script from 'next/script';
 const SITE_URL = 'https://saju.coupax.co.kr';
 const THIS_YEAR = new Date().getFullYear();
 const TITLE = `✦ AI사주 — ${THIS_YEAR}년 사주팔자 무료 분석 · AI 심층 풀이`;
-const DESC = `${THIS_YEAR}년 AI사주. 생년월일 입력으로 오행·용신·신살·대운·AI 심층 풀이까지 무료 제공.`;
+const DESC = `${THIS_YEAR}년 AI사주. 생년월일 입력으로 오행·용신·신살·대운·AI 심층 풀이까지 무료 제공. 풀이 후 텍스트·음성 AI 상담도 이용 가능합니다.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -73,7 +73,7 @@ const FAQ_SCHEMA = {
       name: '사주팔자는 어떻게 보나요?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: '생년월일과 태어난 시간을 입력하면 연주·월주·일주·시주 네 기둥(四柱)과 오행 분포를 자동 계산합니다. 이 사이트에서는 무료로 일주 분석, 오행, 신살, 대운, AI 심층 풀이까지 제공합니다.',
+        text: '생년월일과 태어난 시간을 입력하면 연주·월주·일주·시주 네 기둥(四柱)과 오행 분포를 자동 계산합니다. 이 사이트에서는 무료로 일주 분석, 오행, 신살, 대운, AI 심층 풀이까지 제공합니다. 풀이 후 텍스트·음성 AI 상담도 이용할 수 있습니다.',
       },
     },
     {

@@ -10,6 +10,7 @@
 
 import Link from 'next/link';
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { SiteNav } from '../site-chrome';
 import ChatWidget from '../chat-widget';
 import { calculate, SajuResult } from '../../core/pillar-calc/main-calculator';
 import {
@@ -412,23 +413,7 @@ export default function Home() {
       {result && !loading && <ZodiacBackground branch={yearBranch} />}
       <div style={{ position:'relative', zIndex:1 }}>
       {/* ── Header ── */}
-      <header style={{
-        display:'flex', justifyContent:'space-between', alignItems:'center',
-        padding:'18px 32px', borderBottom:'1px solid var(--border)',
-        backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:100,
-        background:'rgba(13,11,30,.8)',
-      }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#e8c97e"/>
-              <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
-              <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
-            </svg>
-            <span style={{ fontSize: '1.6rem', fontWeight: 900, color: '#e8c97e', letterSpacing: -1.5 }}>
-              AI사주
-            </span>
-          </Link>
-      </header>
+      <SiteNav variant="saju" />
 
       {/* ── Hero / Form ── */}
       <section className="hero-section">

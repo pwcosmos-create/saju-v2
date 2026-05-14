@@ -237,15 +237,12 @@ export default function Home() {
         clearTimeout(t1);
         clearTimeout(t2);
         
-        // 1. 작성 완료 후 '검토 중' 상태로 전환
-        setLoadingStep(3); 
-        
-        // 2. 충분한 검토 시간을 가진 후 타이핑 시작 (사용자 경험 최적화)
-        setTimeout(() => {
-          setLoadingStep(4); // '작성 중' (타이핑 출력)
-          setAiLoad(false);  // 로딩 오버레이는 끄고 타이핑 시작
-          typeEffect(fullText, () => setAiFortuneComplete(true));
-        }, 2000);
+        // 스트림 완료 후 본문 전체를 한 번에 표시
+        setAiText(fullText);
+        setAiLoad(false);
+        setShowFb(true);
+        setLoadingStep(0);
+        setAiFortuneComplete(true);
       },
       onError: (err) => { 
         console.error("AI Stream Error:", err);
@@ -254,8 +251,9 @@ export default function Home() {
         const msg = fullText.trim()
           ? 'AI 분석 중 연결이 끊겼습니다. 하지만 작성된 내용까지 보여드릴게요.\n\n' + fullText
           : 'AI 분석 중 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.';
-        setAiText('');
-        typeEffect(msg, () => setAiFortuneComplete(true));
+        setAiText(msg);
+        setShowFb(true);
+        setAiFortuneComplete(true);
       },
     });
   }
@@ -300,26 +298,6 @@ export default function Home() {
     '용신·희신·기신 분류 규칙을 적용하는 중...',
     '신살과 대운 흐름을 매핑하는 중...',
   ]), []);
-
-  // 타이핑 효과 — AI 심층 풀이 본문 표시 속도(한 글자당 간격, ms)
-  const AI_TYPE_MS_PER_CHAR = 26;
-  function typeEffect(text: string, onComplete?: () => void) {
-    let index = 0;
-    const interval = setInterval(() => {
-      if (index < text.length) {
-        const nextPart = text.slice(index, index + 1);
-        setAiText(prev => prev + nextPart);
-        index += 1;
-      } else {
-        clearInterval(interval);
-        setAiLoad(false);
-        setShowFb(true);
-        setLoadingStep(0);
-        onComplete?.();
-      }
-    }, AI_TYPE_MS_PER_CHAR);
-  }
-
 
   function copyResult() {
     if (!result) return;

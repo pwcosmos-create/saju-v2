@@ -29,7 +29,7 @@ ANTHROPIC_API_KEY=...          # 선택(프리미엄 경로용)
 KASI_SERVICE_KEY=...
 NEXT_PUBLIC_GA_ID=...          # 선택
 NEXT_PUBLIC_PAYPAL_CLIENT_ID=...
-NEXT_PUBLIC_API_BASE=...       # 선택(기본은 현재 오리진)
+NEXT_PUBLIC_API_BASE=...       # 선택(기본은 현재 오리진). 클라이언트가 다른 호스트의 `/api/*` 를 쓸 때
 NEXT_PUBLIC_FEEDBACK_URL=...   # 선택(외부 수집 엔드포인트)
 ```
 
@@ -38,6 +38,17 @@ NEXT_PUBLIC_FEEDBACK_URL=...   # 선택(외부 수집 엔드포인트)
 - Next.js 16 (App Router) · TypeScript · Tailwind CSS
 - Gemini 2.5 Flash API — 스트리밍 SSE
 - KASI 공공데이터 API — 음양력 변환
+
+## 홈페이지와 토스 미니앱 (저장소 분리)
+
+**홈페이지**(이 저장소 `saju-v2`)와 **앱인토스 WebView 미니앱**은 **서로 다른 폴더**에서 관리합니다. 한쪽만 수정하면 **다른 쪽 소스에는 반영되지 않습니다**(자동 동기화 없음).
+
+| 구분 | 위치 / 배포 |
+|------|----------------|
+| **홈페이지** | 이 저장소 → Oracle VM, PM2, `npm run build` + `next start` |
+| **미니앱** | `C:\커셔\토스 앱\사주팔자v1` → `npm run build:toss`, `npm run ait:build`, 앱인토스 콘솔 `.ait` 등록(해당 폴더의 `README.md` 참고) |
+
+미니앱은 정적 번들이라 API는 별도 호스트의 `/api/*` 를 쓰는 경우가 많습니다. 운영·트래픽을 더 분리하려면 홈과 **다른 도메인**에 API를 두고, 미니앱 빌드 환경에만 그 URL을 `NEXT_PUBLIC_API_BASE` 로 넣는 방식을 권장합니다.
 
 ## 운영 배포 (Oracle 서버)
 
@@ -48,7 +59,7 @@ NEXT_PUBLIC_FEEDBACK_URL=...   # 선택(외부 수집 엔드포인트)
 - 프로세스 매니저: PM2
 - 앱 프로세스명: `saju-v2`
 - 현재 서비스 포트: `3001` (`npm start -- -p 3001`으로 운영 중)
-- 주의: Toss Appin 배포(`ait`)는 별도 프로젝트에서 운영하며, 이 저장소의 홈페이지 배포와 분리되어 있습니다.
+- 주의: **홈페이지**만 이 경로에서 Oracle·PM2로 배포합니다. **미니앱**은 `C:\커셔\토스 앱\사주팔자v1`에서 빌드한 `.ait` 를 **앱인토스 콘솔**에 등록하는 흐름이며, 홈 `git pull` 과 **동시에 돌릴 필요 없음**.
 
 배포 기본 절차:
 

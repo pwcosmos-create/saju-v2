@@ -128,6 +128,8 @@ export default function Home() {
   const [calcTick, setCalcTick] = useState(0);
   const [tab,      setTab]      = useState<TabName>('성격');
   const [aiText,   setAiText]   = useState('');
+  /** 스트림 수신 + 화면 타이핑 연출까지 끝난 뒤 true — 그때부터 AI 심층 상담 이용 */
+  const [aiFortuneComplete, setAiFortuneComplete] = useState(false);
   const [aiLoading, setAiLoad] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [waitTick, setWaitTick] = useState(0);
@@ -194,7 +196,7 @@ export default function Home() {
       catch { alert('음력 날짜 변환 실패. 날짜를 다시 확인해주세요.'); return; }
     }
     save();
-    setLoading(true); setResult(null); setFortuneResult(null); setAiText(''); setShowFb(false); setFbDone(false);
+    setLoading(true); setResult(null); setFortuneResult(null); setAiText(''); setAiFortuneComplete(false); setShowFb(false); setFbDone(false);
     setTimeout(() => {
       const r = calculate({ year:sy, month:sm, day:sd, hourTotalMin:parseInt(hour), gender });
       lastResult.current = r;
@@ -210,6 +212,7 @@ export default function Home() {
     if (!lastResult.current) return;
     setAiLoad(true);
     setAiText('');
+    setAiFortuneComplete(false);
     setShowFb(false);
     setFbDone(false);
     setLoadingStep(1); // 기운 읽는 중
@@ -241,15 +244,18 @@ export default function Home() {
         setTimeout(() => {
           setLoadingStep(4); // '작성 중' (타이핑 출력)
           setAiLoad(false);  // 로딩 오버레이는 끄고 타이핑 시작
-          typeEffect(fullText);
+          typeEffect(fullText, () => setAiFortuneComplete(true));
         }, 2000);
       },
       onError: (err) => { 
         console.error("AI Stream Error:", err);
-        setAiText('AI 분석 중 연결이 끊겼습니다. 하지만 작성된 내용까지 보여드릴게요.\n\n' + fullText); 
         setAiLoad(false);
         setLoadingStep(0);
-        if (fullText) typeEffect(fullText);
+        const msg = fullText.trim()
+          ? 'AI 분석 중 연결이 끊겼습니다. 하지만 작성된 내용까지 보여드릴게요.\n\n' + fullText
+          : 'AI 분석 중 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.';
+        setAiText('');
+        typeEffect(msg, () => setAiFortuneComplete(true));
       },
     });
   }
@@ -295,9 +301,9 @@ export default function Home() {
     '신살과 대운 흐름을 매핑하는 중...',
   ]), []);
 
-  // 타이핑 효과 — 읽기 속도에 가깝게 (한 글자씩, 간격 여유)
-  const AI_TYPE_MS_PER_CHAR = 52;
-  function typeEffect(text: string) {
+  // 타이핑 효과 — AI 심층 풀이 본문 표시 속도(한 글자당 간격, ms)
+  const AI_TYPE_MS_PER_CHAR = 26;
+  function typeEffect(text: string, onComplete?: () => void) {
     let index = 0;
     const interval = setInterval(() => {
       if (index < text.length) {
@@ -309,6 +315,7 @@ export default function Home() {
         setAiLoad(false);
         setShowFb(true);
         setLoadingStep(0);
+        onComplete?.();
       }
     }, AI_TYPE_MS_PER_CHAR);
   }
@@ -348,7 +355,8 @@ export default function Home() {
     if (!lastResult.current) return;
     const r = lastResult.current;
     const p0 = r.pillars[0];
-    fetch('/api/feedback', {
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? '';
+    fetch(`${apiBase}/api/feedback`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         saju: p0 ? `${STEMS[p0.s]}${BRANCHES[p0.b]}` : '',
@@ -802,7 +810,7 @@ export default function Home() {
         </p>
       </footer>
       </div>{/* /z-index wrapper */}
-      <ChatWidget result={result} aiSummaryReady={Boolean(aiText.trim())} />
+      <ChatWidget result={result} aiSummaryReady={aiFortuneComplete} />
     </div>
   );
 }

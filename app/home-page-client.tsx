@@ -11,6 +11,7 @@ import { FooterBrandRow, SiteNav } from './site-chrome';
 import { BRAND } from './ui-brand';
 
 const APP_VERSION = packageJson.version;
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
 const FEATURES = [
   {
@@ -172,7 +173,9 @@ export default function HomePageClient() {
           {[
             { num: '무료', label: '사주팔자 분석' },
             { num: '7가지', label: '분석 탭' },
-            { num: '1,000원', label: 'AI 심층 상담' },
+            APPS_IN_TOSS
+              ? { num: '이용 가능', label: 'AI 심층 상담' }
+              : { num: '1,000원', label: 'AI 심층 상담' },
           ].map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#e8c97e' }}>{s.num}</div>
@@ -192,7 +195,9 @@ export default function HomePageClient() {
           fontWeight: 700,
           letterSpacing: '.01em',
         }}>
-          분석은 무료 · 심층 풀이 기반 AI 상담은 1,000원 (이벤트 기간: 30,000원 → 1,000원)
+          {APPS_IN_TOSS
+            ? '분석은 무료 · 심층 풀이 후 AI 심층 상담도 이 앱에서 바로 이용할 수 있어요'
+            : '분석은 무료 · 심층 풀이 기반 AI 상담은 1,000원 (이벤트 기간: 30,000원 → 1,000원)'}
         </div>
       </section>
 
@@ -297,7 +302,9 @@ export default function HomePageClient() {
           지금 바로 내 사주를<br/>확인해보세요
         </h2>
         <p style={{ color: '#6b6490', marginBottom: 40, fontSize: '.95rem' }}>
-          무료 분석 후 심층 풀이 기반 AI 상담(1,000원)으로 이어가세요
+          {APPS_IN_TOSS
+            ? '무료 분석 후 심층 풀이 기반 AI 상담으로 이어가 보세요'
+            : '무료 분석 후 심층 풀이 기반 AI 상담(1,000원)으로 이어가세요'}
         </p>
         <Link href="/saju" style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,

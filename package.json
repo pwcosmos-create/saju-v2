@@ -6,7 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "deploy": "ait deploy",
     "lint": "tsc --noEmit --pretty false",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint",
@@ -18,7 +17,6 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@apps-in-toss/web-framework": "^2.4.7",
     "@orrery/core": "^0.4.2",
     "@vercel/analytics": "^1.2.2",
     "groq-sdk": "^1.1.2",

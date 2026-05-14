@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-static';
+
 const SITE_URL = 'https://saju.coupax.co.kr';
 const SITE_TITLE = '사주팔자 무료 분석';
 const SITE_DESC =

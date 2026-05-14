@@ -11,6 +11,8 @@ import {
   type CounselorName,
 } from '../core/counselor-config';
 
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+
 // 한자·괄호 한자 제거 — TTS 전용
 function stripHanja(text: string): string {
   return text
@@ -608,7 +610,7 @@ export default function ChatWidget({
   const ttsPrimedRef = useRef(false);
   const isExemptUser = isPaymentExemptTarget(result);
   const targetKey = getTargetKey(result);
-  const canStartCounseling = Boolean(result && (aiSummaryReady || isExemptUser));
+  const canStartCounseling = Boolean(result && aiSummaryReady);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [selectedCounselor, setSelectedCounselor] = useState<string>('도화');
@@ -624,7 +626,18 @@ export default function ChatWidget({
     }
   });
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [msgs]);
+
+  /** AI 심층 풀이가 초기화되면 상담 패널·대화를 닫아 다시 풀이 완료 후에만 이용하도록 함 */
+  useEffect(() => {
+    if (!aiSummaryReady) {
+      setOpen(false);
+      setIntroSpoken(false);
+      setMsgs([]);
+    }
+  }, [aiSummaryReady]);
 
   useEffect(() => {
     if (!loading && !replyTyping) return;
@@ -716,7 +729,7 @@ export default function ChatWidget({
       setTimeLeft(null);
       return;
     }
-    if (isExemptUser) return;
+    if (isExemptUser || APPS_IN_TOSS) return;
 
     const sessionTarget = localStorage.getItem('saju_chat_session_target');
     if (sessionTarget !== targetKey) {
@@ -844,7 +857,7 @@ export default function ChatWidget({
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크 버튼을 누른 뒤 말씀해 주세요.\n${isExemptUser ? '결제 예외 대상이므로 바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
+          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크 버튼을 누른 뒤 말씀해 주세요.\n${isExemptUser || APPS_IN_TOSS ? '바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
@@ -870,7 +883,7 @@ export default function ChatWidget({
   }, [chatMode]);
 
   useEffect(() => {
-    if (!isExemptUser) return;
+    if (!isExemptUser && !APPS_IN_TOSS) return;
     setIsPaid(true);
     setTimeLeft(null);
     setExpiresAt(null);
@@ -879,12 +892,13 @@ export default function ChatWidget({
       localStorage.removeItem('saju_chat_expires_at');
       localStorage.removeItem('saju_chat_session_target');
     }
-  }, [isExemptUser]);
+  }, [isExemptUser, APPS_IN_TOSS]);
 
   useEffect(() => {
+    if (APPS_IN_TOSS) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
-    if (!open || isPaid || isExemptUser || !result || !w.paypal || !paypalRef.current || paypalRef.current.innerHTML !== '') return;
+    if (!open || !canStartCounseling || isPaid || isExemptUser || !result || !w.paypal || !paypalRef.current || paypalRef.current.innerHTML !== '') return;
     w.paypal.Buttons({
       createOrder: (_data: any, actions: any) => actions.order.create({
         purchase_units: [{
@@ -910,9 +924,10 @@ export default function ChatWidget({
         alert('결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
       }
     }).render(paypalRef.current);
-  }, [open, isPaid, result, isExemptUser, targetKey]);
+  }, [open, canStartCounseling, isPaid, result, isExemptUser, targetKey, APPS_IN_TOSS]);
 
   useEffect(() => {
+    if (APPS_IN_TOSS) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
     if (!open || !isPaid || !result || !w.paypal || !paypalExtendRef.current || paypalExtendRef.current.innerHTML !== '') return;
@@ -940,13 +955,13 @@ export default function ChatWidget({
         alert('연장 결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
       }
     }).render(paypalExtendRef.current);
-  }, [open, isPaid, result, expiresAt]);
+  }, [open, isPaid, result, expiresAt, APPS_IN_TOSS]);
 
   async function send(text: string = input) {
     const trimmed = text.trim();
-    if (!trimmed || loading || !result) return;
+    if (!trimmed || loading || !result || !aiSummaryReady) return;
     void primeMediaForTts();
-    if (!isPaid && !isExemptUser && !previewUnlocked) {
+    if (!isPaid && !isExemptUser && !APPS_IN_TOSS && !previewUnlocked) {
       setMsgs(prev => [...prev, {
         role: 'assistant',
         content: '무료 미리보기 1회를 먼저 시작하거나 결제를 진행해 주세요.',
@@ -1064,7 +1079,11 @@ export default function ChatWidget({
       return;
     }
     if (!result) return;
-    if (!isPaid && !isExemptUser && !previewUnlocked) {
+    if (!aiSummaryReady) {
+      setVoiceNote('먼저 AI 심층 풀이를 끝까지 확인한 뒤 음성 질문을 사용할 수 있어요.');
+      return;
+    }
+    if (!isPaid && !isExemptUser && !APPS_IN_TOSS && !previewUnlocked) {
       setVoiceNote('무료 미리보기를 시작하거나 결제 후 음성 질문을 사용할 수 있어요.');
       return;
     }
@@ -1233,7 +1252,7 @@ export default function ChatWidget({
   }
 
   function usePreviewOnce() {
-    if (!result || previewUsed) return;
+    if (!result || previewUsed || !aiSummaryReady) return;
     void primeMediaForTts();
     setPreviewUnlocked(true);
     setMsgs(prev => [...prev, {
@@ -1268,10 +1287,10 @@ export default function ChatWidget({
               AI 심층 상담
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
-              {isExemptUser
-                ? '결제 예외 대상 - 바로 상담 가능합니다'
-                : !canStartCounseling
-                  ? '먼저 AI 풀이 받기를 완료해 주세요'
+              {!canStartCounseling
+                ? 'AI 심층 풀이가 화면에 모두 표시된 뒤 상담을 이용할 수 있습니다'
+                : isExemptUser || APPS_IN_TOSS
+                  ? '심층 풀이 완료 후 바로 상담 가능합니다'
                 : isPaid && timeLeft !== null
                   ? `남은 상담 시간: ${formatTime(timeLeft)} · 상담 진행 중`
                   : '상담 이용 가능 · AI 심층 풀이 기반 텍스트·음성 맞춤 상담'}
@@ -1481,10 +1500,10 @@ export default function ChatWidget({
             textAlign: 'center', background: 'rgba(255,255,255,.02)',
           }}>
             <div style={{ color: '#e8c97e', fontSize: '.85rem', marginBottom: '10px', fontWeight: 700 }}>
-              AI 풀이 받기 완료 후 심층 상담을 시작할 수 있습니다
+              AI 심층 풀이를 모두 확인한 뒤 심층 상담을 이용할 수 있습니다
             </div>
             <div style={{ color: 'rgba(255,255,255,.72)', fontSize: '.76rem', lineHeight: 1.5 }}>
-              먼저 AI 풀이를 읽어본 뒤 질문하면 더 정확하고 깊은 상담을 받을 수 있어요.
+              풀이가 화면에 타이핑으로 끝날 때까지 기다려 주세요. 완료 후 상담 버튼이 활성화됩니다.
             </div>
           </div>
         ) : !isPaid && result && !isExemptUser && !previewUnlocked ? (
@@ -1647,8 +1666,10 @@ export default function ChatWidget({
           type="button"
           onClick={() => {
             setOpen((o) => {
-              if (!o) void primeMediaForTts();
-              return !o;
+              if (o) return false;
+              if (!canStartCounseling) return false;
+              void primeMediaForTts();
+              return true;
             });
           }}
           style={{
@@ -1656,15 +1677,20 @@ export default function ChatWidget({
             background: 'linear-gradient(135deg, #8b6fc6, #6b4fa6)',
             border: '1px solid rgba(255,255,255,0.2)',
             boxShadow: '0 8px 32px rgba(139,111,198,0.4)',
-            cursor: 'pointer', fontSize: '1.4rem',
+            cursor: canStartCounseling ? 'pointer' : 'not-allowed', fontSize: '1.4rem',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff',
-            opacity: canStartCounseling ? 1 : 0.8,
+            opacity: canStartCounseling ? 1 : 0.45,
             transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          title="AI 심층 상담"
+          onMouseEnter={(e) => {
+            if (!canStartCounseling) return;
+            e.currentTarget.style.transform = 'scale(1.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+          title={canStartCounseling ? 'AI 심층 상담' : 'AI 심층 풀이를 완료한 뒤 이용할 수 있습니다'}
         >
           {open ? '✕' : (
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

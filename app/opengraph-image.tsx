@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const runtime = 'edge';
+export const dynamic = 'force-static';
 export const alt = '사주팔자 무료 분석 — AI 심층 풀이';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';

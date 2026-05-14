@@ -50,8 +50,6 @@ next-env.d.ts
 *.ait
 *.pdf
 *.py
-granite.config.ts
-build-for-toss.mjs
 
 # 로고/스크린샷 에셋
 logo*.png

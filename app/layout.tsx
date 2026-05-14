@@ -116,9 +116,11 @@ const WEBAPP_SCHEMA = {
 };
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
-const PAYPAL_CLIENT_ID =
-  process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
-  'AagriM6wPC0OV-teas4BeZ0rX8G6d-FxAG5H4WisfPMNcabwvMy3Ofdc-iArr91vfin9bFaY4wIhJ1mZ';
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+const PAYPAL_CLIENT_ID = APPS_IN_TOSS
+  ? ''
+  : (process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
+    'AagriM6wPC0OV-teas4BeZ0rX8G6d-FxAG5H4WisfPMNcabwvMy3Ofdc-iArr91vfin9bFaY4wIhJ1mZ');
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -144,7 +146,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }} />
       </head>
       <body>
-        {PAYPAL_CLIENT_ID && (
+        {!APPS_IN_TOSS && PAYPAL_CLIENT_ID && (
           <Script
             src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=KRW`}
             strategy="beforeInteractive"

@@ -69,6 +69,12 @@ const TTS_HARD_SENTENCE_CAP = 1600;
 const TTS_INTER_SENTENCE_PAUSE_MS = 1000;
 const TTS_RATE = 0.93;
 const TTS_PITCH = 1.02;
+/** 궁합·관계 모드 기기음성 — 속도를 낮추고 피치는 중립에 가깝게 */
+const TTS_RATE_COMPATIBILITY = 0.88;
+const TTS_PITCH_COMPATIBILITY = 1.0;
+const TTS_INTER_SENTENCE_PAUSE_COMPAT_MS = 1150;
+/** 서버 고품질 WAV 재생 미세 감속(차분하게) */
+const SERVER_TTS_PLAYBACK_RATE_COMPATIBILITY = 0.94;
 
 function splitIntoSentences(normalized: string): string[] {
   const blocks = normalized.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
@@ -196,36 +202,44 @@ const SPEECH_BASE_CHARS_PER_SEC = 10.8;
 /** 서버 합성음은 브라우저 내장음과 미세하게 다른 경우가 있어 보정 */
 const SERVER_SPEECH_CPS_FACTOR = 1.02;
 
-function estimateBrowserSpeechMs(text: string): number {
+function estimateBrowserSpeechMs(text: string, compatibilityMode = false): number {
   const chunks = splitTtsChunks(text);
   if (!chunks.length) return 0;
-  const cps = SPEECH_BASE_CHARS_PER_SEC * TTS_RATE;
+  const rate = compatibilityMode ? TTS_RATE_COMPATIBILITY : TTS_RATE;
+  const pauseBetween = compatibilityMode ? TTS_INTER_SENTENCE_PAUSE_COMPAT_MS : TTS_INTER_SENTENCE_PAUSE_MS;
+  const cps = SPEECH_BASE_CHARS_PER_SEC * rate;
   let ms = 0;
   for (let i = 0; i < chunks.length; i++) {
     ms += (chunks[i].length / cps) * 1000;
-    if (i < chunks.length - 1) ms += TTS_INTER_SENTENCE_PAUSE_MS;
+    if (i < chunks.length - 1) ms += pauseBetween;
   }
   return ms;
 }
 
-function estimateServerSpeechMs(text: string): number {
+function estimateServerSpeechMs(text: string, compatibilityMode = false): number {
   const chunks = splitForServerTts(text);
   if (!chunks.length) return 0;
-  const cps = SPEECH_BASE_CHARS_PER_SEC * TTS_RATE * SERVER_SPEECH_CPS_FACTOR;
+  const rate = compatibilityMode ? TTS_RATE_COMPATIBILITY : TTS_RATE;
+  const cps = SPEECH_BASE_CHARS_PER_SEC * rate * SERVER_SPEECH_CPS_FACTOR;
   const gap = SERVER_TTS_INTER_CHUNK_MS + 72;
   let ms = 0;
   for (let i = 0; i < chunks.length; i++) {
     ms += (chunks[i].length / cps) * 1000;
     if (i < chunks.length - 1) ms += gap;
   }
+  if (compatibilityMode && SERVER_TTS_PLAYBACK_RATE_COMPATIBILITY > 0) {
+    ms /= SERVER_TTS_PLAYBACK_RATE_COMPATIBILITY;
+  }
   return ms;
 }
 
 /** 답변 전체 표시 시간 ≈ 선택 모드의 예상 음성 재생 시간 */
-function typeIntervalMsForSpeechSync(text: string, mode: 'browser' | 'server'): number {
+function typeIntervalMsForSpeechSync(text: string, mode: 'browser' | 'server', compatibilityMode = false): number {
   const n = text.length;
   if (n <= 0) return 48;
-  const total = mode === 'browser' ? estimateBrowserSpeechMs(text) : estimateServerSpeechMs(text);
+  const total = mode === 'browser'
+    ? estimateBrowserSpeechMs(text, compatibilityMode)
+    : estimateServerSpeechMs(text, compatibilityMode);
   const perChar = total / n;
   return Math.round(Math.min(220, Math.max(22, perChar)));
 }
@@ -301,7 +315,14 @@ function pickCounselorKoVoice(synth: SpeechSynthesis, counselorName: string): Sp
 
 function speakKoreanQueued(
   text: string,
-  options: { counselorName: string; onDone?: () => void; onChunkError?: () => void },
+  options: {
+    counselorName: string;
+    onDone?: () => void;
+    onChunkError?: () => void;
+    rate?: number;
+    pitch?: number;
+    interSentencePauseMs?: number;
+  },
 ) {
   if (typeof window === 'undefined' || !window.speechSynthesis) {
     options.onDone?.();
@@ -312,6 +333,10 @@ function speakKoreanQueued(
     options.onDone?.();
     return;
   }
+
+  const utterRate = options.rate ?? TTS_RATE;
+  const utterPitch = options.pitch ?? TTS_PITCH;
+  const sentencePause = options.interSentencePauseMs ?? TTS_INTER_SENTENCE_PAUSE_MS;
 
   speakKoreanSessionId += 1;
   const sessionId = speakKoreanSessionId;
@@ -336,15 +361,15 @@ function speakKoreanQueued(
       const utt = new SpeechSynthesisUtterance(chunks[idx]);
       if (koVoice) utt.voice = koVoice;
       utt.lang = 'ko-KR';
-      utt.rate = TTS_RATE;
-      utt.pitch = TTS_PITCH;
+      utt.rate = utterRate;
+      utt.pitch = utterPitch;
       utt.onend = () => {
         const next = idx + 1;
         if (next >= chunks.length) {
           options?.onDone?.();
           return;
         }
-        window.setTimeout(() => speakAt(next), TTS_INTER_SENTENCE_PAUSE_MS);
+        window.setTimeout(() => speakAt(next), sentencePause);
       };
       // 일부 브라우저에서 중간 오류가 나도 다음 조각으로 이어서 읽는다.
       utt.onerror = () => {
@@ -354,7 +379,7 @@ function speakKoreanQueued(
           options?.onDone?.();
           return;
         }
-        window.setTimeout(() => speakAt(next), TTS_INTER_SENTENCE_PAUSE_MS);
+        window.setTimeout(() => speakAt(next), sentencePause);
       };
       // cancel 직후 첫 speak가 무시되는 Chrome 동작 회피
       const run = () => {
@@ -1069,7 +1094,11 @@ export default function ChatWidget({
           const finalized = addFollowUpPrompt(finalizeKoreanAnswer(buffer), userTurn);
           setChatLoadingStep(4);
           setReplyTyping(true);
-          const syncMs = typeIntervalMsForSpeechSync(finalized, ttsOutputMode);
+          const syncMs = typeIntervalMsForSpeechSync(
+            finalized,
+            ttsOutputMode,
+            chatMode === 'compatibility',
+          );
           pendingAssistantFullRef.current = finalized;
           if (finalized) void speakWithPreferredMode(finalized, selectedCounselor);
           typeCancelRef.current?.();
@@ -1227,27 +1256,64 @@ export default function ChatWidget({
   }
 
   function stopTTS() {
+    speakKoreanSessionId += 1;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      clearVoiceWaitRegistration(window.speechSynthesis);
+      window.speechSynthesis.cancel();
+    }
     speakGenRef.current += 1;
-    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
       audioRef.current = null;
     }
     setIsSpeaking(false);
-    releaseWakeLock();
+    void releaseWakeLock();
+  }
+
+  /** 패널 종료 시 — 채팅 스트림·타이머·녹음·타이핑·TTS 즉시 중단 */
+  function closePanelAndStopAll() {
+    chatTurnGenRef.current += 1;
+    chatStreamAbortRef.current?.abort();
+    chatStreamAbortRef.current = null;
+    clearChatStepTimers();
+    clearVerifyPauseTimer();
+    if (voiceSecondMicHintTimerRef.current != null) {
+      window.clearTimeout(voiceSecondMicHintTimerRef.current);
+      voiceSecondMicHintTimerRef.current = null;
+    }
+    chatStreamingDraftRef.current = '';
+    pendingAssistantFullRef.current = null;
+    typeCancelRef.current?.();
+    typeCancelRef.current = null;
+    try {
+      recogRef.current?.stop();
+    } catch {
+      /* noop */
+    }
+    recogRef.current = null;
+    setListening(false);
+    setLoading(false);
+    setReplyTyping(false);
+    setChatLoadingStep(0);
+    setVoiceNote(null);
+    stopTTS();
+    setOpen(false);
   }
 
   async function fetchServerTtsPayload(
     chunkText: string,
     counselorName: string,
+    ttsContext: 'single' | 'compatibility',
   ): Promise<{ mimeType: string; audioBase64: string } | null> {
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
+      const body: Record<string, string> = { text: chunkText, counselorName };
+      if (ttsContext === 'compatibility') body.ttsContext = 'compatibility';
       const res = await fetch(`${base}/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: chunkText, counselorName }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) return null;
       const data = await res.json() as { audioBase64?: string; mimeType?: string; error?: string };
@@ -1258,9 +1324,13 @@ export default function ChatWidget({
     }
   }
 
-  async function playServerTtsPayload(payload: { mimeType: string; audioBase64: string }): Promise<boolean> {
+  async function playServerTtsPayload(
+    payload: { mimeType: string; audioBase64: string },
+    playbackRate = 1,
+  ): Promise<boolean> {
     try {
       const audio = new Audio(`data:${payload.mimeType};base64,${payload.audioBase64}`);
+      audio.playbackRate = playbackRate;
       audioRef.current = audio;
       try {
         await audio.play();
@@ -1279,11 +1349,14 @@ export default function ChatWidget({
 
   async function speakWithPreferredMode(text: string, counselorName: string) {
     if (!text) return;
-    if (isSpeaking) stopTTS();
+    /** isSpeaking 상태가 늦게 반영되면 stopTTS 가 스킵되어 이전 HTMLAudio 가 고아로 재생될 수 있음(궁합 등 연속 답변에서 겹침) */
+    stopTTS();
+    const gen = speakGenRef.current;
 
-    const gen = ++speakGenRef.current;
     setIsSpeaking(true);
     await requestWakeLock();
+
+    const refinedCompat = chatMode === 'compatibility';
 
     const done = () => {
       if (gen !== speakGenRef.current) return;
@@ -1294,6 +1367,9 @@ export default function ChatWidget({
     const runBrowserTts = () => {
       speakKoreanQueued(text, {
         counselorName,
+        rate: refinedCompat ? TTS_RATE_COMPATIBILITY : undefined,
+        pitch: refinedCompat ? TTS_PITCH_COMPATIBILITY : undefined,
+        interSentencePauseMs: refinedCompat ? TTS_INTER_SENTENCE_PAUSE_COMPAT_MS : undefined,
         onDone: () => {
           if (gen !== speakGenRef.current) return;
           done();
@@ -1307,6 +1383,9 @@ export default function ChatWidget({
       return;
     }
 
+    const ttsContext: 'single' | 'compatibility' = refinedCompat ? 'compatibility' : 'single';
+    const serverPlaybackRate = refinedCompat ? SERVER_TTS_PLAYBACK_RATE_COMPATIBILITY : 1;
+
     const chunks = splitForServerTts(text);
     if (!chunks.length) {
       done();
@@ -1314,20 +1393,20 @@ export default function ChatWidget({
     }
 
     let serverOk = true;
-    let pendingPayload = fetchServerTtsPayload(chunks[0], counselorName);
+    let pendingPayload = fetchServerTtsPayload(chunks[0], counselorName, ttsContext);
     for (let i = 0; i < chunks.length; i++) {
       if (gen !== speakGenRef.current) return;
       // eslint-disable-next-line no-await-in-loop
       const payload = await pendingPayload;
       pendingPayload = i + 1 < chunks.length
-        ? fetchServerTtsPayload(chunks[i + 1], counselorName)
+        ? fetchServerTtsPayload(chunks[i + 1], counselorName, ttsContext)
         : Promise.resolve(null);
       if (!payload) {
         serverOk = false;
         break;
       }
       // eslint-disable-next-line no-await-in-loop
-      const ok = await playServerTtsPayload(payload);
+      const ok = await playServerTtsPayload(payload, serverPlaybackRate);
       if (!ok) {
         serverOk = false;
         break;
@@ -1387,7 +1466,12 @@ export default function ChatWidget({
                 : '심층 풀이 완료 후 텍스트·음성 상담 이용 가능'}
             </div>
             <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,.62)', marginTop: 2 }}>
-              타이핑·음성 속도 자동 맞춤(답변 길이·고품질/기기음성 기준) · 읽기 배속 ×{TTS_RATE.toFixed(2)}
+              타이핑·음성 속도 자동 맞춤(답변 길이·고품질/기기음성 기준) · 일반 상담 읽기 배속 ×{TTS_RATE.toFixed(2)}
+              {chatMode === 'compatibility' ? (
+                <span style={{ color: 'rgba(232,201,126,.75)' }}>
+                  {' '}· 궁합 모드는 음색·속도·쉼을 조금 더 차분하게 맞춤
+                </span>
+              ) : null}
             </div>
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
               읽기: {ttsOutputMode === 'server' ? '서버 고품질 (실패 시 기기 음성)' : '기기 내장 음성만'} · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}
@@ -1395,6 +1479,79 @@ export default function ChatWidget({
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
               배정 상담사(세션 고정): {selectedCounselor}
             </div>
+            {SUPPORT_BANK && SUPPORT_ACCOUNT_NO ? (
+              <div style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: '1px solid rgba(255,255,255,.14)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 8,
+                maxWidth: 'min(340px, 100%)',
+              }}>
+                <div style={{ fontSize: '.62rem', fontWeight: 700, color: '#e8c97e', letterSpacing: '-0.02em' }}>
+                  운영 후원 안내 (선택)
+                </div>
+                <p style={{
+                  margin: 0,
+                  fontSize: '.62rem',
+                  lineHeight: 1.5,
+                  color: 'rgba(255,255,255,.78)',
+                }}>
+                  서버비·운영비 등 비용 명목으로 소액 후원을 받고 있습니다. 후원 여부와 관계없이 상담을 이용하실 수 있습니다.
+                </p>
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: '6px 10px',
+                  width: '100%',
+                }}>
+                <span style={{ fontSize: '.62rem', color: 'rgba(255,255,255,.58)', whiteSpace: 'nowrap' }}>
+                  입금 계좌
+                </span>
+                <span style={{ fontSize: '.65rem', color: '#f0e8d8', fontWeight: 700 }}>{SUPPORT_BANK}</span>
+                <span style={{
+                  fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+                  fontSize: '.72rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  color: '#fff',
+                  textShadow: '0 1px 10px rgba(0,0,0,.35)',
+                  wordBreak: 'break-all',
+                }}>
+                  {formatAccountForDisplay(SUPPORT_ACCOUNT_NO)}
+                </span>
+                {SUPPORT_ACCOUNT_HOLDER ? (
+                  <span style={{ fontSize: '.62rem', color: 'rgba(255,255,255,.72)' }}>
+                    예금주 {SUPPORT_ACCOUNT_HOLDER}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void copySupportAccountNumber()}
+                  aria-label="계좌번호 복사"
+                  title="숫자만 클립보드에 복사"
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid rgba(232,201,126,.42)',
+                    background: supportCopyFeedback === 'ok'
+                      ? 'rgba(72,160,110,.38)'
+                      : 'rgba(0,0,0,.22)',
+                    color: '#fff6dd',
+                    fontSize: '.6rem',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  {supportCopyFeedback === 'ok' ? '복사됨' : '번호 복사'}
+                </button>
+                </div>
+              </div>
+            ) : null}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <button
@@ -1437,7 +1594,7 @@ export default function ChatWidget({
               background: 'none', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
               color: 'rgba(255,255,255,.5)', fontSize: '.8rem', cursor: 'pointer', padding: '4px 8px',
             }}>🔇</button>
-            <button type="button" onClick={() => setOpen(false)} style={{
+            <button type="button" onClick={() => closePanelAndStopAll()} title="닫기 · 음성·응답 수신·녹음 중단" aria-label="상담 패널 닫기" style={{
               background: 'none', border: 'none', color: 'rgba(255,255,255,.5)',
               fontSize: '1.2rem', cursor: 'pointer', padding: '4px 8px',
             }}>✕</button>
@@ -1926,12 +2083,13 @@ export default function ChatWidget({
         <button
           type="button"
           onClick={() => {
-            setOpen((o) => {
-              if (o) return false;
-              if (!canStartCounseling) return false;
-              void primeMediaForTts();
-              return true;
-            });
+            if (open) {
+              closePanelAndStopAll();
+              return;
+            }
+            if (!canStartCounseling) return;
+            void primeMediaForTts();
+            setOpen(true);
           }}
           style={{
             width: 64, height: 64, borderRadius: '50%',
@@ -1951,7 +2109,14 @@ export default function ChatWidget({
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'scale(1)';
           }}
-          title={canStartCounseling ? 'AI 심층 상담' : 'AI 심층 풀이를 완료한 뒤 이용할 수 있습니다'}
+          title={
+            open
+              ? '닫기 · 음성·응답 수신·녹음 중단'
+              : canStartCounseling
+                  ? 'AI 심층 상담'
+                  : 'AI 심층 풀이를 완료한 뒤 이용할 수 있습니다'
+          }
+          aria-label={open ? '상담 패널 닫기 · 재생 및 수신 중단' : 'AI 심층 상담 열기'}
         >
           {open ? '✕' : (
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

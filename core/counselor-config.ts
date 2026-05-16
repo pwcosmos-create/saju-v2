@@ -25,6 +25,15 @@ export const COUNSELOR_GEMINI_TTS_VOICE: Record<CounselorName, string> = {
   유진: 'Charon',
 };
 
+/** 궁합·관계 상담만 — 차분하고 부드러운 톤용 Gemini 보이스 */
+export const COUNSELOR_GEMINI_TTS_VOICE_COMPATIBILITY: Record<CounselorName, string> = {
+  도화: 'Laomedeia',
+  현월: 'Vindemiatrix',
+  지안: 'Enceladus',
+  서윤: 'Sulafat',
+  유진: 'Orus',
+};
+
 /** 공식 보이스 목록(주입 방지 검증용) — Gemini-TTS 문서 기준 */
 export const GEMINI_TTS_VOICES_ALL = new Set([
   'Achird',
@@ -59,10 +68,19 @@ export const GEMINI_TTS_VOICES_ALL = new Set([
   'Zephyr',
 ]);
 
-export function resolveGeminiTtsVoiceForCounselor(rawName: string): string {
+export function resolveGeminiTtsVoiceForCounselor(
+  rawName: string,
+  context: 'single' | 'compatibility' = 'single',
+): string {
   const name = rawName.trim();
   if (!COUNSELOR_ALLOWLIST.has(name)) return 'Kore';
-  const mapped = COUNSELOR_GEMINI_TTS_VOICE[name as CounselorName];
+
+  const cn = name as CounselorName;
+  if (context === 'compatibility') {
+    const compat = COUNSELOR_GEMINI_TTS_VOICE_COMPATIBILITY[cn];
+    if (compat && GEMINI_TTS_VOICES_ALL.has(compat)) return compat;
+  }
+  const mapped = COUNSELOR_GEMINI_TTS_VOICE[cn];
   if (mapped && GEMINI_TTS_VOICES_ALL.has(mapped)) return mapped;
   return 'Kore';
 }

@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'TTS 요청 한도 초과. 잠시 후 다시 시도해주세요.' }), { status: 429 });
   }
 
-  let body: { text?: string; counselorName?: string };
+  let body: { text?: string; counselorName?: string; ttsContext?: string };
   try {
     body = await req.json();
   } catch {
@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
 
   const voiceName = resolveGeminiTtsVoiceForCounselor(
     typeof body.counselorName === 'string' ? body.counselorName : '',
+    body.ttsContext === 'compatibility' ? 'compatibility' : 'single',
   );
 
   const text = (body.text ?? '').trim();

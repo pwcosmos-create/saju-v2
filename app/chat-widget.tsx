@@ -637,6 +637,40 @@ function messagesForChatApi(messages: { role: string; content: string }[]): { ro
   return messages.filter((m) => typeof m.content === 'string' && m.content.trim().length > 0);
 }
 
+function extractStreamDeltaText(rawJson: string): string {
+  try {
+    const json = JSON.parse(rawJson) as {
+      choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+      error?: { message?: string };
+    };
+    if (json.error?.message) return '';
+    const choice = json.choices?.[0];
+    return choice?.delta?.content ?? choice?.message?.content ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function processSseLines(
+  lines: string[],
+  onChunk: (t: string) => void,
+  onDone: () => void,
+): boolean {
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) continue;
+    const raw = trimmed.replace(/^data:\s*/, '').trim();
+    if (!raw) continue;
+    if (raw === '[DONE]') {
+      onDone();
+      return true;
+    }
+    const text = extractStreamDeltaText(raw);
+    if (text) onChunk(text);
+  }
+  return false;
+}
+
 async function streamChat(
   messages: { role: string; content: string }[],
   sajuContext: string,
@@ -681,6 +715,19 @@ async function streamChat(
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let sseBuffer = '';
+    const handleDone = () => finish(onDone);
+
+    const drainSseBuffer = (finalFlush: boolean) => {
+      const parts = sseBuffer.split(/\r?\n/);
+      if (finalFlush) {
+        const lines = parts.filter((l) => l.trim().length > 0);
+        sseBuffer = '';
+        return processSseLines(lines, onChunk, handleDone);
+      }
+      sseBuffer = parts.pop() ?? '';
+      return processSseLines(parts, onChunk, handleDone);
+    };
+
     while (true) {
       const { done, value } = await reader.read();
       if (signal?.aborted) {
@@ -691,21 +738,13 @@ async function streamChat(
         }
         return;
       }
-      if (done) break;
-      sseBuffer += dec.decode(value, { stream: true });
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const raw = line.slice(6).trim();
-        if (raw === '[DONE]') {
-          finish(onDone);
-          return;
-        }
-        try {
-          const text = JSON.parse(raw).choices?.[0]?.delta?.content;
-          if (text) onChunk(text);
-        } catch { /* skip */ }
+      if (value) {
+        sseBuffer += dec.decode(value, { stream: true });
+        if (drainSseBuffer(false)) return;
+      }
+      if (done) {
+        if (drainSseBuffer(true)) return;
+        break;
       }
     }
     if (!signal?.aborted) finish(onDone);

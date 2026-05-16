@@ -269,6 +269,45 @@ function configureMobilePlaybackAudio(el: HTMLAudioElement) {
   el.preload = 'auto';
 }
 
+/** iPhone·iPad 등 — Web Speech 인식 미지원 → 서버 STT(녹음 업로드) */
+function shouldUseServerStt(): boolean {
+  return isIosLikeDevice();
+}
+
+function pickRecordingMimeType(): string {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const candidates = [
+    'audio/mp4',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/aac',
+  ];
+  for (const m of candidates) {
+    if (MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+function hasMediaRecorderStt(): boolean {
+  return typeof navigator !== 'undefined'
+    && Boolean(navigator.mediaDevices?.getUserMedia)
+    && typeof MediaRecorder !== 'undefined'
+    && Boolean(pickRecordingMimeType());
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = String(reader.result ?? '');
+      const comma = dataUrl.indexOf(',');
+      resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 /** 연속 speak 호출 시 이전 voiceschanged 대기만 무효화 — 안 하면 큐가 두 개 동시에 재생됨 */
 let speakKoreanSessionId = 0;
 let voiceWaitReg: {
@@ -683,6 +722,10 @@ export default function ChatWidget({
   const wakeLockRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordStreamRef = useRef<MediaStream | null>(null);
+  const recordChunksRef = useRef<Blob[]>([]);
+  const recordMaxTimerRef = useRef<number | null>(null);
   /** 타이핑 연출 중단 시 interval 해제 */
   const typeCancelRef = useRef<(() => void) | null>(null);
   /** 타이핑 중단 시 마지막 메시지를 전체 본문으로 복구 */
@@ -693,6 +736,9 @@ export default function ChatWidget({
   const replayLastAnswerPayloadRef = useRef<string | null>(null);
   const [replayOffered, setReplayOffered] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const [sttTranscribing, setSttTranscribing] = useState(false);
+  /** iPhone 등 자동 재생 실패 시 「답변 듣기」용 */
+  const [answerPlayOffer, setAnswerPlayOffer] = useState<string | null>(null);
   const [progressHintIdx, setProgressHintIdx] = useState(0);
   const [replyTyping, setReplyTyping] = useState(false);
   /** 1~3: 스트림·검토 연출, 4: 타이핑 출력 (사주 페이지 AI 풀이 단계와 동일 흐름) */
@@ -995,7 +1041,7 @@ export default function ChatWidget({
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크를 눌러 말씀해 주세요. 답변을 듣는 중 마이크로 재생을 멈춘 뒤, 다른 질문은 안내 후 마이크를 한 번 더 눌러 주세요. 질문이 없으면 상단 「🔁 마지막 답변」버튼으로 같은 답변을 처음부터 다시 들을 수 있어요.\nAI 심층 풀이가 모두 표시된 뒤부터 바로 상담을 이용하실 수 있습니다.\n서버·운영 비용은 채팅 상단 안내에 따라 선택 후원으로 도와주실 수 있어요. 후원 없이도 상담 이용에는 제한이 없습니다.`
+          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 마이크로 말해 질문할 수 있습니다(iPhone·iPad는 말한 뒤 마이크를 다시 눌러 전송). 답변은 음성으로 들을 수 있으며, 소리가 없으면 「🔊 답변 듣기」를 눌러 주세요.\nAI 심층 풀이가 모두 표시된 뒤부터 바로 상담을 이용하실 수 있습니다.\n서버·운영 비용은 채팅 상단 안내에 따라 선택 후원으로 도와주실 수 있어요. 후원 없이도 상담 이용에는 제한이 없습니다.`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
@@ -1062,6 +1108,7 @@ export default function ChatWidget({
     }
     setReplayOffered(false);
     replayLastAnswerPayloadRef.current = null;
+    setAnswerPlayOffer(null);
 
     const userMsg: Msg = { role: 'user', content: trimmed };
 
@@ -1143,7 +1190,16 @@ export default function ChatWidget({
             chatMode === 'compatibility',
           );
           pendingAssistantFullRef.current = finalized;
-          if (finalized) void speakWithPreferredMode(finalized, selectedCounselor);
+          if (finalized) {
+            if (isIosLikeDevice()) {
+              setAnswerPlayOffer(finalized);
+              void primeMediaForTts().then(() => {
+                void speakWithPreferredMode(finalized, selectedCounselor);
+              });
+            } else {
+              void speakWithPreferredMode(finalized, selectedCounselor);
+            }
+          }
           typeCancelRef.current?.();
           typeCancelRef.current = typeEffect(finalized, syncMs, (typed) => {
             if (turnGen !== chatTurnGenRef.current) return;
@@ -1183,32 +1239,161 @@ export default function ChatWidget({
     );
   }
 
+  function stopRecordingTracks() {
+    recordStreamRef.current?.getTracks().forEach((t) => t.stop());
+    recordStreamRef.current = null;
+  }
+
+  function abortMediaRecording() {
+    if (recordMaxTimerRef.current != null) {
+      window.clearTimeout(recordMaxTimerRef.current);
+      recordMaxTimerRef.current = null;
+    }
+    try {
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+    } catch {
+      /* noop */
+    }
+    mediaRecorderRef.current = null;
+    recordChunksRef.current = [];
+    stopRecordingTracks();
+  }
+
+  async function transcribeAudioOnServer(audioBase64: string, mimeType: string): Promise<string> {
+    const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
+    const res = await fetch(`${base}/api/stt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioBase64, mimeType }),
+    });
+    const data = await res.json() as { transcript?: string; error?: string };
+    if (!res.ok) throw new Error(data.error ?? 'STT 실패');
+    return (data.transcript ?? '').trim();
+  }
+
+  async function onMediaRecordingStopped(mimeType: string) {
+    stopRecordingTracks();
+    setListening(false);
+    mediaRecorderRef.current = null;
+
+    const chunks = recordChunksRef.current;
+    recordChunksRef.current = [];
+    if (!chunks.length) {
+      setVoiceNote('녹음된 소리가 없습니다. 다시 시도해 주세요.');
+      return;
+    }
+
+    const blob = new Blob(chunks, { type: mimeType });
+    if (blob.size < 800) {
+      setVoiceNote('말씀이 너무 짧게 녹음되었습니다. 조금 더 길게 말씀해 주세요.');
+      return;
+    }
+
+    setSttTranscribing(true);
+    setVoiceNote('말씀을 인식하고 있어요...');
+    try {
+      const audioBase64 = await blobToBase64(blob);
+      const transcript = await transcribeAudioOnServer(audioBase64, mimeType);
+      setVoiceNote(null);
+      if (transcript) {
+        void send(transcript);
+      } else {
+        setVoiceNote('인식된 말이 없습니다. 마이크를 다시 누른 뒤 말씀해 주세요.');
+      }
+    } catch {
+      setVoiceNote('음성 인식에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.');
+    } finally {
+      setSttTranscribing(false);
+    }
+  }
+
+  async function startMediaRecording() {
+    const mimeType = pickRecordingMimeType();
+    if (!mimeType) {
+      setVoiceNote('이 기기에서는 마이크 녹음을 지원하지 않습니다.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordStreamRef.current = stream;
+      recordChunksRef.current = [];
+      const mr = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mr;
+      mr.ondataavailable = (ev) => {
+        if (ev.data.size > 0) recordChunksRef.current.push(ev.data);
+      };
+      mr.onstop = () => {
+        void onMediaRecordingStopped(mimeType);
+      };
+      mr.onerror = () => {
+        abortMediaRecording();
+        setListening(false);
+        setVoiceNote('녹음 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      };
+      mr.start(300);
+      setListening(true);
+      setVoiceNote('듣고 있어요. 말씀하신 뒤 마이크를 다시 눌러 전송합니다.');
+      recordMaxTimerRef.current = window.setTimeout(() => {
+        recordMaxTimerRef.current = null;
+        if (mediaRecorderRef.current?.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
+      }, 60_000);
+    } catch {
+      abortMediaRecording();
+      setListening(false);
+      setVoiceNote('마이크 사용이 거부되었습니다. 설정에서 마이크를 허용해 주세요.');
+    }
+  }
+
+  function handleVoiceInterruptWhilePlaying() {
+    if (voiceSecondMicHintTimerRef.current) {
+      clearTimeout(voiceSecondMicHintTimerRef.current);
+      voiceSecondMicHintTimerRef.current = null;
+    }
+    stopTTS();
+    typeCancelRef.current?.();
+    typeCancelRef.current = null;
+    const full = pendingAssistantFullRef.current;
+    pendingAssistantFullRef.current = null;
+    if (full !== null) {
+      setMsgs((prev) => {
+        const u = [...prev];
+        if (u.length && u[u.length - 1].role === 'assistant') {
+          u[u.length - 1] = { role: 'assistant', content: full };
+        }
+        return u;
+      });
+    }
+    let replayText = '';
+    if (full !== null) replayText = full.trim();
+    else {
+      const lastAsst = [...msgsRef.current].reverse().find(m => m.role === 'assistant');
+      replayText = (lastAsst?.content ?? '').trim();
+    }
+    replayLastAnswerPayloadRef.current = replayText || null;
+    setReplayOffered(Boolean(replayText));
+    setReplyTyping(false);
+    setChatLoadingStep(0);
+    setVoiceNote(null);
+    voiceSecondMicHintTimerRef.current = window.setTimeout(() => {
+      voiceSecondMicHintTimerRef.current = null;
+      setVoiceNote(
+        '재생을 멈췄어요. 다른 질문은 마이크를 다시 눌러 말씀해 주세요. 질문이 없으면 상단 「🔁 마지막 답변」버튼으로 이어 들을 수 있어요.',
+      );
+    }, VOICE_SECOND_MIC_HINT_DELAY_MS);
+  }
+
   function toggleVoice() {
     if (typeof window === 'undefined') return;
     void primeMediaForTts();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR || !hasWebSpeechRecognition()) {
-      if (isIosLikeDevice()) {
-        setVoiceNote(
-          'iPhone·iPad Safari는 마이크 음성 입력을 지원하지 않습니다. 글자로 질문해 주세요. 답변 음성은 질문 전송·마이크 버튼을 누른 뒤 재생됩니다.',
-        );
-      } else {
-        setVoiceNote('이 브라우저는 음성 입력을 지원하지 않습니다. Android는 Chrome, PC는 Chrome·Edge를 사용해 주세요.');
-      }
-      return;
-    }
     if (!window.isSecureContext) {
       setVoiceNote('음성 입력은 보안 연결(HTTPS)에서만 동작합니다.');
       return;
     }
-    if (listening) {
-      recogRef.current?.stop();
-      setListening(false);
-      setVoiceNote(null);
-      return;
-    }
+    if (sttTranscribing) return;
     if (loading) {
       setVoiceNote('답변을 받는 중입니다. 잠시 후 다시 눌러 주세요.');
       return;
@@ -1218,44 +1403,49 @@ export default function ChatWidget({
       setVoiceNote('먼저 AI 심층 풀이를 끝까지 확인한 뒤 음성 질문을 사용할 수 있어요.');
       return;
     }
-    /** 재생(TTS)·타이핑 연출 중 첫 탭: 중단만 하고 잠시 뒤 재탭 유도 (에코·오인식 완화) */
     if (isSpeaking || replyTyping) {
+      handleVoiceInterruptWhilePlaying();
+      return;
+    }
+
+    if (shouldUseServerStt() && hasMediaRecorderStt()) {
+      if (listening) {
+        if (recordMaxTimerRef.current != null) {
+          window.clearTimeout(recordMaxTimerRef.current);
+          recordMaxTimerRef.current = null;
+        }
+        if (mediaRecorderRef.current?.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        } else {
+          abortMediaRecording();
+          setListening(false);
+        }
+        return;
+      }
+      setVoiceNote(null);
       if (voiceSecondMicHintTimerRef.current) {
         clearTimeout(voiceSecondMicHintTimerRef.current);
         voiceSecondMicHintTimerRef.current = null;
       }
-      stopTTS();
-      typeCancelRef.current?.();
-      typeCancelRef.current = null;
-      const full = pendingAssistantFullRef.current;
-      pendingAssistantFullRef.current = null;
-      if (full !== null) {
-        setMsgs((prev) => {
-          const u = [...prev];
-          if (u.length && u[u.length - 1].role === 'assistant') {
-            u[u.length - 1] = { role: 'assistant', content: full };
-          }
-          return u;
-        });
-      }
-      let replayText = '';
-      if (full !== null) replayText = full.trim();
-      else {
-        const lastAsst = [...msgsRef.current].reverse().find(m => m.role === 'assistant');
-        replayText = (lastAsst?.content ?? '').trim();
-      }
-      replayLastAnswerPayloadRef.current = replayText || null;
-      setReplayOffered(Boolean(replayText));
+      void startMediaRecording();
+      return;
+    }
 
-      setReplyTyping(false);
-      setChatLoadingStep(0);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SR || !hasWebSpeechRecognition()) {
+      if (hasMediaRecorderStt()) {
+        void startMediaRecording();
+        return;
+      }
+      setVoiceNote('이 브라우저는 음성 입력을 지원하지 않습니다. Android는 Chrome, PC는 Chrome·Edge를 사용해 주세요.');
+      return;
+    }
+    if (listening) {
+      recogRef.current?.stop();
+      setListening(false);
       setVoiceNote(null);
-      voiceSecondMicHintTimerRef.current = window.setTimeout(() => {
-        voiceSecondMicHintTimerRef.current = null;
-        setVoiceNote(
-          '재생을 멈췄어요. 다른 질문은 마이크를 다시 눌러 말씀해 주세요. 질문이 없으면 상단 「🔁 마지막 답변」버튼으로 이어 들을 수 있어요.',
-        );
-      }, VOICE_SECOND_MIC_HINT_DELAY_MS);
       return;
     }
 
@@ -1346,6 +1536,9 @@ export default function ChatWidget({
       /* noop */
     }
     recogRef.current = null;
+    abortMediaRecording();
+    setSttTranscribing(false);
+    setAnswerPlayOffer(null);
     setListening(false);
     setLoading(false);
     setReplyTyping(false);
@@ -1522,6 +1715,13 @@ export default function ChatWidget({
       setTtsOutputMode('browser');
     }
   }, []);
+
+  async function playOfferedAnswer() {
+    const text = answerPlayOffer?.trim();
+    if (!text || loading) return;
+    void primeMediaForTts();
+    await speakWithPreferredMode(text, selectedCounselor);
+  }
 
   /** 재생 인터럽트 후 — 같은 본문으로 TTS만 처음부터 다시 재생 */
   async function replayLastInterruptedAnswer() {
@@ -2071,6 +2271,28 @@ export default function ChatWidget({
               </div>
             )}
 
+            {answerPlayOffer && isIosLikeDevice() && !loading && !isSpeaking && !replyTyping ? (
+              <div style={{ padding: '6px 12px 2px' }}>
+                <button
+                  type="button"
+                  onClick={() => void playOfferedAnswer()}
+                  style={{
+                    width: '100%',
+                    borderRadius: 10,
+                    border: '1px solid rgba(232,201,126,.45)',
+                    background: 'rgba(232,201,126,.16)',
+                    color: '#f5d78a',
+                    fontSize: '.82rem',
+                    fontWeight: 700,
+                    padding: '10px 12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  🔊 답변 듣기
+                </button>
+              </div>
+            ) : null}
+
             {(loading || replyTyping) && (
               <div style={{
                 padding: '6px 12px 2px',
@@ -2120,20 +2342,22 @@ export default function ChatWidget({
               <button
                 type="button"
                 onClick={toggleVoice}
-                disabled={loading}
+                disabled={loading || sttTranscribing}
                 title={
-                  loading ? '답변 수신 중'
-                    : listening ? '녹음 중지'
-                      : (isSpeaking || replyTyping) ? '재생·타이핑 멈추기 — 잠시 후 마이크를 다시 눌러 질문'
-                        : '음성 입력'
+                  sttTranscribing ? '음성 인식 중'
+                    : loading ? '답변 수신 중'
+                      : listening
+                        ? (shouldUseServerStt() ? '말씀 후 다시 눌러 전송' : '녹음 중지')
+                        : (isSpeaking || replyTyping) ? '재생·타이핑 멈추기 — 잠시 후 마이크를 다시 눌러 질문'
+                          : '음성 입력'
                 }
                 style={{
                   padding: '9px 11px',
                   background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',
                   border: `1px solid ${listening ? 'rgba(220,80,80,.5)' : 'rgba(255,255,255,.12)'}`,
                   borderRadius: 10, color: listening ? '#ff6b6b' : 'rgba(255,255,255,.55)',
-                  cursor: loading ? 'not-allowed' : 'pointer', fontSize: '1rem',
-                  opacity: loading ? 0.45 : 1,
+                  cursor: loading || sttTranscribing ? 'not-allowed' : 'pointer', fontSize: '1rem',
+                  opacity: loading || sttTranscribing ? 0.45 : 1,
                   animation: listening ? 'pulse 1s infinite, micGlow 1.2s ease-in-out infinite' : 'micGlowIdle 2.2s ease-in-out infinite',
                   boxShadow: listening ? '0 0 14px rgba(255,107,107,.55)' : '0 0 10px rgba(139,111,198,.35)',
                 }}

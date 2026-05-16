@@ -30,6 +30,25 @@ function normalizeAudioMime(mimeType: string): string {
   return 'audio/mp4';
 }
 
+/** Gemini가 지시문을 그대로 출력하는 경우(무음·짧은 녹음) */
+function sanitizeSttTranscript(raw: string): string {
+  const t = raw.trim().replace(/^["'「]|["'」]$/g, '');
+  if (!t) return '';
+  const leakMarkers = [
+    '이 오디오는 한국어',
+    '말한 내용만',
+    '한국어 텍스트만',
+    '빈 문자열',
+    '받아 적어',
+    '인사(안녕',
+    '완전한 무음',
+    '설명·따옴표',
+  ];
+  if (leakMarkers.some((m) => t.includes(m))) return '';
+  if (t.length > 120 && /적으세요|출력하세요|인식/.test(t)) return '';
+  return t;
+}
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
   if (!checkRateLimit(ip)) {
@@ -75,23 +94,25 @@ export async function POST(req: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          systemInstruction: {
+            parts: [{
+              text: [
+                'You transcribe Korean speech from audio.',
+                'Output ONLY the words the speaker said, in Korean.',
+                'No quotes, labels, or instructions.',
+                'If the audio is silent or unintelligible, output an empty string.',
+              ].join(' '),
+            }],
+          },
           contents: [{
             parts: [
               { inline_data: { mime_type: mimeType, data: audioBase64 } },
-              {
-                text: [
-                  '이 오디오는 한국어 음성입니다.',
-                  '말한 내용만 정확히 받아 적어 주세요.',
-                  '인사(안녕하세요, 안녕, 반가워요 등)와 짧은 한마디도 그대로 적으세요.',
-                  '설명·따옴표·접두어 없이 한국어 텍스트만 한 줄로 출력하세요.',
-                  '완전한 무음·잡음만 있을 때만 빈 문자열을 출력하세요.',
-                ].join(' '),
-              },
+              { text: 'Transcribe the spoken Korean:' },
             ],
           }],
           generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 1024,
+            temperature: 0,
+            maxOutputTokens: 512,
           },
         }),
       },
@@ -105,10 +126,11 @@ export async function POST(req: NextRequest) {
     const json = JSON.parse(raw) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
-    const transcript = (json.candidates?.[0]?.content?.parts ?? [])
-      .map((p) => p.text ?? '')
-      .join('')
-      .trim();
+    const transcript = sanitizeSttTranscript(
+      (json.candidates?.[0]?.content?.parts ?? [])
+        .map((p) => p.text ?? '')
+        .join(''),
+    );
 
     return Response.json({ transcript });
   } catch (e) {

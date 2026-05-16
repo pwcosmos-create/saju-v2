@@ -86,7 +86,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const upstream = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${key}`,
+      // flash-preview-tts 는 2026-03 기준 "text only" 400 오류 — pro-preview-tts 사용
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent?key=${key}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

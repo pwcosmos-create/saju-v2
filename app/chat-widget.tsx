@@ -449,22 +449,31 @@ const miniActionBtnStyle = {
   cursor: 'pointer',
 };
 
+/** 녹음 재탭 안내까지 대기(ms) — 재생 중단 직후 바로 녹음하면 에코가 나기 쉬워 짧게 띄움 */
+const VOICE_SECOND_MIC_HINT_DELAY_MS = 1600;
+
 function typeEffect(
   text: string,
   charIntervalMs: number,
   onUpdate: (t: string) => void,
   onDone?: () => void,
-) {
+): () => void {
   let index = 0;
+  let cancelled = false;
   const timer = setInterval(() => {
+    if (cancelled) return;
     if (index < text.length) {
       onUpdate(text.slice(0, index + 1));
       index++;
     } else {
       clearInterval(timer);
-      if (onDone) onDone();
+      if (!cancelled && onDone) onDone();
     }
   }, charIntervalMs);
+  return () => {
+    cancelled = true;
+    clearInterval(timer);
+  };
 }
 
 function buildChatContext(r: SajuResult): string {
@@ -606,6 +615,15 @@ export default function ChatWidget({
   const wakeLockRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
+  /** 타이핑 연출 중단 시 interval 해제 */
+  const typeCancelRef = useRef<(() => void) | null>(null);
+  /** 타이핑 중단 시 마지막 메시지를 전체 본문으로 복구 */
+  const pendingAssistantFullRef = useRef<string | null>(null);
+  const voiceSecondMicHintTimerRef = useRef<number | null>(null);
+  /** 인터럽트 직후 🔁 마지막 답변 버튼용 본문 — msgs 와 동기화해 폴백 */
+  const msgsRef = useRef<Msg[]>([]);
+  const replayLastAnswerPayloadRef = useRef<string | null>(null);
+  const [replayOffered, setReplayOffered] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const [progressHintIdx, setProgressHintIdx] = useState(0);
   const [replyTyping, setReplyTyping] = useState(false);
@@ -643,17 +661,36 @@ export default function ChatWidget({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs]);
 
+  useEffect(() => {
+    msgsRef.current = msgs;
+  }, [msgs]);
+
   /** AI 심층 풀이가 초기화되면 상담 패널·대화를 닫아 다시 풀이 완료 후에만 이용하도록 함 */
   useEffect(() => {
     if (!aiSummaryReady) {
       setOpen(false);
       setIntroSpoken(false);
       setMsgs([]);
+      setReplayOffered(false);
+      replayLastAnswerPayloadRef.current = null;
     }
   }, [aiSummaryReady]);
 
+  useEffect(() => {
+    if (!open) {
+      setReplayOffered(false);
+      replayLastAnswerPayloadRef.current = null;
+    }
+  }, [open]);
+
   useEffect(() => () => {
     if (supportCopyTimerRef.current) clearTimeout(supportCopyTimerRef.current);
+    if (voiceSecondMicHintTimerRef.current) {
+      clearTimeout(voiceSecondMicHintTimerRef.current);
+      voiceSecondMicHintTimerRef.current = null;
+    }
+    typeCancelRef.current?.();
+    typeCancelRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -848,7 +885,7 @@ export default function ChatWidget({
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크 버튼을 누른 뒤 말씀해 주세요.\nAI 심층 풀이가 모두 표시된 뒤부터 바로 상담을 이용하실 수 있습니다.\n서버·운영 비용은 채팅 상단 안내에 따라 선택 후원으로 도와주실 수 있어요. 후원 없이도 상담 이용에는 제한이 없습니다.`
+          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크를 눌러 말씀해 주세요. 답변을 듣는 중 마이크로 재생을 멈춘 뒤, 다른 질문은 안내 후 마이크를 한 번 더 눌러 주세요. 질문이 없으면 상단 「🔁 마지막 답변」버튼으로 같은 답변을 처음부터 다시 들을 수 있어요.\nAI 심층 풀이가 모두 표시된 뒤부터 바로 상담을 이용하실 수 있습니다.\n서버·운영 비용은 채팅 상단 안내에 따라 선택 후원으로 도와주실 수 있어요. 후원 없이도 상담 이용에는 제한이 없습니다.`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
@@ -885,6 +922,12 @@ export default function ChatWidget({
       return;
     }
     setVoiceNote(null);
+    if (voiceSecondMicHintTimerRef.current) {
+      clearTimeout(voiceSecondMicHintTimerRef.current);
+      voiceSecondMicHintTimerRef.current = null;
+    }
+    setReplayOffered(false);
+    replayLastAnswerPayloadRef.current = null;
     const userMsg: Msg = { role: 'user', content: trimmed };
     const newMsgs = [...msgs, userMsg];
     setMsgs([...newMsgs, { role: 'assistant', content: '' }]);
@@ -929,8 +972,10 @@ export default function ChatWidget({
           setChatLoadingStep(4);
           setReplyTyping(true);
           const syncMs = typeIntervalMsForSpeechSync(finalized, ttsOutputMode);
+          pendingAssistantFullRef.current = finalized;
           if (finalized) void speakWithPreferredMode(finalized, selectedCounselor);
-          typeEffect(finalized, syncMs, (typed) => {
+          typeCancelRef.current?.();
+          typeCancelRef.current = typeEffect(finalized, syncMs, (typed) => {
             setMsgs((prev) => {
               const u = [...prev];
               u[u.length - 1] = { role: 'assistant', content: typed };
@@ -939,6 +984,8 @@ export default function ChatWidget({
           }, () => {
             setReplyTyping(false);
             setChatLoadingStep(0);
+            typeCancelRef.current = null;
+            pendingAssistantFullRef.current = null;
           });
         }, VERIFY_PAUSE_MS);
       },
@@ -954,6 +1001,9 @@ export default function ChatWidget({
         });
         setLoading(false);
         setReplyTyping(false);
+        typeCancelRef.current?.();
+        typeCancelRef.current = null;
+        pendingAssistantFullRef.current = null;
       },
     );
   }
@@ -986,7 +1036,52 @@ export default function ChatWidget({
       setVoiceNote('먼저 AI 심층 풀이를 끝까지 확인한 뒤 음성 질문을 사용할 수 있어요.');
       return;
     }
+    /** 재생(TTS)·타이핑 연출 중 첫 탭: 중단만 하고 잠시 뒤 재탭 유도 (에코·오인식 완화) */
+    if (isSpeaking || replyTyping) {
+      if (voiceSecondMicHintTimerRef.current) {
+        clearTimeout(voiceSecondMicHintTimerRef.current);
+        voiceSecondMicHintTimerRef.current = null;
+      }
+      stopTTS();
+      typeCancelRef.current?.();
+      typeCancelRef.current = null;
+      const full = pendingAssistantFullRef.current;
+      pendingAssistantFullRef.current = null;
+      if (full !== null) {
+        setMsgs((prev) => {
+          const u = [...prev];
+          if (u.length && u[u.length - 1].role === 'assistant') {
+            u[u.length - 1] = { role: 'assistant', content: full };
+          }
+          return u;
+        });
+      }
+      let replayText = '';
+      if (full !== null) replayText = full.trim();
+      else {
+        const lastAsst = [...msgsRef.current].reverse().find(m => m.role === 'assistant');
+        replayText = (lastAsst?.content ?? '').trim();
+      }
+      replayLastAnswerPayloadRef.current = replayText || null;
+      setReplayOffered(Boolean(replayText));
+
+      setReplyTyping(false);
+      setChatLoadingStep(0);
+      setVoiceNote(null);
+      voiceSecondMicHintTimerRef.current = window.setTimeout(() => {
+        voiceSecondMicHintTimerRef.current = null;
+        setVoiceNote(
+          '재생을 멈췄어요. 다른 질문은 마이크를 다시 눌러 말씀해 주세요. 질문이 없으면 상단 「🔁 마지막 답변」버튼으로 이어 들을 수 있어요.',
+        );
+      }, VOICE_SECOND_MIC_HINT_DELAY_MS);
+      return;
+    }
+
     setVoiceNote(null);
+    if (voiceSecondMicHintTimerRef.current) {
+      clearTimeout(voiceSecondMicHintTimerRef.current);
+      voiceSecondMicHintTimerRef.current = null;
+    }
     const recog = new SR();
     recog.lang = 'ko-KR';
     recog.continuous = false;
@@ -1150,6 +1245,14 @@ export default function ChatWidget({
     done();
   }
 
+  /** 재생 인터럽트 후 — 같은 본문으로 TTS만 처음부터 다시 재생 */
+  async function replayLastInterruptedAnswer() {
+    const text = replayLastAnswerPayloadRef.current?.trim();
+    if (!text || loading) return;
+    void primeMediaForTts();
+    await speakWithPreferredMode(text, selectedCounselor);
+  }
+
   return (
     <>
       {/* Chat Panel */}
@@ -1214,6 +1317,19 @@ export default function ChatWidget({
               background: 'none', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
               color: wakeLockEnabled ? '#e8c97e' : 'rgba(255,255,255,.5)', fontSize: '.72rem', cursor: 'pointer', padding: '4px 8px',
             }}>{wakeLockEnabled ? '🔒' : '🔓'}</button>
+            {replayOffered ? (
+              <button
+                type="button"
+                onClick={() => void replayLastInterruptedAnswer()}
+                disabled={loading || listening}
+                title="멈춘 답변을 처음부터 다시 들려 드립니다"
+                style={{
+                  background: 'rgba(232,201,126,.14)', border: '1px solid rgba(232,201,126,.38)', borderRadius: 8,
+                  color: '#f5d78a', fontSize: '.68rem', cursor: loading || listening ? 'not-allowed' : 'pointer',
+                  padding: '4px 8px', fontWeight: 700, opacity: loading || listening ? 0.45 : 1,
+                }}
+              >🔁 마지막 답변</button>
+            ) : null}
             <button type="button" onClick={stopTTS} title="음성 중지" style={{
               background: 'none', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
               color: 'rgba(255,255,255,.5)', fontSize: '.8rem', cursor: 'pointer', padding: '4px 8px',
@@ -1649,7 +1765,12 @@ export default function ChatWidget({
                 type="button"
                 onClick={toggleVoice}
                 disabled={loading}
-                title={loading ? '답변 수신 중' : listening ? '녹음 중지' : '음성 입력'}
+                title={
+                  loading ? '답변 수신 중'
+                    : listening ? '녹음 중지'
+                      : (isSpeaking || replyTyping) ? '재생·타이핑 멈추기 — 잠시 후 마이크를 다시 눌러 질문'
+                        : '음성 입력'
+                }
                 style={{
                   padding: '9px 11px',
                   background: listening ? 'rgba(220,50,50,.25)' : 'rgba(255,255,255,.06)',

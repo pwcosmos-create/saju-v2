@@ -518,6 +518,9 @@ const CHAT_AI_STEPS = [
   '검토를 마치고 화면에 순서대로 보여드리는 중...',
 ] as const;
 const CHAT_STEP_ADVANCE_MS = [3000, 7000] as const; // 2단계, 3단계 진입 타이밍 (askAI 와 동일)
+/** 열린 패널 — 하단 FAB 위·상단 여백 (모바일 채팅·입력창 노출) */
+const CHAT_PANEL_TOP_OPEN = 'max(4dvh, env(safe-area-inset-top, 0px))';
+const CHAT_PANEL_BOTTOM_OPEN = 'calc(92px + env(safe-area-inset-bottom, 0px))';
 /** 스트리밍/API 대기 중 — 주기적으로 바뀌며 ‘정지 아님’ 안내 */
 const WAIT_CHAT_HINTS = [
   '정지된 것이 아니에요. 사주 맥락을 함께 읽으며 답을 준비하고 있습니다.',
@@ -1916,19 +1919,30 @@ export default function ChatWidget({
     <>
       {/* Chat Panel */}
       <div className="saju-chat-layer" style={{
-        position: 'fixed', bottom: open ? 0 : '-75vh', right: 0, left: 0,
-        maxWidth: 480, margin: '0 auto', height: '72vh',
-        background: '#0d0b1e', border: '1px solid rgba(255,255,255,.12)',
-        borderBottom: 'none', borderRadius: '20px 20px 0 0',
-        display: 'flex', flexDirection: 'column',
-        transition: 'bottom .3s ease', zIndex: 1000, overflow: 'hidden',
+        position: 'fixed',
+        top: open ? CHAT_PANEL_TOP_OPEN : undefined,
+        bottom: open ? CHAT_PANEL_BOTTOM_OPEN : '-80dvh',
+        right: 0,
+        left: 0,
+        maxWidth: 480,
+        margin: '0 auto',
+        height: open ? undefined : '72vh',
+        background: '#0d0b1e',
+        border: '1px solid rgba(255,255,255,.12)',
+        borderBottom: 'none',
+        borderRadius: '20px 20px 0 0',
+        display: 'flex',
+        flexDirection: 'column',
+        transition: 'bottom .3s ease, top .3s ease',
+        zIndex: 1000,
+        overflow: 'hidden',
         boxShadow: '0 -8px 32px rgba(0,0,0,.5)',
       }}>
         {/* Header */}
         <div style={{
           padding: '10px 14px 12px', background: 'linear-gradient(135deg, #8b6fc6, #6b52a3)',
           borderBottom: '1px solid rgba(255,255,255,.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-          boxShadow: '0 2px 10px rgba(0,0,0,.2)', gap: 8,
+          boxShadow: '0 2px 10px rgba(0,0,0,.2)', gap: 8, flexShrink: 0,
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#e8c97e', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1956,7 +1970,7 @@ export default function ChatWidget({
             <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 0 }}>
               배정 상담사(세션 고정): {selectedCounselor}
             </div>
-            {SUPPORT_BANK && SUPPORT_ACCOUNT_NO ? (
+            {false && SUPPORT_BANK && SUPPORT_ACCOUNT_NO ? (
               <div style={{
                 marginTop: 4,
                 paddingTop: 4,
@@ -2079,7 +2093,7 @@ export default function ChatWidget({
         </div>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {canStartCounseling && result && (
             <div
               role="note"
@@ -2456,7 +2470,7 @@ export default function ChatWidget({
         {!canStartCounseling ? (
           <div style={{
             padding: '20px', borderTop: '1px solid rgba(255,255,255,.08)',
-            textAlign: 'center', background: 'rgba(255,255,255,.02)',
+            textAlign: 'center', background: 'rgba(255,255,255,.02)', flexShrink: 0,
           }}>
             <div style={{ color: '#e8c97e', fontSize: '.85rem', marginBottom: '10px', fontWeight: 700 }}>
               AI 심층 풀이를 모두 확인한 뒤 심층 상담을 이용할 수 있습니다
@@ -2466,7 +2480,7 @@ export default function ChatWidget({
             </div>
           </div>
         ) : (
-          <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.02)' }}>
+          <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.02)', flexShrink: 0 }}>
             {voiceNote && (
               <div
                 role="status"

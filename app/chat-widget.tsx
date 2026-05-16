@@ -246,6 +246,29 @@ function typeIntervalMsForSpeechSync(text: string, mode: 'browser' | 'server', c
 
 const TTS_OUTPUT_MODE_KEY = 'saju_chat_tts_output_mode';
 
+/** 무음 WAV — 사용자 탭 직후 play()로 iOS·Android 오디오 잠금 해제 */
+const SILENT_WAV_DATA_URL =
+  'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+
+function isIosLikeDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function hasWebSpeechRecognition(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w = window as Window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+  return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
+}
+
+function configureMobilePlaybackAudio(el: HTMLAudioElement) {
+  el.setAttribute('playsinline', '');
+  el.setAttribute('webkit-playsinline', 'true');
+  el.preload = 'auto';
+}
+
 /** 연속 speak 호출 시 이전 voiceschanged 대기만 무효화 — 안 하면 큐가 두 개 동시에 재생됨 */
 let speakKoreanSessionId = 0;
 let voiceWaitReg: {
@@ -652,7 +675,9 @@ export default function ChatWidget({
   const [compareError, setCompareError] = useState('');
   const [showCompareForm, setShowCompareForm] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /** 서버 TTS 재생용 — 사용자 제스처로 한 번 unlock 후 동일 요소 재사용(iOS 필수) */
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsBlobUrlRef = useRef<string | null>(null);
   /** 정지·새 재생 시 이전 비동기 TTS 루프 무효화 */
   const speakGenRef = useRef(0);
   const wakeLockRef = useRef<any>(null);
@@ -795,34 +820,50 @@ export default function ChatWidget({
     }
   }
 
-  /** 전송/패널 열기 같은 사용자 제스처 안에서 호출 — 이후 비동기 TTS·오디오 정책 완화에 도움 */
-  async function primeMediaForTts() {
-    if (typeof window === 'undefined' || ttsPrimedRef.current) return;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const AnyWin = window as any;
-      const AC = window.AudioContext || AnyWin.webkitAudioContext;
-      if (AC) {
-        const ctx = new AC();
-        await ctx.resume();
-        const gain = ctx.createGain();
-        gain.gain.value = 0;
-        gain.connect(ctx.destination);
-        const frames = Math.max(1, Math.floor(0.03 * ctx.sampleRate));
-        const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
-        const src = ctx.createBufferSource();
-        src.buffer = buf;
-        src.connect(gain);
-        src.start();
-        src.stop(ctx.currentTime + 0.03);
-        await new Promise<void>((r) => setTimeout(r, 50));
-        await ctx.close();
-      }
-    } catch {
-      /* noop */
-    } finally {
-      ttsPrimedRef.current = true;
+  function getOrCreatePlaybackAudio(): HTMLAudioElement {
+    if (!audioRef.current) {
+      const a = new Audio();
+      configureMobilePlaybackAudio(a);
+      audioRef.current = a;
     }
+    return audioRef.current;
+  }
+
+  function revokeTtsBlobUrl() {
+    if (ttsBlobUrlRef.current) {
+      URL.revokeObjectURL(ttsBlobUrlRef.current);
+      ttsBlobUrlRef.current = null;
+    }
+  }
+
+  /** 전송·패널 열기·마이크 탭 등 사용자 제스처 안에서 호출 — 모바일 TTS 재생 잠금 해제 */
+  async function primeMediaForTts() {
+    if (typeof window === 'undefined') return;
+    const audio = getOrCreatePlaybackAudio();
+    try {
+      revokeTtsBlobUrl();
+      audio.src = SILENT_WAV_DATA_URL;
+      const prevVol = audio.volume;
+      audio.volume = 0.01;
+      audio.currentTime = 0;
+      await audio.play();
+      audio.pause();
+      audio.volume = prevVol > 0 ? prevVol : 1;
+    } catch {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const AnyWin = window as any;
+        const AC = window.AudioContext || AnyWin.webkitAudioContext;
+        if (AC) {
+          const ctx = new AC();
+          await ctx.resume();
+          await ctx.close();
+        }
+      } catch {
+        /* noop */
+      }
+    }
+    ttsPrimedRef.current = true;
   }
 
   useEffect(() => {
@@ -962,9 +1003,11 @@ export default function ChatWidget({
 
   useEffect(() => {
     if (!open || !result || introSpoken || !canStartCounseling) return;
+    setIntroSpoken(true);
+    /** iOS는 useEffect 시점에 오디오 정책이 막혀 인트로 TTS가 실패하는 경우가 많아 생략 */
+    if (isIosLikeDevice()) return;
     const intro = `${selectedCounselor} 상담사가 이 세션 내내 함께합니다. 궁금한 점을 편하게 물어보세요.`;
     void speakWithPreferredMode(intro, selectedCounselor);
-    setIntroSpoken(true);
   }, [open, result, canStartCounseling, introSpoken, selectedCounselor]);
 
   useEffect(() => {
@@ -1142,11 +1185,18 @@ export default function ChatWidget({
 
   function toggleVoice() {
     if (typeof window === 'undefined') return;
+    void primeMediaForTts();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) {
-      setVoiceNote('이 브라우저는 음성 입력을 지원하지 않습니다. Chrome 또는 Edge(데스크톱)를 사용해 주세요.');
+    if (!SR || !hasWebSpeechRecognition()) {
+      if (isIosLikeDevice()) {
+        setVoiceNote(
+          'iPhone·iPad Safari는 마이크 음성 입력을 지원하지 않습니다. 글자로 질문해 주세요. 답변 음성은 질문 전송·마이크 버튼을 누른 뒤 재생됩니다.',
+        );
+      } else {
+        setVoiceNote('이 브라우저는 음성 입력을 지원하지 않습니다. Android는 Chrome, PC는 Chrome·Edge를 사용해 주세요.');
+      }
       return;
     }
     if (!window.isSecureContext) {
@@ -1262,10 +1312,14 @@ export default function ChatWidget({
       window.speechSynthesis.cancel();
     }
     speakGenRef.current += 1;
+    revokeTtsBlobUrl();
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.src = '';
-      audioRef.current = null;
+      try {
+        audioRef.current.currentTime = 0;
+      } catch {
+        /* noop */
+      }
     }
     setIsSpeaking(false);
     void releaseWakeLock();
@@ -1297,6 +1351,8 @@ export default function ChatWidget({
     setReplyTyping(false);
     setChatLoadingStep(0);
     setVoiceNote(null);
+    revokeTtsBlobUrl();
+    ttsPrimedRef.current = false;
     stopTTS();
     setOpen(false);
   }
@@ -1328,21 +1384,43 @@ export default function ChatWidget({
     payload: { mimeType: string; audioBase64: string },
     playbackRate = 1,
   ): Promise<boolean> {
+    revokeTtsBlobUrl();
     try {
-      const audio = new Audio(`data:${payload.mimeType};base64,${payload.audioBase64}`);
+      const binary = atob(payload.audioBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: payload.mimeType });
+      const url = URL.createObjectURL(blob);
+      ttsBlobUrlRef.current = url;
+
+      const audio = getOrCreatePlaybackAudio();
+      configureMobilePlaybackAudio(audio);
       audio.playbackRate = playbackRate;
-      audioRef.current = audio;
+      audio.src = url;
       try {
         await audio.play();
       } catch {
+        revokeTtsBlobUrl();
         return false;
       }
       const finishedOk = await new Promise<boolean>((resolve) => {
-        audio.onended = () => resolve(true);
-        audio.onerror = () => resolve(false);
+        const onEnd = () => {
+          audio.removeEventListener('ended', onEnd);
+          audio.removeEventListener('error', onErr);
+          resolve(true);
+        };
+        const onErr = () => {
+          audio.removeEventListener('ended', onEnd);
+          audio.removeEventListener('error', onErr);
+          resolve(false);
+        };
+        audio.addEventListener('ended', onEnd);
+        audio.addEventListener('error', onErr);
       });
+      revokeTtsBlobUrl();
       return finishedOk;
     } catch {
+      revokeTtsBlobUrl();
       return false;
     }
   }
@@ -1409,6 +1487,11 @@ export default function ChatWidget({
       const ok = await playServerTtsPayload(payload, serverPlaybackRate);
       if (!ok) {
         serverOk = false;
+        setVoiceNote(
+          isIosLikeDevice()
+            ? '답변 음성 재생에 실패했습니다. 마이크 또는 전송 버튼을 한 번 누른 뒤 다시 질문해 주세요. 계속 안 되면 상단 「📱 기기음성」으로 바꿔 보세요.'
+            : '답변 음성 재생에 실패했습니다. 화면을 한 번 터치한 뒤 다시 시도해 주세요.',
+        );
         break;
       }
       if (i < chunks.length - 1 && gen === speakGenRef.current) {
@@ -1426,6 +1509,19 @@ export default function ChatWidget({
 
     done();
   }
+
+  /** iOS 첫 방문 시 서버 TTS 대신 기기 음성이 더 잘 나오는 경우가 많음 */
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isIosLikeDevice()) return;
+    try {
+      const v = localStorage.getItem(TTS_OUTPUT_MODE_KEY);
+      if (v) return;
+      localStorage.setItem(TTS_OUTPUT_MODE_KEY, 'browser');
+      setTtsOutputMode('browser');
+    } catch {
+      setTtsOutputMode('browser');
+    }
+  }, []);
 
   /** 재생 인터럽트 후 — 같은 본문으로 TTS만 처음부터 다시 재생 */
   async function replayLastInterruptedAnswer() {

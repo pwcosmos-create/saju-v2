@@ -1926,23 +1926,23 @@ export default function ChatWidget({
       }}>
         {/* Header */}
         <div style={{
-          padding: '16px 20px', background: 'linear-gradient(135deg, #8b6fc6, #6b52a3)',
-          borderBottom: '1px solid rgba(255,255,255,.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          boxShadow: '0 2px 10px rgba(0,0,0,.2)',
+          padding: '10px 14px 12px', background: 'linear-gradient(135deg, #8b6fc6, #6b52a3)',
+          borderBottom: '1px solid rgba(255,255,255,.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          boxShadow: '0 2px 10px rgba(0,0,0,.2)', gap: 8,
         }}>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#e8c97e', display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2L12L9.6 9.6L12 2Z" fill="#e8c97e" />
               </svg>
               AI 심층 상담
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
+            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 1 }}>
               {!canStartCounseling
                 ? 'AI 심층 풀이가 화면에 모두 표시된 뒤 상담을 이용할 수 있습니다'
                 : '심층 풀이 완료 후 텍스트·음성 상담 이용 가능'}
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,.62)', marginTop: 2 }}>
+            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,.62)', marginTop: 1 }}>
               타이핑·음성 속도 자동 맞춤(답변 길이·고품질/기기음성 기준) · 일반 상담 읽기 배속 ×{TTS_RATE.toFixed(2)}
               {chatMode === 'compatibility' ? (
                 <span style={{ color: 'rgba(232,201,126,.75)' }}>
@@ -1950,16 +1950,16 @@ export default function ChatWidget({
                 </span>
               ) : null}
             </div>
-            <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
+            <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 0 }}>
               읽기: {ttsOutputMode === 'server' ? '서버 고품질 (실패 시 기기 음성)' : '기기 내장 음성만'} · 화면 꺼짐 방지 {wakeLockEnabled ? 'ON' : 'OFF'}
             </div>
-            <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 1 }}>
+            <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,.55)', marginTop: 0 }}>
               배정 상담사(세션 고정): {selectedCounselor}
             </div>
             {SUPPORT_BANK && SUPPORT_ACCOUNT_NO ? (
               <div style={{
-                marginTop: 8,
-                paddingTop: 8,
+                marginTop: 4,
+                paddingTop: 4,
                 borderTop: '1px solid rgba(255,255,255,.14)',
                 display: 'flex',
                 flexDirection: 'column',
@@ -2030,7 +2030,7 @@ export default function ChatWidget({
               </div>
             ) : null}
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignSelf: 'flex-start', flexShrink: 0 }}>
             <button
               type="button"
               onClick={() => {

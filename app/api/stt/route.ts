@@ -15,7 +15,20 @@ const ALLOWED_MIME = new Set([
   'audio/wav',
   'audio/x-m4a',
   'audio/aac',
+  'audio/x-caf',
 ]);
+
+function normalizeAudioMime(mimeType: string): string {
+  const raw = mimeType.trim().toLowerCase();
+  if (ALLOWED_MIME.has(raw)) return raw;
+  const base = raw.split(';')[0]?.trim() ?? raw;
+  if (ALLOWED_MIME.has(base)) return base;
+  if (base === 'audio/x-m4a' || base === 'audio/m4a' || base === 'audio/x-caf') return 'audio/mp4';
+  if (base.startsWith('audio/webm')) return 'audio/webm';
+  if (base.startsWith('audio/ogg')) return 'audio/ogg';
+  if (base.startsWith('audio/aac')) return 'audio/aac';
+  return 'audio/mp4';
+}
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
@@ -31,13 +44,9 @@ export async function POST(req: NextRequest) {
   }
 
   const audioBase64 = (body.audioBase64 ?? '').trim();
-  let mimeType = (body.mimeType ?? 'audio/mp4').trim().toLowerCase();
+  let mimeType = normalizeAudioMime(body.mimeType ?? 'audio/mp4');
   if (!audioBase64) {
     return Response.json({ error: 'audioBase64 없음' }, { status: 400 });
-  }
-
-  if (!ALLOWED_MIME.has(mimeType)) {
-    mimeType = mimeType.startsWith('audio/webm') ? 'audio/webm' : 'audio/mp4';
   }
 
   let buf: Buffer;
@@ -73,8 +82,9 @@ export async function POST(req: NextRequest) {
                 text: [
                   '이 오디오는 한국어 음성입니다.',
                   '말한 내용만 정확히 받아 적어 주세요.',
+                  '인사(안녕하세요, 안녕, 반가워요 등)와 짧은 한마디도 그대로 적으세요.',
                   '설명·따옴표·접두어 없이 한국어 텍스트만 한 줄로 출력하세요.',
-                  '들리지 않거나 무음이면 빈 문자열만 출력하세요.',
+                  '완전한 무음·잡음만 있을 때만 빈 문자열을 출력하세요.',
                 ].join(' '),
               },
             ],

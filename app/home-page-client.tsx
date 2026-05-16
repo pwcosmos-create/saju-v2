@@ -13,6 +13,7 @@ import {
   SUPPORT_ACCOUNT_HOLDER,
   formatAccountForDisplay,
   supportAccountDigits,
+  supportAccountManualCopyHint,
 } from '../lib/support-account';
 import { FooterBrandRow, SiteNav } from './site-chrome';
 import { BRAND } from './ui-brand';
@@ -86,11 +87,11 @@ export default function HomePageClient() {
           setLandingSupportCopyFb('ok');
         } else {
           setLandingSupportCopyFb('err');
-          window.alert(`계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${digits}`);
+          window.alert(supportAccountManualCopyHint(digits));
         }
       } catch {
         setLandingSupportCopyFb('err');
-        window.alert(`계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${digits}`);
+        window.alert(supportAccountManualCopyHint(digits));
       }
     }
     landingSupportCopyTimerRef.current = setTimeout(() => {
@@ -128,6 +129,66 @@ export default function HomePageClient() {
         .analyzing-btn { animation: pulse 1.5s infinite; }
         .btn-shine { position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); animation: shine 2s infinite; }
         @keyframes shine { to { left: 100%; } }
+
+        /* 히어로 별무리 — 떠오름 + 반짝임 + 미세 회전 (레이어별로 transform 분리) */
+        .hero-twinkle-cluster { overflow: visible; }
+        .hero-twinkle-cluster .ht-layer-glow {
+          transform-box: fill-box;
+          transform-origin: center;
+        }
+        @keyframes htFloatMain {
+          0%, 100% { transform: translate(0, 0); }
+          45% { transform: translate(2px, -6px); }
+          70% { transform: translate(-3px, 2px); }
+        }
+        @keyframes htGlowMain {
+          0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 8px rgba(196,168,255,.35)); }
+          38% { opacity: .62; transform: scale(1.14) rotate(10deg); filter: drop-shadow(0 0 18px rgba(196,168,255,.95)); }
+          72% { opacity: .88; transform: scale(.94) rotate(-6deg); filter: drop-shadow(0 0 10px rgba(139,111,198,.55)); }
+        }
+        @keyframes htFloatSub1 {
+          0%, 100% { transform: translate(0, 0); }
+          50% { transform: translate(-5px, 4px); }
+        }
+        @keyframes htGlowSub1 {
+          0%, 100% { opacity: .85; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 4px rgba(139,111,198,.4)); }
+          42% { opacity: .45; transform: scale(1.25) rotate(-14deg); filter: drop-shadow(0 0 12px rgba(196,168,255,.75)); }
+          68% { opacity: .95; transform: scale(.88) rotate(8deg); }
+        }
+        @keyframes htFloatSub2 {
+          0%, 100% { transform: translate(0, 0); }
+          55% { transform: translate(6px, -3px); }
+        }
+        @keyframes htGlowSub2 {
+          0%, 100% { opacity: .88; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 5px rgba(139,111,198,.45)); }
+          48% { opacity: .5; transform: scale(1.22) rotate(16deg); filter: drop-shadow(0 0 14px rgba(196,168,255,.8)); }
+          74% { opacity: .92; transform: scale(.9) rotate(-10deg); }
+        }
+        .ht-main-float { animation: htFloatMain 5.4s ease-in-out infinite; transform-origin: 12px 11px; transform-box: fill-box; }
+        .ht-main-glow { animation: htGlowMain 2.85s ease-in-out infinite; transform-origin: 12px 11px; }
+        .ht-sub1-float { animation: htFloatSub1 4.2s ease-in-out infinite 0.35s; transform-origin: 18.5px 18px; transform-box: fill-box; }
+        .ht-sub1-glow { animation: htGlowSub1 2.15s ease-in-out infinite 0.6s; transform-origin: 18.5px 18px; }
+        .ht-sub2-float { animation: htFloatSub2 3.6s ease-in-out infinite 0.2s; transform-origin: 5.5px 18px; transform-box: fill-box; }
+        .ht-sub2-glow { animation: htGlowSub2 2.45s ease-in-out infinite 0.15s; transform-origin: 5.5px 18px; }
+
+        /* 하단 CTA 단일 별 */
+        @keyframes ctaStarPulse {
+          0%, 100% { opacity: .55; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 8px rgba(196,168,255,.25)); }
+          50% { opacity: 1; transform: scale(1.08) rotate(12deg); filter: drop-shadow(0 0 16px rgba(196,168,255,.65)); }
+        }
+        .cta-twinkle-svg .cta-star-layer {
+          animation: ctaStarPulse 3s ease-in-out infinite;
+          transform-origin: 12px 11px;
+          transform-box: fill-box;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ht-main-float, .ht-main-glow, .ht-sub1-float, .ht-sub1-glow, .ht-sub2-float, .ht-sub2-glow,
+          .cta-twinkle-svg .cta-star-layer {
+            animation: none !important;
+          }
+          .hero-twinkle-cluster .ht-layer-glow { filter: drop-shadow(0 0 6px rgba(196,168,255,.35)); opacity: .92; }
+        }
       `}</style>
 
       <SiteNav variant="landing" />
@@ -205,11 +266,23 @@ export default function HomePageClient() {
           </button>
         </div>
 
-        <div className="hero-twinkle" style={{ marginTop: 40, opacity: 0.25, userSelect: 'none' }}>
-          <svg width="120" height="120" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
-            <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
-            <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
+        <div className="hero-twinkle" style={{ marginTop: 40, opacity: 0.72, userSelect: 'none' }}>
+          <svg className="hero-twinkle-cluster" width="120" height="120" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+            <g className="ht-main-float">
+              <g className="ht-layer-glow ht-main-glow">
+                <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
+              </g>
+            </g>
+            <g className="ht-sub1-float">
+              <g className="ht-layer-glow ht-sub1-glow">
+                <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
+              </g>
+            </g>
+            <g className="ht-sub2-float">
+              <g className="ht-layer-glow ht-sub2-glow">
+                <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
+              </g>
+            </g>
           </svg>
         </div>
 
@@ -425,9 +498,11 @@ export default function HomePageClient() {
           background: 'radial-gradient(circle, rgba(139,111,198,0.12) 0%, transparent 70%)',
           pointerEvents: 'none',
         }} />
-        <div style={{ marginBottom: 32, opacity: 0.4 }}>
-          <svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
+        <div style={{ marginBottom: 32, opacity: 1 }}>
+          <svg className="cta-twinkle-svg" width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+            <g className="cta-star-layer">
+              <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
+            </g>
           </svg>
         </div>
         <h2 style={{

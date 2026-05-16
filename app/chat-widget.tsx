@@ -16,6 +16,7 @@ import {
   SUPPORT_BANK,
   formatAccountForDisplay,
   supportAccountDigits,
+  supportAccountManualCopyHint,
 } from '../lib/support-account';
 
 // 한자·괄호 한자 제거 — TTS 전용
@@ -829,11 +830,11 @@ export default function ChatWidget({
           setSupportCopyFeedback('ok');
         } else {
           setSupportCopyFeedback('err');
-          window.alert(`계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${digits}`);
+          window.alert(supportAccountManualCopyHint(digits));
         }
       } catch {
         setSupportCopyFeedback('err');
-        window.alert(`계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${digits}`);
+        window.alert(supportAccountManualCopyHint(digits));
       }
     }
     supportCopyTimerRef.current = setTimeout(() => {

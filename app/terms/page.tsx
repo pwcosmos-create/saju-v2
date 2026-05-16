@@ -1,4 +1,11 @@
 import type { Metadata } from 'next';
+import {
+  SUPPORT_ACCOUNT_HOLDER,
+  SUPPORT_ACCOUNT_NO,
+  SUPPORT_BANK,
+  formatAccountForDisplay,
+  supportAccountDigits,
+} from '../../lib/support-account';
 
 const SITE = 'https://saju.coupax.co.kr';
 
@@ -17,6 +24,12 @@ export const metadata: Metadata = {
 };
 
 export default function TermsPage() {
+  const accountDigits = supportAccountDigits(SUPPORT_ACCOUNT_NO);
+  const accountLine =
+    SUPPORT_BANK && accountDigits
+      ? `${SUPPORT_BANK} ${formatAccountForDisplay(SUPPORT_ACCOUNT_NO)}${SUPPORT_ACCOUNT_HOLDER ? ` (예금주 ${SUPPORT_ACCOUNT_HOLDER})` : ''}`
+      : null;
+
   return (
     <main style={{ maxWidth: 720, margin: '0 auto', padding: '48px 24px', fontFamily: 'Pretendard, sans-serif', lineHeight: 1.8, color: '#222' }}>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>이용약관</h1>
@@ -29,7 +42,7 @@ export default function TermsPage() {
 
       <section style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>제2조 (서비스 내용)</h2>
-        <p>서비스는 이용자가 입력한 생년월일·성별 정보를 바탕으로 사주팔자 분석 및 AI 풀이를 제공합니다. 이용자는 분석·풀이 결과를 바탕으로 텍스트·음성 형태의 AI 상담 이용도 가능합니다(유료 상품 및 이용 조건은 서비스 내 안내에 따릅니다). 서비스는 참고 목적의 정보 제공이며, 의료·법률·재정 등의 전문적 판단을 대체하지 않습니다.</p>
+        <p>서비스는 이용자가 입력한 생년월일·성별 정보를 바탕으로 사주팔자 분석 및 AI 풀이를 제공합니다. 이용자는 분석·풀이 결과를 바탕으로 텍스트·음성 형태의 AI 상담을 무료로 이용할 수 있으며, 서버·운영비 보전을 위한 선택 후원 안내가 서비스 화면에 표시될 수 있습니다. 서비스는 참고 목적의 정보 제공이며, 의료·법률·재정 등의 전문적 판단을 대체하지 않습니다.</p>
       </section>
 
       <section style={{ marginBottom: 32 }}>
@@ -45,6 +58,20 @@ export default function TermsPage() {
       <section style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>제5조 (면책)</h2>
         <p>서비스가 제공하는 사주 분석 결과는 동양 철학에 기반한 참고 정보이며, 결과의 정확성·완전성을 보장하지 않습니다. 이를 신뢰하여 발생한 손해에 대해 서비스는 책임을 지지 않습니다.</p>
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>선택 후원 안내</h2>
+        <p>
+          서비스 이용과 별도로, 서버·운영비 등을 명목으로 선택 후원을 받을 수 있습니다. 후원 여부는 서비스 이용 조건과 무관합니다.
+          {accountLine ? (
+            <>
+              {' '}현재 안내되는 후원 계좌: <strong>{accountLine}</strong>. 계좌는 운영 정책에 따라 변경될 수 있으며, 항상 서비스 화면에 표시된 정보를 우선합니다.
+            </>
+          ) : (
+            <> 후원 계좌 등 세부 사항은 서비스 화면의 안내를 따릅니다.</>
+          )}
+        </p>
       </section>
 
       <section style={{ marginBottom: 32 }}>

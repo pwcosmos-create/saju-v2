@@ -11,10 +11,13 @@ export function supportAccountDigits(raw: string): string {
   return raw.replace(/\D/g, '');
 }
 
-/** 화면 표시용 — 오른쪽부터 3자리씩 띄어 읽기 쉽게 */
+/** 화면 표시용 — 12자리는 앞에서 4·4·4(예: 토스뱅크), 그 외는 오른쪽부터 3자리 묶음 */
 export function formatAccountForDisplay(raw: string): string {
   const d = supportAccountDigits(raw);
   if (!d) return raw.trim();
+  if (d.length === 12) {
+    return `${d.slice(0, 4)} ${d.slice(4, 8)} ${d.slice(8, 12)}`;
+  }
   const chunks: string[] = [];
   let rest = d;
   while (rest.length > 3) {
@@ -23,4 +26,12 @@ export function formatAccountForDisplay(raw: string): string {
   }
   if (rest) chunks.unshift(rest);
   return chunks.join(' ');
+}
+
+/** 복사 실패 시 alert — 읽기용(띄어쓴) + 이체용 숫자만 */
+export function supportAccountManualCopyHint(rawOrDigits: string): string {
+  const digits = supportAccountDigits(rawOrDigits);
+  if (!digits) return '계좌번호를 불러오지 못했습니다.';
+  const formatted = formatAccountForDisplay(digits);
+  return `계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${formatted}\n\n이체 입력용(숫자만): ${digits}`;
 }

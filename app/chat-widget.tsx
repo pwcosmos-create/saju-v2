@@ -508,6 +508,12 @@ function buildChatContext(r: SajuResult): string {
 대운: ${daeun} (${r.daeun.forward ? '순행' : '역행'})`;
 }
 
+function isAbortError(e: unknown): boolean {
+  return (
+    e instanceof DOMException && e.name === 'AbortError'
+  ) || (e instanceof Error && e.name === 'AbortError');
+}
+
 async function streamChat(
   messages: { role: string; content: string }[],
   sajuContext: string,
@@ -515,12 +521,14 @@ async function streamChat(
   onChunk: (t: string) => void,
   onDone: () => void,
   onError: (e: string) => void,
+  signal?: AbortSignal,
 ) {
   try {
     const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
     const res = await fetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal,
       body: JSON.stringify({
         messages,
         sajuContext,
@@ -529,11 +537,20 @@ async function streamChat(
         counselorName: options.counselorName,
       }),
     });
+    if (signal?.aborted) return;
     if (!res.ok || !res.body) { onError('연결 실패'); return; }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     while (true) {
       const { done, value } = await reader.read();
+      if (signal?.aborted) {
+        try {
+          reader.releaseLock();
+        } catch {
+          /* noop */
+        }
+        return;
+      }
       if (done) break;
       for (const line of dec.decode(value, { stream: true }).split('\n')) {
         if (!line.startsWith('data: ')) continue;
@@ -545,8 +562,9 @@ async function streamChat(
         } catch { /* skip */ }
       }
     }
-    onDone();
+    if (!signal?.aborted) onDone();
   } catch (e) {
+    if (isAbortError(e) || signal?.aborted) return;
     onError(String(e));
   }
 }
@@ -629,6 +647,28 @@ export default function ChatWidget({
   const [replyTyping, setReplyTyping] = useState(false);
   /** 1~3: 스트림·검토 연출, 4: 타이핑 출력 (사주 페이지 AI 풀이 단계와 동일 흐름) */
   const [chatLoadingStep, setChatLoadingStep] = useState(0);
+  /** 새 전송 시 이전 스트림·연출 무시 */
+  const chatTurnGenRef = useRef(0);
+  const chatStreamAbortRef = useRef<AbortController | null>(null);
+  /** 스트리밍 중 마지막 assistant 버블과 동기화(중단 시 부분 본문 밀봉) */
+  const chatStreamingDraftRef = useRef('');
+  const chatStepTimersRef = useRef<{ t1: number | null; t2: number | null }>({ t1: null, t2: null });
+  const verifyPauseTimerRef = useRef<number | null>(null);
+
+  function clearChatStepTimers() {
+    const { t1, t2 } = chatStepTimersRef.current;
+    if (t1 != null) window.clearTimeout(t1);
+    if (t2 != null) window.clearTimeout(t2);
+    chatStepTimersRef.current = { t1: null, t2: null };
+  }
+
+  function clearVerifyPauseTimer() {
+    if (verifyPauseTimerRef.current != null) {
+      window.clearTimeout(verifyPauseTimerRef.current);
+      verifyPauseTimerRef.current = null;
+    }
+  }
+
   const ttsPrimedRef = useRef(false);
   const targetKey = getTargetKey(result);
   const canStartCounseling = Boolean(result && aiSummaryReady);
@@ -691,6 +731,10 @@ export default function ChatWidget({
     }
     typeCancelRef.current?.();
     typeCancelRef.current = null;
+    chatStreamAbortRef.current?.abort();
+    chatStreamAbortRef.current = null;
+    clearChatStepTimers();
+    clearVerifyPauseTimer();
   }, []);
 
   useEffect(() => {
@@ -912,7 +956,7 @@ export default function ChatWidget({
 
   async function send(text: string = input) {
     const trimmed = text.trim();
-    if (!trimmed || loading || !result || !aiSummaryReady) return;
+    if (!trimmed || !result || !aiSummaryReady) return;
     void primeMediaForTts();
     if (chatMode === 'compatibility' && !compareResult) {
       setMsgs(prev => [...prev, {
@@ -921,6 +965,28 @@ export default function ChatWidget({
       }]);
       return;
     }
+
+    chatTurnGenRef.current += 1;
+    const turnGen = chatTurnGenRef.current;
+
+    const sealPartial = chatStreamingDraftRef.current.trim();
+    chatStreamingDraftRef.current = '';
+
+    chatStreamAbortRef.current?.abort();
+    const ac = new AbortController();
+    chatStreamAbortRef.current = ac;
+
+    clearVerifyPauseTimer();
+    clearChatStepTimers();
+
+    stopTTS();
+    typeCancelRef.current?.();
+    typeCancelRef.current = null;
+
+    const finalizeTyping = pendingAssistantFullRef.current;
+    pendingAssistantFullRef.current = null;
+    setReplyTyping(false);
+
     setVoiceNote(null);
     if (voiceSecondMicHintTimerRef.current) {
       clearTimeout(voiceSecondMicHintTimerRef.current);
@@ -928,9 +994,34 @@ export default function ChatWidget({
     }
     setReplayOffered(false);
     replayLastAnswerPayloadRef.current = null;
+
     const userMsg: Msg = { role: 'user', content: trimmed };
-    const newMsgs = [...msgs, userMsg];
-    setMsgs([...newMsgs, { role: 'assistant', content: '' }]);
+
+    let snapshotForStream: Msg[] = [];
+    setMsgs((prev): Msg[] => {
+      let base: Msg[] = [...prev];
+      const last = base[base.length - 1];
+      if (finalizeTyping !== null && last?.role === 'assistant') {
+        base = [...base.slice(0, -1), { role: 'assistant', content: finalizeTyping }];
+      } else if (last?.role === 'assistant') {
+        const trimmedLast = last.content.trim();
+        if (sealPartial) {
+          base = [...base.slice(0, -1), { role: 'assistant', content: finalizeKoreanAnswer(sealPartial) }];
+        } else if (!trimmedLast) {
+          base = base.slice(0, -1);
+        }
+      }
+      const next: Msg[] = [...base, userMsg, { role: 'assistant', content: '' }];
+      snapshotForStream = next;
+      return next;
+    });
+
+    if (!snapshotForStream.length) {
+      setLoading(false);
+      setChatLoadingStep(0);
+      return;
+    }
+
     setInput('');
     setLoading(true);
     setChatLoadingStep(1);
@@ -940,15 +1031,17 @@ export default function ChatWidget({
     let buffer = '';
     let streamFinished = false;
 
-    const t1 = window.setTimeout(() => {
-      if (!streamFinished) setChatLoadingStep(2);
+    chatStepTimersRef.current.t1 = window.setTimeout(() => {
+      if (turnGen !== chatTurnGenRef.current || streamFinished) return;
+      setChatLoadingStep(2);
     }, CHAT_STEP_ADVANCE_MS[0]);
-    const t2 = window.setTimeout(() => {
-      if (!streamFinished) setChatLoadingStep(3);
+    chatStepTimersRef.current.t2 = window.setTimeout(() => {
+      if (turnGen !== chatTurnGenRef.current || streamFinished) return;
+      setChatLoadingStep(3);
     }, CHAT_STEP_ADVANCE_MS[1]);
 
     await streamChat(
-      newMsgs.map(m => ({ role: m.role, content: m.content })),
+      snapshotForStream.map(m => ({ role: m.role, content: m.content })),
       sajuContext,
       {
         chatMode,
@@ -956,18 +1049,23 @@ export default function ChatWidget({
         counselorName: selectedCounselor,
       },
       (chunk) => {
+        if (turnGen !== chatTurnGenRef.current) return;
         buffer += chunk;
+        chatStreamingDraftRef.current = buffer;
         if (buffer.length % 500 === 0 && !streamFinished) setChatLoadingStep(2);
       },
       () => {
+        if (turnGen !== chatTurnGenRef.current) return;
         streamFinished = true;
-        window.clearTimeout(t1);
-        window.clearTimeout(t2);
+        chatStreamingDraftRef.current = '';
+        clearChatStepTimers();
         setChatLoadingStep(3);
 
-        setTimeout(() => {
+        verifyPauseTimerRef.current = window.setTimeout(() => {
+          verifyPauseTimerRef.current = null;
+          if (turnGen !== chatTurnGenRef.current) return;
           setLoading(false);
-          const userTurn = newMsgs.filter((m) => m.role === 'user').length;
+          const userTurn = snapshotForStream.filter((m) => m.role === 'user').length;
           const finalized = addFollowUpPrompt(finalizeKoreanAnswer(buffer), userTurn);
           setChatLoadingStep(4);
           setReplyTyping(true);
@@ -976,12 +1074,14 @@ export default function ChatWidget({
           if (finalized) void speakWithPreferredMode(finalized, selectedCounselor);
           typeCancelRef.current?.();
           typeCancelRef.current = typeEffect(finalized, syncMs, (typed) => {
+            if (turnGen !== chatTurnGenRef.current) return;
             setMsgs((prev) => {
               const u = [...prev];
               u[u.length - 1] = { role: 'assistant', content: typed };
               return u;
             });
           }, () => {
+            if (turnGen !== chatTurnGenRef.current) return;
             setReplyTyping(false);
             setChatLoadingStep(0);
             typeCancelRef.current = null;
@@ -990,9 +1090,11 @@ export default function ChatWidget({
         }, VERIFY_PAUSE_MS);
       },
       (err) => {
+        if (turnGen !== chatTurnGenRef.current) return;
         streamFinished = true;
-        window.clearTimeout(t1);
-        window.clearTimeout(t2);
+        chatStreamingDraftRef.current = '';
+        clearChatStepTimers();
+        clearVerifyPauseTimer();
         setChatLoadingStep(0);
         setMsgs(prev => {
           const u = [...prev];
@@ -1005,6 +1107,7 @@ export default function ChatWidget({
         typeCancelRef.current = null;
         pendingAssistantFullRef.current = null;
       },
+      ac.signal,
     );
   }
 
@@ -1755,7 +1858,7 @@ export default function ChatWidget({
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
                 placeholder={result ? (chatMode === 'compatibility' ? '궁합/비교 질문을 입력하세요...' : '질문을 입력하세요...') : '사주 분석 먼저 해주세요'}
-                disabled={loading || !result || !canStartCounseling}
+                disabled={!result || !canStartCounseling}
                 style={{
                   flex: 1, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.12)',
                   borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
@@ -1782,11 +1885,11 @@ export default function ChatWidget({
                   boxShadow: listening ? '0 0 14px rgba(255,107,107,.55)' : '0 0 10px rgba(139,111,198,.35)',
                 }}
               >🎤</button>
-              <button onClick={() => send()} disabled={loading || !input.trim() || !result || !canStartCounseling} style={{
+              <button onClick={() => send()} disabled={!input.trim() || !result || !canStartCounseling} style={{
                 padding: '9px 14px',
                 background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
                 borderRadius: 10, color: '#e8c97e', cursor: 'pointer', fontWeight: 700, fontSize: '.87rem',
-                opacity: loading || !input.trim() || !result || !canStartCounseling ? 0.45 : 1,
+                opacity: !input.trim() || !result || !canStartCounseling ? 0.45 : 1,
               }}>전송</button>
             </div>
           </div>

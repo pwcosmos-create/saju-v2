@@ -419,6 +419,19 @@ const miniInputStyle = {
   fontSize: '.78rem',
   outline: 'none',
 };
+const miniSelectStyle = {
+  ...miniInputStyle,
+  cursor: 'pointer' as const,
+};
+
+/** 양력 month(1–12)의 말일 */
+function daysInSolarMonth(year: number, month: number): number {
+  if (!Number.isFinite(year) || month < 1 || month > 12) return 31;
+  return new Date(year, month, 0).getDate();
+}
+
+const COMPARE_HOUR_VALUES = Array.from({ length: 24 }, (_, i) => i);
+const COMPARE_MINUTE_VALUES = Array.from({ length: 60 }, (_, i) => i);
 const miniActionBtnStyle = {
   background: 'rgba(232,201,126,.18)',
   border: '1px solid rgba(232,201,126,.32)',
@@ -434,6 +447,25 @@ const miniActionBtnStyle = {
 const SUPPORT_BANK = process.env.NEXT_PUBLIC_SUPPORT_BANK_NAME ?? '토스뱅크';
 const SUPPORT_ACCOUNT_NO = process.env.NEXT_PUBLIC_SUPPORT_ACCOUNT_NO ?? '100091449133';
 const SUPPORT_ACCOUNT_HOLDER = process.env.NEXT_PUBLIC_SUPPORT_ACCOUNT_HOLDER ?? '심*인';
+
+/** 이체 앱 붙여넣기용 — 숫자만 */
+function supportAccountDigits(raw: string): string {
+  return raw.replace(/\D/g, '');
+}
+
+/** 화면 표시용 — 오른쪽부터 3자리씩 띄어 읽기 쉽게 */
+function formatAccountForDisplay(raw: string): string {
+  const d = supportAccountDigits(raw);
+  if (!d) return raw.trim();
+  const chunks: string[] = [];
+  let rest = d;
+  while (rest.length > 3) {
+    chunks.unshift(rest.slice(-3));
+    rest = rest.slice(0, -3);
+  }
+  if (rest) chunks.unshift(rest);
+  return chunks.join(' ');
+}
 
 function typeEffect(
   text: string,
@@ -554,7 +586,10 @@ interface CompareForm {
   year: string;
   month: string;
   day: string;
+  /** '' = 출생 시각 모름 → calculate 에 hourTotalMin -1 */
   hour: string;
+  /** 시를 알 때만 사용; 빈 문자열이면 0분으로 간주 */
+  minute: string;
   gender: '남' | '여';
 }
 
@@ -576,6 +611,7 @@ export default function ChatWidget({
     month: '',
     day: '',
     hour: '',
+    minute: '',
     gender: '여',
   });
   const [compareResult, setCompareResult] = useState<SajuResult | null>(null);
@@ -600,6 +636,8 @@ export default function ChatWidget({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [selectedCounselor, setSelectedCounselor] = useState<string>('도화');
   const [introSpoken, setIntroSpoken] = useState(false);
+  const [supportCopyFeedback, setSupportCopyFeedback] = useState<'idle' | 'ok' | 'err'>('idle');
+  const supportCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 서버 Gemini 음성 우선 — 실패 시에만 브라우저로 폴백 */
   const [ttsOutputMode, setTtsOutputMode] = useState<'server' | 'browser'>(() => {
     if (typeof window === 'undefined') return 'server';
@@ -610,6 +648,14 @@ export default function ChatWidget({
       return 'server';
     }
   });
+
+  const compareYearParsed = Number(compareForm.year);
+  const compareMonthParsed = Number(compareForm.month);
+  const compareSolarMaxDay =
+    Number.isInteger(compareYearParsed) && compareYearParsed >= 1900 && compareYearParsed <= 2100
+    && Number.isInteger(compareMonthParsed) && compareMonthParsed >= 1 && compareMonthParsed <= 12
+      ? daysInSolarMonth(compareYearParsed, compareMonthParsed)
+      : 31;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -623,6 +669,10 @@ export default function ChatWidget({
       setMsgs([]);
     }
   }, [aiSummaryReady]);
+
+  useEffect(() => () => {
+    if (supportCopyTimerRef.current) clearTimeout(supportCopyTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!loading && !replyTyping) return;
@@ -733,11 +783,29 @@ export default function ChatWidget({
     const y = Number(compareForm.year);
     const m = Number(compareForm.month);
     const d = Number(compareForm.day);
-    if (!y || !m || !d || y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) {
+    if (!Number.isInteger(y) || y < 1900 || y > 2100 || !Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(d) || d < 1) {
       setCompareError('비교 대상 날짜가 올바르지 않습니다.');
       return;
     }
-    const hourTotalMin = compareForm.hour === '' ? -1 : Number(compareForm.hour) * 60;
+    const maxDay = daysInSolarMonth(y, m);
+    if (d > maxDay) {
+      setCompareError(`${y}년 ${m}월은 ${maxDay}일까지 있습니다. 날짜를 확인해 주세요.`);
+      return;
+    }
+
+    let hourTotalMin = -1;
+    if (compareForm.hour !== '') {
+      const h = Number(compareForm.hour);
+      const mi = compareForm.minute === '' ? 0 : Number(compareForm.minute);
+      if (
+        !Number.isInteger(h) || h < 0 || h > 23
+        || !Number.isInteger(mi) || mi < 0 || mi > 59
+      ) {
+        setCompareError('태어난 시·분을 확인해 주세요.');
+        return;
+      }
+      hourTotalMin = h * 60 + mi;
+    }
     try {
       const r = calculate({
         year: y,
@@ -756,6 +824,41 @@ export default function ChatWidget({
     } catch {
       setCompareError('비교 대상 분석 중 오류가 발생했습니다.');
     }
+  }
+
+  async function copySupportAccountNumber() {
+    const digits = supportAccountDigits(SUPPORT_ACCOUNT_NO);
+    if (!digits) return;
+    if (supportCopyTimerRef.current) clearTimeout(supportCopyTimerRef.current);
+    try {
+      await navigator.clipboard.writeText(digits);
+      setSupportCopyFeedback('ok');
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = digits;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        const execOk = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (execOk) {
+          setSupportCopyFeedback('ok');
+        } else {
+          setSupportCopyFeedback('err');
+          window.alert(`계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${digits}`);
+        }
+      } catch {
+        setSupportCopyFeedback('err');
+        window.alert(`계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${digits}`);
+      }
+    }
+    supportCopyTimerRef.current = setTimeout(() => {
+      setSupportCopyFeedback('idle');
+      supportCopyTimerRef.current = null;
+    }, 2400);
   }
 
   useEffect(() => {
@@ -1147,25 +1250,79 @@ export default function ChatWidget({
               role="note"
               style={{
                 flexShrink: 0,
-                background: 'rgba(139,111,198,.14)',
-                border: '1px solid rgba(232,201,126,.28)',
-                borderRadius: 12,
-                padding: '10px 12px',
+                background: 'linear-gradient(145deg, rgba(45,38,82,.95), rgba(22,18,44,.98))',
+                border: '1px solid rgba(232,201,126,.42)',
+                borderRadius: 14,
+                padding: '12px 14px',
                 fontSize: '.74rem',
                 lineHeight: 1.55,
-                color: 'rgba(255,240,220,.92)',
+                color: 'rgba(255,248,236,.96)',
+                boxShadow: '0 6px 22px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06)',
               }}
             >
-              <div style={{ fontWeight: 800, color: '#e8c97e', marginBottom: 6, fontSize: '.78rem' }}>
+              <div style={{ fontWeight: 800, color: '#f5d78a', marginBottom: 8, fontSize: '.82rem', letterSpacing: '-0.02em' }}>
                 운영 후원 안내 (선택)
               </div>
-              <div style={{ color: 'rgba(255,255,255,.82)', marginBottom: 8 }}>
+              <div style={{ color: 'rgba(255,255,255,.88)', marginBottom: 12, fontSize: '.73rem' }}>
                 서버비·운영비 등 비용 명목으로 소액 후원을 받고 있습니다. 후원 여부와 관계없이 상담을 이용하실 수 있습니다.
               </div>
               {SUPPORT_BANK && SUPPORT_ACCOUNT_NO ? (
-                <div style={{ fontFamily: 'ui-monospace, monospace', color: '#e8e0ff', wordBreak: 'break-word' }}>
-                  {SUPPORT_BANK} · {SUPPORT_ACCOUNT_NO}
-                  {SUPPORT_ACCOUNT_HOLDER ? ` · 예금주 ${SUPPORT_ACCOUNT_HOLDER}` : ''}
+                <div
+                  style={{
+                    background: 'rgba(0,0,0,.28)',
+                    border: '1px solid rgba(232,201,126,.22)',
+                    borderRadius: 11,
+                    padding: '11px 12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontWeight: 800, color: '#ffecc8', fontSize: '.8rem' }}>{SUPPORT_BANK}</span>
+                    {SUPPORT_ACCOUNT_HOLDER ? (
+                      <span style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.72)' }}>
+                        예금주 <strong style={{ color: '#f0e6ff', fontWeight: 700 }}>{SUPPORT_ACCOUNT_HOLDER}</strong>
+                      </span>
+                    ) : null}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                    <span
+                      style={{
+                        flex: '1 1 140px',
+                        fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+                        fontSize: 'clamp(.95rem, 3.8vw, 1.08rem)',
+                        fontWeight: 700,
+                        letterSpacing: '0.04em',
+                        color: '#fff',
+                        wordBreak: 'break-all',
+                        textShadow: '0 1px 12px rgba(232,201,126,.25)',
+                      }}
+                    >
+                      {formatAccountForDisplay(SUPPORT_ACCOUNT_NO)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void copySupportAccountNumber()}
+                      aria-label="계좌번호 복사"
+                      style={{
+                        flexShrink: 0,
+                        borderRadius: 10,
+                        border: '1px solid rgba(232,201,126,.45)',
+                        background: supportCopyFeedback === 'ok'
+                          ? 'rgba(72,160,110,.35)'
+                          : 'linear-gradient(180deg, rgba(232,201,126,.28), rgba(139,111,198,.22))',
+                        color: '#fff6dd',
+                        fontWeight: 800,
+                        fontSize: '.76rem',
+                        padding: '9px 14px',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 10px rgba(0,0,0,.25)',
+                      }}
+                    >
+                      {supportCopyFeedback === 'ok' ? '복사 완료' : supportCopyFeedback === 'err' ? '다시 시도' : '계좌번호 복사'}
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: '.68rem', color: 'rgba(255,230,190,.62)', lineHeight: 1.45 }}>
+                    버튼을 누르면 숫자만 클립보드에 복사되어 이체 앱에 바로 붙여넣기 할 수 있어요.
+                  </div>
                 </div>
               ) : (
                 <div style={{ color: 'rgba(255,255,255,.58)' }}>
@@ -1248,14 +1405,122 @@ export default function ChatWidget({
               <div style={{ fontSize: '.77rem', color: '#e8c97e', fontWeight: 700 }}>
                 비교 대상 1명 (양력 기준)
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-                <input placeholder="년" value={compareForm.year} onChange={e => setCompareForm(v => ({ ...v, year: e.target.value }))} style={{ ...miniInputStyle }} />
-                <input placeholder="월" value={compareForm.month} onChange={e => setCompareForm(v => ({ ...v, month: e.target.value }))} style={{ ...miniInputStyle }} />
-                <input placeholder="일" value={compareForm.day} onChange={e => setCompareForm(v => ({ ...v, day: e.target.value }))} style={{ ...miniInputStyle }} />
+              <div style={{ fontSize: '.68rem', color: 'rgba(255,255,255,.55)', lineHeight: 1.35 }}>
+                연도는 숫자만 입력 · 월·일은 목록에서 선택 (말일 자동 반영)
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                <input placeholder="시(0~23, 선택)" value={compareForm.hour} onChange={e => setCompareForm(v => ({ ...v, hour: e.target.value }))} style={{ ...miniInputStyle }} />
-                <select value={compareForm.gender} onChange={e => setCompareForm(v => ({ ...v, gender: e.target.value as '남' | '여' }))} style={{ ...miniInputStyle }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                <input
+                  placeholder="연도"
+                  inputMode="numeric"
+                  autoComplete="bday-year"
+                  aria-label="비교 대상 출생 연도"
+                  value={compareForm.year}
+                  onChange={(e) => {
+                    const year = e.target.value.replace(/\D/g, '').slice(0, 4);
+                    setCompareForm((v) => {
+                      const y = Number(year);
+                      const m = Number(v.month);
+                      let day = v.day;
+                      if (
+                        year.length >= 4 && Number.isInteger(y) && y >= 1900 && y <= 2100
+                        && Number.isInteger(m) && m >= 1 && m <= 12 && day
+                      ) {
+                        const max = daysInSolarMonth(y, m);
+                        const dn = Number(day);
+                        if (dn > max) day = String(max);
+                      }
+                      return { ...v, year, day };
+                    });
+                  }}
+                  style={{ ...miniInputStyle }}
+                />
+                <select
+                  aria-label="비교 대상 출생 월"
+                  value={compareForm.month}
+                  onChange={(e) => {
+                    const month = e.target.value;
+                    setCompareForm((v) => {
+                      const y = Number(v.year);
+                      const m = Number(month);
+                      let day = v.day;
+                      if (
+                        v.year.length >= 4 && Number.isInteger(y) && y >= 1900 && y <= 2100
+                        && month && Number.isInteger(m) && m >= 1 && m <= 12 && day
+                      ) {
+                        const max = daysInSolarMonth(y, m);
+                        const dn = Number(day);
+                        if (dn > max) day = String(max);
+                      }
+                      return { ...v, month, day };
+                    });
+                  }}
+                  style={{ ...miniSelectStyle }}
+                >
+                  <option value="">월</option>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((mo) => (
+                    <option key={mo} value={String(mo)}>{mo}월</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="비교 대상 출생 일"
+                  value={compareForm.day}
+                  onChange={(e) => setCompareForm((v) => ({ ...v, day: e.target.value }))}
+                  style={{ ...miniSelectStyle }}
+                >
+                  <option value="">일</option>
+                  {Array.from({ length: compareSolarMaxDay }, (_, i) => i + 1).map((dy) => (
+                    <option key={dy} value={String(dy)}>{dy}일</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ fontSize: '.68rem', color: 'rgba(255,255,255,.55)', lineHeight: 1.35 }}>
+                출생 시각을 알면 선택해 주세요. 모르면 시를 「모름」으로 두면 됩니다.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                <select
+                  aria-label="비교 대상 출생 시"
+                  value={compareForm.hour}
+                  onChange={(e) => {
+                    const hour = e.target.value;
+                    setCompareForm((v) => ({
+                      ...v,
+                      hour,
+                      minute: hour === '' ? '' : (v.minute === '' ? '0' : v.minute),
+                    }));
+                  }}
+                  style={{ ...miniSelectStyle }}
+                >
+                  <option value="">모름</option>
+                  {COMPARE_HOUR_VALUES.map((h) => (
+                    <option key={h} value={String(h)}>{h}시</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="비교 대상 출생 분"
+                  disabled={compareForm.hour === ''}
+                  value={compareForm.hour === '' ? '' : (compareForm.minute === '' ? '0' : compareForm.minute)}
+                  onChange={(e) => setCompareForm((v) => ({ ...v, minute: e.target.value }))}
+                  style={{
+                    ...miniSelectStyle,
+                    opacity: compareForm.hour === '' ? 0.45 : 1,
+                  }}
+                >
+                  {compareForm.hour === '' ? (
+                    <option value="">분</option>
+                  ) : (
+                    COMPARE_MINUTE_VALUES.map((mi) => (
+                      <option key={mi} value={String(mi)}>
+                        {String(mi).padStart(2, '0')}분
+                      </option>
+                    ))
+                  )}
+                </select>
+                <select
+                  value={compareForm.gender}
+                  onChange={(e) => setCompareForm((v) => ({ ...v, gender: e.target.value as '남' | '여' }))}
+                  style={{ ...miniSelectStyle }}
+                  aria-label="비교 대상 성별"
+                >
                   <option value="남">남성</option>
                   <option value="여">여성</option>
                 </select>

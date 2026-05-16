@@ -24,7 +24,10 @@ export async function POST(req: NextRequest) {
   const { messages = [], sajuContext = '', compareSajuContext = '', chatMode = 'single' } = body;
   const counselorRaw = typeof body.counselorName === 'string' ? body.counselorName.trim() : '';
   const counselorName = COUNSELOR_ALLOWLIST.has(counselorRaw) ? counselorRaw : '';
-  if (!messages.length) return new Response(JSON.stringify({ error: 'messages 없음' }), { status: 400 });
+  const chatMessages = messages.filter(
+    (m) => typeof m.content === 'string' && m.content.trim().length > 0,
+  );
+  if (!chatMessages.length) return new Response(JSON.stringify({ error: 'messages 없음' }), { status: 400 });
 
   const counselorPersona = counselorName
     ? `【배정 상담사 — 세션 고정】
@@ -75,7 +78,7 @@ ${sajuContext}`;
     temperature: 0.7,
     messages: [
       { role: 'system', content: system },
-      ...messages.slice(-10),
+      ...chatMessages.slice(-10),
     ],
   });
 

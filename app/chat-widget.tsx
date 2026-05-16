@@ -630,6 +630,10 @@ function isAbortError(e: unknown): boolean {
   ) || (e instanceof Error && e.name === 'AbortError');
 }
 
+function messagesForChatApi(messages: { role: string; content: string }[]): { role: string; content: string }[] {
+  return messages.filter((m) => typeof m.content === 'string' && m.content.trim().length > 0);
+}
+
 async function streamChat(
   messages: { role: string; content: string }[],
   sajuContext: string,
@@ -639,14 +643,27 @@ async function streamChat(
   onError: (e: string) => void,
   signal?: AbortSignal,
 ) {
+  let settled = false;
+  const finish = (fn: () => void) => {
+    if (settled) return;
+    settled = true;
+    fn();
+  };
+
   try {
+    const apiMessages = messagesForChatApi(messages);
+    if (!apiMessages.length) {
+      finish(() => onError('보낼 메시지가 없습니다'));
+      return;
+    }
+
     const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
     const res = await fetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal,
       body: JSON.stringify({
-        messages,
+        messages: apiMessages,
         sajuContext,
         chatMode: options.chatMode,
         compareSajuContext: options.compareSajuContext ?? '',
@@ -654,9 +671,13 @@ async function streamChat(
       }),
     });
     if (signal?.aborted) return;
-    if (!res.ok || !res.body) { onError('연결 실패'); return; }
+    if (!res.ok || !res.body) {
+      finish(() => onError(res.ok ? '연결 실패' : `연결 실패 (${res.status})`));
+      return;
+    }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
+    let sseBuffer = '';
     while (true) {
       const { done, value } = await reader.read();
       if (signal?.aborted) {
@@ -668,20 +689,26 @@ async function streamChat(
         return;
       }
       if (done) break;
-      for (const line of dec.decode(value, { stream: true }).split('\n')) {
+      sseBuffer += dec.decode(value, { stream: true });
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop() ?? '';
+      for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const raw = line.slice(6).trim();
-        if (raw === '[DONE]') { onDone(); return; }
+        if (raw === '[DONE]') {
+          finish(onDone);
+          return;
+        }
         try {
           const text = JSON.parse(raw).choices?.[0]?.delta?.content;
           if (text) onChunk(text);
         } catch { /* skip */ }
       }
     }
-    if (!signal?.aborted) onDone();
+    if (!signal?.aborted) finish(onDone);
   } catch (e) {
     if (isAbortError(e) || signal?.aborted) return;
-    onError(String(e));
+    finish(() => onError(String(e)));
   }
 }
 
@@ -2413,9 +2440,11 @@ export default function ChatWidget({
                         )}
                       </>
                       )
-                    : (loading && isLast && m.role === 'assistant'
-                      ? <span className="chat-typing-cursor">연결 중… ▌</span>
-                      : '')}
+                    : (m.role === 'assistant' && isLast && (loading || replyTyping)
+                      ? <span className="chat-typing-cursor">{loading ? '답변 준비 중… ▌' : '답변 표시 중… ▌'}</span>
+                      : (m.role === 'assistant' && isLast && !m.content.trim()
+                        ? <span style={{ color: 'rgba(255,200,180,.85)' }}>답변을 불러오지 못했습니다. 다시 질문해 주세요.</span>
+                        : ''))}
                 </div>
               </div>
             );

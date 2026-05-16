@@ -91,7 +91,7 @@ select option {
     background-image: none !important;
     color: #111 !important;
   }
-  /* AI 심층 상담(고정 패널·FAB) — 열려 있을 때 인쇄 미리보기에 모달·PayPal iframe이 잡히지 않게 */
+  /* AI 심층 상담(고정 패널·FAB) — 열려 있을 때 인쇄 미리보기에 채팅 레이어가 잡히지 않게 */
   .saju-chat-layer {
     display: none !important;
   }

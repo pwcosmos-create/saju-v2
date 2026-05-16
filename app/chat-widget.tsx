@@ -386,8 +386,6 @@ import {
 import { classifyElements } from '../core/daily-fortune/classifier';
 
 const GENERATES = [1, 2, 3, 4, 0];
-const SESSION_SECONDS = 30 * 60;
-const MAX_SESSION_SECONDS = 120 * 60;
 /** 스트림 종료 후 검토 연출 — 사주 페이지 askAI(2000ms)와 동일 */
 const VERIFY_PAUSE_MS = 2000;
 /** 상담 스트리밍 단계 라벨 — AI 심층 풀이 버튼 연출과 통일 */
@@ -412,11 +410,6 @@ const REPLY_TYPING_HINTS = [
   '긴 답변은 표시에 시간이 걸려요. 스크롤해 천천히 읽으셔도 돼요.',
   '거의 다 나왔을 거예요. 잠시만 기다려 주세요.',
 ] as const;
-const PAYMENT_EXEMPT_BIRTHDAYS = new Set([
-  '1974-3-10',
-  '1975-6-13',
-  '1976-4-25',
-]);
 const miniInputStyle = {
   background: 'rgba(255,255,255,.06)',
   border: '1px solid rgba(255,255,255,.12)',
@@ -436,6 +429,11 @@ const miniActionBtnStyle = {
   fontWeight: 700,
   cursor: 'pointer',
 };
+
+/** 선택 후원 계좌 — `NEXT_PUBLIC_SUPPORT_*` 로 덮어쓸 수 있음 */
+const SUPPORT_BANK = process.env.NEXT_PUBLIC_SUPPORT_BANK_NAME ?? '토스뱅크';
+const SUPPORT_ACCOUNT_NO = process.env.NEXT_PUBLIC_SUPPORT_ACCOUNT_NO ?? '100091449133';
+const SUPPORT_ACCOUNT_HOLDER = process.env.NEXT_PUBLIC_SUPPORT_ACCOUNT_HOLDER ?? '심*인';
 
 function typeEffect(
   text: string,
@@ -546,11 +544,6 @@ ${buildChatContext(compare)}
 - 현실 적용 조언(연애/결혼/업무 협업 관점)`;
 }
 
-function isPaymentExemptTarget(r: SajuResult | null): boolean {
-  if (!r) return false;
-  return PAYMENT_EXEMPT_BIRTHDAYS.has(`${r.input.year}-${r.input.month}-${r.input.day}`);
-}
-
 function getTargetKey(r: SajuResult | null): string {
   if (!r) return 'unknown';
   return `${r.input.year}-${r.input.month}-${r.input.day}-${r.input.gender}`;
@@ -578,9 +571,6 @@ export default function ChatWidget({
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [chatMode, setChatMode] = useState<'single' | 'compatibility'>('single');
-  const [isPaid, setIsPaid]     = useState(false);
-  const [expiresAt, setExpiresAt] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [compareForm, setCompareForm] = useState<CompareForm>({
     year: '',
     month: '',
@@ -591,11 +581,7 @@ export default function ChatWidget({
   const [compareResult, setCompareResult] = useState<SajuResult | null>(null);
   const [compareError, setCompareError] = useState('');
   const [showCompareForm, setShowCompareForm] = useState(false);
-  const [previewUsed, setPreviewUsed] = useState(false);
-  const [previewUnlocked, setPreviewUnlocked] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const paypalRef = useRef<HTMLDivElement>(null);
-  const paypalExtendRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** 정지·새 재생 시 이전 비동기 TTS 루프 무효화 */
   const speakGenRef = useRef(0);
@@ -608,7 +594,6 @@ export default function ChatWidget({
   /** 1~3: 스트림·검토 연출, 4: 타이핑 출력 (사주 페이지 AI 풀이 단계와 동일 흐름) */
   const [chatLoadingStep, setChatLoadingStep] = useState(0);
   const ttsPrimedRef = useRef(false);
-  const isExemptUser = isPaymentExemptTarget(result);
   const targetKey = getTargetKey(result);
   const canStartCounseling = Boolean(result && aiSummaryReady);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
@@ -724,64 +709,9 @@ export default function ChatWidget({
 
   useEffect(() => {
     if (typeof window === 'undefined' || !result) {
-      setIsPaid(false);
-      setExpiresAt(null);
-      setTimeLeft(null);
-      return;
-    }
-    if (isExemptUser || APPS_IN_TOSS) return;
-
-    const sessionTarget = localStorage.getItem('saju_chat_session_target');
-    if (sessionTarget !== targetKey) {
-      setIsPaid(false);
-      setExpiresAt(null);
-      setTimeLeft(null);
-      localStorage.removeItem('saju_chat_paid_at');
-      localStorage.removeItem('saju_chat_expires_at');
-      return;
-    }
-
-    const expires = localStorage.getItem('saju_chat_expires_at');
-    if (expires) {
-      const exp = parseInt(expires, 10);
-      if (exp > Date.now()) {
-        setExpiresAt(exp);
-        setIsPaid(true);
-        setTimeLeft(Math.floor((exp - Date.now()) / 1000));
-        return;
-      }
-    }
-    const paidAt = localStorage.getItem('saju_chat_paid_at');
-    if (paidAt) {
-      const diff = Date.now() - parseInt(paidAt, 10);
-      const limit = SESSION_SECONDS * 1000;
-      if (diff < limit) {
-        const exp = Date.now() + (limit - diff);
-        setExpiresAt(exp);
-        setIsPaid(true);
-        setTimeLeft(Math.floor((limit - diff) / 1000));
-        localStorage.setItem('saju_chat_expires_at', String(exp));
-        return;
-      }
-    }
-
-    setIsPaid(false);
-    setExpiresAt(null);
-    setTimeLeft(null);
-    localStorage.removeItem('saju_chat_paid_at');
-    localStorage.removeItem('saju_chat_expires_at');
-  }, [result, isExemptUser, targetKey]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !result) {
-      setPreviewUsed(false);
-      setPreviewUnlocked(false);
       setIntroSpoken(false);
       return;
     }
-    const previewKey = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
-    setPreviewUsed(sessionStorage.getItem(previewKey) === '1');
-    setPreviewUnlocked(false);
     setIntroSpoken(false);
 
     const counselorKey = `saju_chat_counselor_${targetKey}`;
@@ -794,30 +724,6 @@ export default function ChatWidget({
       setSelectedCounselor(counselor);
     }
   }, [result, targetKey]);
-
-  // Timer for remaining time
-  useEffect(() => {
-    if (!isPaid || !expiresAt) return;
-    const timer = setInterval(() => {
-      const remain = Math.floor((expiresAt - Date.now()) / 1000);
-      if (remain <= 0) {
-        setTimeLeft(0);
-        setIsPaid(false);
-        setExpiresAt(null);
-        localStorage.removeItem('saju_chat_paid_at');
-        localStorage.removeItem('saju_chat_expires_at');
-        return;
-      }
-      setTimeLeft(remain);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [isPaid, expiresAt]);
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
 
   function analyzeCompareTarget() {
     if (!compareForm.year || !compareForm.month || !compareForm.day) {
@@ -857,11 +763,11 @@ export default function ChatWidget({
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크 버튼을 누른 뒤 말씀해 주세요.\n${isExemptUser || APPS_IN_TOSS ? '바로 상담을 이용하실 수 있습니다. 😊' : 'AI 심층 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다. 결제 후 궁금하신 점을 무엇이든 물어보세요. 🎯'}`
+          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크 버튼을 누른 뒤 말씀해 주세요.\nAI 심층 풀이가 모두 표시된 뒤부터 바로 상담을 이용하실 수 있습니다.\n${APPS_IN_TOSS ? '' : '서버·운영 비용은 채팅 상단 안내에 따라 선택 후원으로 도와주실 수 있어요. 후원 없이도 상담 이용에는 제한이 없습니다.'}`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
-  }, [open, result, isExemptUser, selectedCounselor]);
+  }, [open, result, selectedCounselor]);
 
   useEffect(() => {
     if (!open || !result || introSpoken || !canStartCounseling) return;
@@ -882,92 +788,10 @@ export default function ChatWidget({
     }
   }, [chatMode]);
 
-  useEffect(() => {
-    if (!isExemptUser && !APPS_IN_TOSS) return;
-    setIsPaid(true);
-    setTimeLeft(null);
-    setExpiresAt(null);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('saju_chat_paid_at');
-      localStorage.removeItem('saju_chat_expires_at');
-      localStorage.removeItem('saju_chat_session_target');
-    }
-  }, [isExemptUser, APPS_IN_TOSS]);
-
-  useEffect(() => {
-    if (APPS_IN_TOSS) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    if (!open || !canStartCounseling || isPaid || isExemptUser || !result || !w.paypal || !paypalRef.current || paypalRef.current.innerHTML !== '') return;
-    w.paypal.Buttons({
-      createOrder: (_data: any, actions: any) => actions.order.create({
-        purchase_units: [{
-          description: "AI 사주 상담 1회 이용권",
-          amount: { currency_code: "KRW", value: "1000" }
-        }]
-      }),
-      onApprove: async (_data: any, actions: any) => {
-        const order = await actions.order.capture();
-        if (order.status === 'COMPLETED') {
-          const exp = Date.now() + (SESSION_SECONDS * 1000);
-          setIsPaid(true);
-          setExpiresAt(exp);
-          setTimeLeft(SESSION_SECONDS);
-          localStorage.setItem('saju_chat_paid_at', Date.now().toString());
-          localStorage.setItem('saju_chat_expires_at', String(exp));
-          localStorage.setItem('saju_chat_session_target', targetKey);
-          setMsgs(prev => [...prev, { role: 'assistant', content: '결제가 완료되었습니다! 30분간 자유롭게 상담하실 수 있습니다. 😊' }]);
-        }
-      },
-      onError: (err: any) => {
-        console.error('PayPal Error:', err);
-        alert('결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
-      }
-    }).render(paypalRef.current);
-  }, [open, canStartCounseling, isPaid, result, isExemptUser, targetKey, APPS_IN_TOSS]);
-
-  useEffect(() => {
-    if (APPS_IN_TOSS) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    if (!open || !isPaid || !result || !w.paypal || !paypalExtendRef.current || paypalExtendRef.current.innerHTML !== '') return;
-    w.paypal.Buttons({
-      createOrder: (_data: any, actions: any) => actions.order.create({
-        purchase_units: [{
-          description: "AI 사주 상담 시간 30분 연장권",
-          amount: { currency_code: "KRW", value: "1000" }
-        }]
-      }),
-      onApprove: async (_data: any, actions: any) => {
-        const order = await actions.order.capture();
-        if (order.status === 'COMPLETED') {
-          const currentRemain = Math.max(0, Math.floor(((expiresAt ?? Date.now()) - Date.now()) / 1000));
-          const nextRemain = Math.min(currentRemain + SESSION_SECONDS, MAX_SESSION_SECONDS);
-          const nextExp = Date.now() + nextRemain * 1000;
-          setExpiresAt(nextExp);
-          setTimeLeft(nextRemain);
-          localStorage.setItem('saju_chat_expires_at', String(nextExp));
-          setMsgs(prev => [...prev, { role: 'assistant', content: '연장 결제가 완료되었습니다! 상담 시간이 30분 늘어났습니다. ⏱️' }]);
-        }
-      },
-      onError: (err: any) => {
-        console.error('PayPal Extend Error:', err);
-        alert('연장 결제 중 오류가 발생했습니다. 다시 시도해 주세요.');
-      }
-    }).render(paypalExtendRef.current);
-  }, [open, isPaid, result, expiresAt, APPS_IN_TOSS]);
-
   async function send(text: string = input) {
     const trimmed = text.trim();
     if (!trimmed || loading || !result || !aiSummaryReady) return;
     void primeMediaForTts();
-    if (!isPaid && !isExemptUser && !APPS_IN_TOSS && !previewUnlocked) {
-      setMsgs(prev => [...prev, {
-        role: 'assistant',
-        content: '무료 미리보기 1회를 먼저 시작하거나 결제를 진행해 주세요.',
-      }]);
-      return;
-    }
     if (chatMode === 'compatibility' && !compareResult) {
       setMsgs(prev => [...prev, {
         role: 'assistant',
@@ -1030,12 +854,6 @@ export default function ChatWidget({
           }, () => {
             setReplyTyping(false);
             setChatLoadingStep(0);
-            if (!isPaid && !isExemptUser && previewUnlocked) {
-              const key = `saju_chat_preview_used_${result.input.year}-${result.input.month}-${result.input.day}-${result.input.gender}`;
-              setPreviewUnlocked(false);
-              setPreviewUsed(true);
-              if (typeof window !== 'undefined') sessionStorage.setItem(key, '1');
-            }
           });
         }, VERIFY_PAUSE_MS);
       },
@@ -1081,10 +899,6 @@ export default function ChatWidget({
     if (!result) return;
     if (!aiSummaryReady) {
       setVoiceNote('먼저 AI 심층 풀이를 끝까지 확인한 뒤 음성 질문을 사용할 수 있어요.');
-      return;
-    }
-    if (!isPaid && !isExemptUser && !APPS_IN_TOSS && !previewUnlocked) {
-      setVoiceNote('무료 미리보기를 시작하거나 결제 후 음성 질문을 사용할 수 있어요.');
       return;
     }
     setVoiceNote(null);
@@ -1251,16 +1065,6 @@ export default function ChatWidget({
     done();
   }
 
-  function usePreviewOnce() {
-    if (!result || previewUsed || !aiSummaryReady) return;
-    void primeMediaForTts();
-    setPreviewUnlocked(true);
-    setMsgs(prev => [...prev, {
-      role: 'assistant',
-      content: '무료 미리보기 1회가 시작되었습니다. 궁금한 점을 1개 질문해 주세요.',
-    }]);
-  }
-
   return (
     <>
       {/* Chat Panel */}
@@ -1289,11 +1093,7 @@ export default function ChatWidget({
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,.8)', marginTop: 2 }}>
               {!canStartCounseling
                 ? 'AI 심층 풀이가 화면에 모두 표시된 뒤 상담을 이용할 수 있습니다'
-                : isExemptUser || APPS_IN_TOSS
-                  ? '심층 풀이 완료 후 바로 상담 가능합니다'
-                : isPaid && timeLeft !== null
-                  ? `남은 상담 시간: ${formatTime(timeLeft)} · 상담 진행 중`
-                  : '상담 이용 가능 · AI 심층 풀이 기반 텍스트·음성 맞춤 상담'}
+                : '심층 풀이 완료 후 텍스트·음성 상담 이용 가능'}
             </div>
             <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,.62)', marginTop: 2 }}>
               타이핑·음성 속도 자동 맞춤(답변 길이·고품질/기기음성 기준) · 읽기 배속 ×{TTS_RATE.toFixed(2)}
@@ -1342,7 +1142,40 @@ export default function ChatWidget({
 
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {isPaid && result && (
+          {canStartCounseling && result && !APPS_IN_TOSS && (
+            <div
+              role="note"
+              style={{
+                flexShrink: 0,
+                background: 'rgba(139,111,198,.14)',
+                border: '1px solid rgba(232,201,126,.28)',
+                borderRadius: 12,
+                padding: '10px 12px',
+                fontSize: '.74rem',
+                lineHeight: 1.55,
+                color: 'rgba(255,240,220,.92)',
+              }}
+            >
+              <div style={{ fontWeight: 800, color: '#e8c97e', marginBottom: 6, fontSize: '.78rem' }}>
+                운영 후원 안내 (선택)
+              </div>
+              <div style={{ color: 'rgba(255,255,255,.82)', marginBottom: 8 }}>
+                서버비·운영비 등 비용 명목으로 소액 후원을 받고 있습니다. 후원 여부와 관계없이 상담을 이용하실 수 있습니다.
+              </div>
+              {SUPPORT_BANK && SUPPORT_ACCOUNT_NO ? (
+                <div style={{ fontFamily: 'ui-monospace, monospace', color: '#e8e0ff', wordBreak: 'break-word' }}>
+                  {SUPPORT_BANK} · {SUPPORT_ACCOUNT_NO}
+                  {SUPPORT_ACCOUNT_HOLDER ? ` · 예금주 ${SUPPORT_ACCOUNT_HOLDER}` : ''}
+                </div>
+              ) : (
+                <div style={{ color: 'rgba(255,255,255,.58)' }}>
+                  후원 계좌 정보를 불러오지 못했습니다. 공지 또는 안내 페이지를 참고해 주세요.
+                </div>
+              )}
+            </div>
+          )}
+
+          {canStartCounseling && result && (
             <div style={{
               display: 'flex',
               gap: 8,
@@ -1403,7 +1236,7 @@ export default function ChatWidget({
             </div>
           )}
 
-          {isPaid && chatMode === 'compatibility' && showCompareForm && (
+          {canStartCounseling && chatMode === 'compatibility' && showCompareForm && (
             <div style={{
               background: 'rgba(255,255,255,.04)',
               border: '1px solid rgba(255,255,255,.08)',
@@ -1432,7 +1265,7 @@ export default function ChatWidget({
             </div>
           )}
 
-          {isPaid && chatMode === 'compatibility' && compareResult && (
+          {canStartCounseling && chatMode === 'compatibility' && compareResult && (
             <div style={{
               fontSize: '.76rem',
               color: 'rgba(255,255,255,.82)',
@@ -1493,7 +1326,7 @@ export default function ChatWidget({
           <div ref={bottomRef} />
         </div>
 
-        {/* Input or Payment */}
+        {/* 입력 영역 */}
         {!canStartCounseling ? (
           <div style={{
             padding: '20px', borderTop: '1px solid rgba(255,255,255,.08)',
@@ -1503,54 +1336,11 @@ export default function ChatWidget({
               AI 심층 풀이를 모두 확인한 뒤 심층 상담을 이용할 수 있습니다
             </div>
             <div style={{ color: 'rgba(255,255,255,.72)', fontSize: '.76rem', lineHeight: 1.5 }}>
-              풀이가 화면에 타이핑으로 끝날 때까지 기다려 주세요. 완료 후 상담 버튼이 활성화됩니다.
+              AI 심층 풀이가 모두 표시된 뒤 상담 버튼이 활성화됩니다.
             </div>
-          </div>
-        ) : !isPaid && result && !isExemptUser && !previewUnlocked ? (
-          <div style={{
-            padding: '20px', borderTop: '1px solid rgba(255,255,255,.08)',
-            textAlign: 'center', background: 'rgba(255,255,255,.02)',
-          }}>
-            <div style={{ color: '#e8c97e', fontSize: '.85rem', marginBottom: '15px', fontWeight: 600 }}>
-              심층 풀이 기반 AI 상담은 1,000원(이벤트가, 정상가 30,000원) 결제 후 이용 가능합니다
-            </div>
-            {!previewUsed && (
-              <button
-                type="button"
-                onClick={usePreviewOnce}
-                style={{
-                  marginBottom: 12,
-                  padding: '9px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(139,111,198,.45)',
-                  background: 'rgba(139,111,198,.16)',
-                  color: '#d9c9ff',
-                  fontSize: '.8rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                무료 미리보기 1회 받기
-              </button>
-            )}
-            {previewUsed && (
-              <div style={{ color: 'rgba(255,255,255,.72)', fontSize: '.76rem', marginBottom: 10 }}>
-                무료 미리보기 1회를 사용했습니다. 계속 상담하려면 결제를 진행해 주세요.
-              </div>
-            )}
-            <div ref={paypalRef} />
           </div>
         ) : (
           <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.02)' }}>
-            {isPaid && timeLeft !== null && (
-              <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,.06)' }}>
-                <div style={{ fontSize: '.74rem', color: 'rgba(255,255,255,.78)', marginBottom: 6 }}>
-                  {timeLeft <= 300 ? '상담 시간이 곧 만료됩니다. 지금 연장할 수 있어요.' : '연장 모드: 필요 시 상담 시간을 30분 추가할 수 있어요.'}
-                </div>
-                <div ref={paypalExtendRef} />
-              </div>
-            )}
-
             {voiceNote && (
               <div style={{
                 padding: '8px 12px 0',
@@ -1602,7 +1392,7 @@ export default function ChatWidget({
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
                 placeholder={result ? (chatMode === 'compatibility' ? '궁합/비교 질문을 입력하세요...' : '질문을 입력하세요...') : '사주 분석 먼저 해주세요'}
-                disabled={loading || !result || (!isPaid && !previewUnlocked)}
+                disabled={loading || !result || !canStartCounseling}
                 style={{
                   flex: 1, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.12)',
                   borderRadius: 10, padding: '9px 12px', color: '#e8e8e8', fontSize: '.87rem', outline: 'none',
@@ -1624,11 +1414,11 @@ export default function ChatWidget({
                   boxShadow: listening ? '0 0 14px rgba(255,107,107,.55)' : '0 0 10px rgba(139,111,198,.35)',
                 }}
               >🎤</button>
-              <button onClick={() => send()} disabled={loading || !input.trim() || !result || (!isPaid && !previewUnlocked)} style={{
+              <button onClick={() => send()} disabled={loading || !input.trim() || !result || !canStartCounseling} style={{
                 padding: '9px 14px',
                 background: 'rgba(232,201,126,.18)', border: '1px solid rgba(232,201,126,.3)',
                 borderRadius: 10, color: '#e8c97e', cursor: 'pointer', fontWeight: 700, fontSize: '.87rem',
-                opacity: loading || !input.trim() || !result || (!isPaid && !previewUnlocked) ? 0.45 : 1,
+                opacity: loading || !input.trim() || !result || !canStartCounseling ? 0.45 : 1,
               }}>전송</button>
             </div>
           </div>

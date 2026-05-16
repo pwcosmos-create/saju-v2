@@ -10,8 +10,13 @@ import {
   COUNSELOR_NAMES,
   type CounselorName,
 } from '../core/counselor-config';
-
-const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+import {
+  SUPPORT_ACCOUNT_HOLDER,
+  SUPPORT_ACCOUNT_NO,
+  SUPPORT_BANK,
+  formatAccountForDisplay,
+  supportAccountDigits,
+} from '../lib/support-account';
 
 // 한자·괄호 한자 제거 — TTS 전용
 function stripHanja(text: string): string {
@@ -443,30 +448,6 @@ const miniActionBtnStyle = {
   cursor: 'pointer',
 };
 
-/** 선택 후원 계좌 — `NEXT_PUBLIC_SUPPORT_*` 로 덮어쓸 수 있음 */
-const SUPPORT_BANK = process.env.NEXT_PUBLIC_SUPPORT_BANK_NAME ?? '토스뱅크';
-const SUPPORT_ACCOUNT_NO = process.env.NEXT_PUBLIC_SUPPORT_ACCOUNT_NO ?? '100091449133';
-const SUPPORT_ACCOUNT_HOLDER = process.env.NEXT_PUBLIC_SUPPORT_ACCOUNT_HOLDER ?? '심*인';
-
-/** 이체 앱 붙여넣기용 — 숫자만 */
-function supportAccountDigits(raw: string): string {
-  return raw.replace(/\D/g, '');
-}
-
-/** 화면 표시용 — 오른쪽부터 3자리씩 띄어 읽기 쉽게 */
-function formatAccountForDisplay(raw: string): string {
-  const d = supportAccountDigits(raw);
-  if (!d) return raw.trim();
-  const chunks: string[] = [];
-  let rest = d;
-  while (rest.length > 3) {
-    chunks.unshift(rest.slice(-3));
-    rest = rest.slice(0, -3);
-  }
-  if (rest) chunks.unshift(rest);
-  return chunks.join(' ');
-}
-
 function typeEffect(
   text: string,
   charIntervalMs: number,
@@ -866,7 +847,7 @@ export default function ChatWidget({
       setMsgs([{
         role: 'assistant',
         content: result
-          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크 버튼을 누른 뒤 말씀해 주세요.\nAI 심층 풀이가 모두 표시된 뒤부터 바로 상담을 이용하실 수 있습니다.\n${APPS_IN_TOSS ? '' : '서버·운영 비용은 채팅 상단 안내에 따라 선택 후원으로 도와주실 수 있어요. 후원 없이도 상담 이용에는 제한이 없습니다.'}`
+          ? `안녕하세요! AI 심층 상담입니다.\n이번 세션의 배정 상담사는 『${selectedCounselor}』입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n질문은 텍스트·음성 모두 가능해요. 음성은 마이크 버튼을 누른 뒤 말씀해 주세요.\nAI 심층 풀이가 모두 표시된 뒤부터 바로 상담을 이용하실 수 있습니다.\n서버·운영 비용은 채팅 상단 안내에 따라 선택 후원으로 도와주실 수 있어요. 후원 없이도 상담 이용에는 제한이 없습니다.`
           : '안녕하세요! 먼저 위에서 사주 분석을 완료해주세요.',
       }]);
     }
@@ -1245,7 +1226,7 @@ export default function ChatWidget({
 
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {canStartCounseling && result && !APPS_IN_TOSS && (
+          {canStartCounseling && result && (
             <div
               role="note"
               style={{

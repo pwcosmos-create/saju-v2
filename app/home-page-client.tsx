@@ -4,14 +4,20 @@
  * 푸터 표시 버전은 package.json 의 version 과 동기화됩니다.
  */
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import packageJson from '../package.json';
+import {
+  SUPPORT_ACCOUNT_NO,
+  SUPPORT_BANK,
+  SUPPORT_ACCOUNT_HOLDER,
+  formatAccountForDisplay,
+  supportAccountDigits,
+} from '../lib/support-account';
 import { FooterBrandRow, SiteNav } from './site-chrome';
 import { BRAND } from './ui-brand';
 
 const APP_VERSION = packageJson.version;
-const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
 const FEATURES = [
   {
@@ -50,7 +56,48 @@ export default function HomePageClient() {
   const router = useRouter();
   const [aiLoading, setAiLoad] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
+  const [landingSupportCopyFb, setLandingSupportCopyFb] = useState<'idle' | 'ok' | 'err'>('idle');
+  const landingSupportCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const steps = ["운명의 기운을 읽는 중...", "천간과 지지의 조화를 검토 중...", "전문적인 조언을 정성껏 작성 중..."];
+
+  useEffect(() => () => {
+    if (landingSupportCopyTimerRef.current) clearTimeout(landingSupportCopyTimerRef.current);
+  }, []);
+
+  async function copyLandingSupportAccount() {
+    const digits = supportAccountDigits(SUPPORT_ACCOUNT_NO);
+    if (!digits) return;
+    if (landingSupportCopyTimerRef.current) clearTimeout(landingSupportCopyTimerRef.current);
+    try {
+      await navigator.clipboard.writeText(digits);
+      setLandingSupportCopyFb('ok');
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = digits;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        const execOk = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (execOk) {
+          setLandingSupportCopyFb('ok');
+        } else {
+          setLandingSupportCopyFb('err');
+          window.alert(`계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${digits}`);
+        }
+      } catch {
+        setLandingSupportCopyFb('err');
+        window.alert(`계좌번호를 길게 눌러 선택한 뒤 복사해 주세요.\n\n${digits}`);
+      }
+    }
+    landingSupportCopyTimerRef.current = setTimeout(() => {
+      setLandingSupportCopyFb('idle');
+      landingSupportCopyTimerRef.current = null;
+    }, 2400);
+  }
 
   function askAI() {
     if (aiLoading) return;
@@ -173,9 +220,7 @@ export default function HomePageClient() {
           {[
             { num: '무료', label: '사주팔자 분석' },
             { num: '7가지', label: '분석 탭' },
-            APPS_IN_TOSS
-              ? { num: '이용 가능', label: 'AI 심층 상담' }
-              : { num: '1,000원', label: 'AI 심층 상담' },
+            { num: '선택', label: '운영 후원' },
           ].map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#e8c97e' }}>{s.num}</div>
@@ -195,10 +240,100 @@ export default function HomePageClient() {
           fontWeight: 700,
           letterSpacing: '.01em',
         }}>
-          {APPS_IN_TOSS
-            ? '분석은 무료 · 심층 풀이 후 AI 심층 상담도 이 앱에서 바로 이용할 수 있어요'
-            : '분석은 무료 · 심층 풀이 기반 AI 상담은 1,000원 (이벤트 기간: 30,000원 → 1,000원)'}
+          분석·심층 풀이·AI 상담은 무료입니다 · 서버·운영비는 선택 후원으로 보조합니다
         </div>
+
+        {SUPPORT_BANK && SUPPORT_ACCOUNT_NO && (
+          <div
+            role="note"
+            style={{
+              marginTop: 14,
+              alignSelf: 'center',
+              maxWidth: 460,
+              width: '100%',
+              padding: '14px 16px',
+              borderRadius: 14,
+              background: 'linear-gradient(145deg, rgba(45,38,82,.95), rgba(22,18,44,.98))',
+              border: '1px solid rgba(232,201,126,.42)',
+              boxShadow: '0 8px 28px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06)',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ fontWeight: 800, color: '#f5d78a', marginBottom: 8, fontSize: '.88rem' }}>
+              운영 후원 안내 (선택)
+            </div>
+            <p style={{
+              margin: '0 0 12px',
+              fontSize: '.78rem',
+              lineHeight: 1.55,
+              color: 'rgba(255,248,236,.92)',
+            }}>
+              서버비·운영비 등 비용 명목으로 소액 후원을 받습니다. 후원 여부와 관계없이 서비스 이용에는 제한이 없습니다.
+            </p>
+            <div
+              style={{
+                background: 'rgba(0,0,0,.28)',
+                border: '1px solid rgba(232,201,126,.22)',
+                borderRadius: 11,
+                padding: '11px 12px',
+              }}
+            >
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                <span style={{ fontWeight: 800, color: '#ffecc8', fontSize: '.82rem' }}>{SUPPORT_BANK}</span>
+                {SUPPORT_ACCOUNT_HOLDER ? (
+                  <span style={{ fontSize: '.74rem', color: 'rgba(255,255,255,.72)' }}>
+                    예금주 <strong style={{ color: '#f0e6ff', fontWeight: 700 }}>{SUPPORT_ACCOUNT_HOLDER}</strong>
+                  </span>
+                ) : null}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                <span
+                  style={{
+                    flex: '1 1 160px',
+                    fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+                    fontSize: 'clamp(.92rem, 3.5vw, 1.05rem)',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    color: '#fff',
+                    wordBreak: 'break-word',
+                    textShadow: '0 1px 12px rgba(232,201,126,.25)',
+                  }}
+                >
+                  {formatAccountForDisplay(SUPPORT_ACCOUNT_NO)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void copyLandingSupportAccount()}
+                  aria-label="계좌번호 복사"
+                  style={{
+                    flexShrink: 0,
+                    borderRadius: 10,
+                    border: '1px solid rgba(232,201,126,.45)',
+                    background: landingSupportCopyFb === 'ok'
+                      ? 'rgba(72,160,110,.35)'
+                      : 'linear-gradient(180deg, rgba(232,201,126,.28), rgba(139,111,198,.22))',
+                    color: '#fff6dd',
+                    fontWeight: 800,
+                    fontSize: '.76rem',
+                    padding: '9px 14px',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 10px rgba(0,0,0,.25)',
+                  }}
+                >
+                  {landingSupportCopyFb === 'ok' ? '복사 완료' : landingSupportCopyFb === 'err' ? '다시 시도' : '계좌번호 복사'}
+                </button>
+              </div>
+              <p style={{
+                margin: '10px 0 0',
+                fontSize: '.68rem',
+                color: 'rgba(255,230,190,.62)',
+                lineHeight: 1.45,
+              }}>
+                버튼을 누르면 숫자만 클립보드에 복사되어 이체 앱에 붙여넣기 하기 편합니다.
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 기능 */}
@@ -302,9 +437,7 @@ export default function HomePageClient() {
           지금 바로 내 사주를<br/>확인해보세요
         </h2>
         <p style={{ color: '#6b6490', marginBottom: 40, fontSize: '.95rem' }}>
-          {APPS_IN_TOSS
-            ? '무료 분석 후 심층 풀이 기반 AI 상담으로 이어가 보세요'
-            : '무료 분석 후 심층 풀이 기반 AI 상담(1,000원)으로 이어가세요'}
+          무료 분석 후 심층 풀이와 AI 상담까지 이어서 이용해 보세요 · 마음에 드셨다면 상단 후원 안내도 참고해 주세요
         </p>
         <Link href="/saju" style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,

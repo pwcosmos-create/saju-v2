@@ -313,6 +313,30 @@ const MIN_MEDIA_RECORD_MS = 550;
 const MIN_RECORD_BLOB_BYTES = 400;
 const MIN_RECORD_BLOB_BYTES_IOS = 180;
 
+type VoiceActivity = {
+  phase: 'recording' | 'transcribing' | 'sending';
+  detail?: string;
+};
+
+function formatVoiceSendingLabel(text: string): string {
+  const t = text.trim();
+  const shown = t.length > 28 ? `${t.slice(0, 28)}…` : t;
+  return `「${shown}」 전송 중…`;
+}
+
+function voiceActivityBannerText(activity: VoiceActivity): string {
+  if (activity.phase === 'recording') {
+    return '🎤 녹음 중 — 1초 이상 말한 뒤 마이크를 다시 눌러 전송하세요';
+  }
+  if (activity.phase === 'transcribing') {
+    return '🔄 음성을 글자로 바꾸는 중…';
+  }
+  if (activity.detail?.trim()) {
+    return formatVoiceSendingLabel(activity.detail);
+  }
+  return '질문을 전송하는 중…';
+}
+
 /** 연속 speak 호출 시 이전 voiceschanged 대기만 무효화 — 안 하면 큐가 두 개 동시에 재생됨 */
 let speakKoreanSessionId = 0;
 let voiceWaitReg: {
@@ -743,6 +767,7 @@ export default function ChatWidget({
   const replayLastAnswerPayloadRef = useRef<string | null>(null);
   const [replayOffered, setReplayOffered] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const [voiceActivity, setVoiceActivity] = useState<VoiceActivity | null>(null);
   const [sttTranscribing, setSttTranscribing] = useState(false);
   /** iPhone 등 자동 재생 실패 시 「답변 듣기」용 */
   const [answerPlayOffer, setAnswerPlayOffer] = useState<string | null>(null);
@@ -803,6 +828,12 @@ export default function ChatWidget({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs]);
+
+  useEffect(() => {
+    if (voiceActivity || voiceNote) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [voiceActivity, voiceNote]);
 
   useEffect(() => {
     msgsRef.current = msgs;
@@ -1075,15 +1106,17 @@ export default function ChatWidget({
     }
   }, [chatMode]);
 
-  async function send(text: string = input) {
+  async function send(text: string = input, options?: { fromVoice?: boolean }) {
     const trimmed = text.trim();
     if (!trimmed) return;
     if (!result) {
       setVoiceNote('먼저 사주 분석을 완료해 주세요.');
+      setVoiceActivity(null);
       return;
     }
     if (!aiSummaryReady) {
       setVoiceNote('먼저 AI 심층 풀이를 끝까지 확인한 뒤 상담을 이용할 수 있어요.');
+      setVoiceActivity(null);
       return;
     }
     void primeMediaForTts();
@@ -1116,7 +1149,14 @@ export default function ChatWidget({
     pendingAssistantFullRef.current = null;
     setReplyTyping(false);
 
-    setVoiceNote(null);
+    if (options?.fromVoice) {
+      const sendingLabel = formatVoiceSendingLabel(trimmed);
+      setVoiceNote(sendingLabel);
+      setVoiceActivity({ phase: 'sending', detail: trimmed });
+    } else {
+      setVoiceNote(null);
+      setVoiceActivity(null);
+    }
     if (voiceSecondMicHintTimerRef.current) {
       clearTimeout(voiceSecondMicHintTimerRef.current);
       voiceSecondMicHintTimerRef.current = null;
@@ -1155,6 +1195,9 @@ export default function ChatWidget({
     setInput('');
     setLoading(true);
     setChatLoadingStep(1);
+    if (options?.fromVoice) {
+      setVoiceNote(formatVoiceSendingLabel(trimmed));
+    }
 
     const sajuContext = buildChatContext(result);
     const compareSajuContext = compareResult ? buildCompatibilityContext(result, compareResult) : undefined;
@@ -1205,6 +1248,8 @@ export default function ChatWidget({
           verifyPauseTimerRef.current = null;
           if (turnGen !== chatTurnGenRef.current) return;
           setLoading(false);
+          setVoiceActivity(null);
+          setVoiceNote(null);
           if (!buffer.trim()) {
             setMsgs((prev) => {
               const u = [...prev];
@@ -1283,6 +1328,8 @@ export default function ChatWidget({
           return u;
         });
         setLoading(false);
+        setVoiceActivity(null);
+        setVoiceNote(null);
         setReplyTyping(false);
         typeCancelRef.current?.();
         typeCancelRef.current = null;
@@ -1358,7 +1405,8 @@ export default function ChatWidget({
     const chunks = recordChunksRef.current;
     recordChunksRef.current = [];
     if (!chunks.length) {
-      setVoiceNote('녹음된 소리가 없습니다. 다시 시도해 주세요.');
+      setVoiceActivity(null);
+      setVoiceNote('녹음된 소리가 없습니다. 마이크를 누른 뒤 1초 이상 말하고 다시 눌러 주세요.');
       return;
     }
 
@@ -1366,23 +1414,26 @@ export default function ChatWidget({
     const actualMime = (blob.type || mimeType).trim() || mimeType;
     const minBytes = isIosLikeDevice() ? MIN_RECORD_BLOB_BYTES_IOS : MIN_RECORD_BLOB_BYTES;
     if (blob.size < minBytes) {
+      setVoiceActivity(null);
       setVoiceNote('말씀이 너무 짧게 녹음되었습니다. 마이크를 누른 뒤 1초 정도 말하고 다시 눌러 전송해 주세요.');
       return;
     }
 
     setSttTranscribing(true);
-    setVoiceNote('말씀을 인식하고 있어요...');
+    setVoiceActivity({ phase: 'transcribing' });
+    setVoiceNote('말씀을 글자로 바꾸는 중…');
     try {
       const audioBase64 = await blobToBase64(blob);
       const transcript = await transcribeAudioOnServer(audioBase64, actualMime);
       if (transcript) {
         setInput(transcript);
-        setVoiceNote(`「${transcript.length > 24 ? `${transcript.slice(0, 24)}…` : transcript}」 전송 중…`);
-        void send(transcript);
+        void send(transcript, { fromVoice: true });
       } else {
+        setVoiceActivity(null);
         setVoiceNote('인식된 말이 없습니다. 마이크를 누른 뒤 1초 정도 말하고 다시 눌러 전송해 주세요.');
       }
     } catch (e) {
+      setVoiceActivity(null);
       const msg = e instanceof Error ? e.message : '';
       setVoiceNote(
         msg.includes('한도')
@@ -1410,7 +1461,9 @@ export default function ChatWidget({
         if (ev.data.size > 0) recordChunksRef.current.push(ev.data);
       };
       mr.onstop = () => {
-        void onMediaRecordingStopped(mimeType);
+        window.setTimeout(() => {
+          void onMediaRecordingStopped(mimeType);
+        }, isIosLikeDevice() ? 120 : 40);
       };
       mr.onerror = () => {
         abortMediaRecording();
@@ -1418,9 +1471,14 @@ export default function ChatWidget({
         setVoiceNote('녹음 중 오류가 발생했습니다. 다시 시도해 주세요.');
       };
       recordStartedAtRef.current = Date.now();
-      mr.start(200);
+      if (isIosLikeDevice()) {
+        mr.start();
+      } else {
+        mr.start(200);
+      }
       setListening(true);
-      setVoiceNote('듣고 있어요. 1초 이상 말한 뒤 마이크를 다시 눌러 전송합니다.');
+      setVoiceActivity({ phase: 'recording' });
+      setVoiceNote('🎤 녹음 중 — 1초 이상 말한 뒤 마이크를 다시 눌러 전송하세요.');
       recordMaxTimerRef.current = window.setTimeout(() => {
         recordMaxTimerRef.current = null;
         finishMediaRecording();
@@ -1501,6 +1559,7 @@ export default function ChatWidget({
         const elapsed = Date.now() - recordStartedAtRef.current;
         const waitMs = MIN_MEDIA_RECORD_MS - elapsed;
         if (mediaRecorderRef.current?.state === 'recording' && waitMs > 0) {
+          setVoiceActivity({ phase: 'recording' });
           setVoiceNote('조금만 더 말씀해 주세요… 곧 전송합니다.');
           clearRecordStopDelayTimer();
           recordStopDelayTimerRef.current = window.setTimeout(() => {
@@ -1517,7 +1576,6 @@ export default function ChatWidget({
         }
         return;
       }
-      setVoiceNote(null);
       if (voiceSecondMicHintTimerRef.current) {
         clearTimeout(voiceSecondMicHintTimerRef.current);
         voiceSecondMicHintTimerRef.current = null;
@@ -1559,7 +1617,7 @@ export default function ChatWidget({
       setListening(false);
       setVoiceNote(null);
       if (t) {
-        void send(t);
+        void send(t, { fromVoice: true });
       } else {
         setVoiceNote('인식된 말이 없습니다. 마이크 버튼을 누른 뒤 잠시 기다렸다가 말씀해 주세요.');
       }
@@ -1633,6 +1691,7 @@ export default function ChatWidget({
     recogRef.current = null;
     abortMediaRecording();
     setSttTranscribing(false);
+    setVoiceActivity(null);
     setAnswerPlayOffer(null);
     setListening(false);
     setLoading(false);
@@ -2292,6 +2351,29 @@ export default function ChatWidget({
             </div>
           )}
 
+          {voiceActivity && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                alignSelf: 'center',
+                width: '100%',
+                padding: '12px 14px',
+                borderRadius: 12,
+                background: 'rgba(232,201,126,.2)',
+                border: '1px solid rgba(232,201,126,.5)',
+                color: '#f5d78a',
+                fontSize: '.86rem',
+                fontWeight: 700,
+                textAlign: 'center',
+                lineHeight: 1.55,
+                boxShadow: '0 4px 18px rgba(0,0,0,.25)',
+              }}
+            >
+              {voiceActivityBannerText(voiceActivity)}
+            </div>
+          )}
+
           {msgs.map((m, i) => {
             const isLast = i === msgs.length - 1;
             const showStepBubble = m.role === 'assistant' && loading && isLast
@@ -2357,12 +2439,21 @@ export default function ChatWidget({
         ) : (
           <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.02)' }}>
             {voiceNote && (
-              <div style={{
-                padding: '8px 12px 0',
-                fontSize: '.74rem',
-                color: '#ffb3a0',
-                lineHeight: 1.45,
-              }}>
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  margin: '8px 12px 0',
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  background: 'rgba(232,201,126,.16)',
+                  border: '1px solid rgba(232,201,126,.42)',
+                  fontSize: '.82rem',
+                  fontWeight: 700,
+                  color: '#f5d78a',
+                  lineHeight: 1.5,
+                }}
+              >
                 {voiceNote}
               </div>
             )}

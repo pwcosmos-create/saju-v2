@@ -1,14 +1,16 @@
 'use client';
 /**
- * CounselPanel — AI 심층 상담 패널 (v3.2 - 모바일 지원)
+ * CounselPanel — AI 심층 상담 패널 (v3.3)
  *
- * - iOS AudioContext 잠금 해제: handleSend 클릭 시 primeAudio() 호출
- * - 모바일 레이아웃: dvh 기반, 키보드 대응, 안전 영역 패딩
+ * - STT 마이크 버튼 (Web Speech API, ko-KR)
+ * - Wake Lock: 상담 중 화면 꺼짐 방지
+ * - iOS AudioContext 잠금 해제
  */
 import { useState, useEffect, useRef } from 'react';
 import type { SajuResult } from '../../core/pillar-calc/main-calculator';
 import { COUNSELOR_NAMES } from '../../core/counselor-config';
 import { useTts } from './use-tts';
+import { useStt } from './use-stt';
 import { useCounselChat } from './use-counsel-chat';
 
 function pickCounselor(): string {
@@ -36,6 +38,25 @@ export default function CounselPanel({
 
   const { msgs, loading, send, reset, applyMsgs } = useCounselChat(result, aiSummaryReady);
   const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
+  const { listening, supported: sttSupported, start: startStt } = useStt((text) => {
+    setInput(prev => prev + text);
+  });
+
+  /** Wake Lock — 패널 열릴 때 화면 꺼짐 방지, 닫힐 때 해제 */
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  useEffect(() => {
+    if (!open) {
+      wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current = null;
+      return;
+    }
+    if ('wakeLock' in navigator) {
+      (navigator as Navigator & { wakeLock: { request: (type: string) => Promise<WakeLockSentinel> } })
+        .wakeLock.request('screen')
+        .then(lock => { wakeLockRef.current = lock; })
+        .catch(() => {}); // 권한 없거나 미지원 시 무시
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!aiSummaryReady) {
@@ -291,6 +312,35 @@ export default function CounselPanel({
           flexShrink: 0,
           background: panelBg,
         }}>
+          {/* 마이크 버튼 — STT 지원 브라우저에서만 표시 */}
+          {sttSupported && (
+            <button
+              id="counsel-mic-btn"
+              onClick={startStt}
+              disabled={loading}
+              aria-label={listening ? '음성 입력 중지' : '음성으로 입력'}
+              title={listening ? '듣는 중... (탭하여 중지)' : '마이크로 입력'}
+              style={{
+                flexShrink: 0,
+                width: 44, height: 44,
+                borderRadius: 10,
+                border: listening
+                  ? '1px solid rgba(255,80,80,.6)'
+                  : `1px solid ${borderColor}`,
+                background: listening
+                  ? 'rgba(255,60,60,.2)'
+                  : 'rgba(255,255,255,.06)',
+                color: listening ? '#ff8080' : 'rgba(255,255,255,.6)',
+                fontSize: '1.1rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                animation: listening ? 'mic-pulse 1s ease-in-out infinite' : 'none',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {listening ? '🔴' : '🎙️'}
+            </button>
+          )}
           <input
             ref={inputRef}
             id="counsel-input"
@@ -299,18 +349,21 @@ export default function CounselPanel({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="질문을 입력하세요…"
+            placeholder={listening ? '듣는 중…' : '질문을 입력하세요…'}
             disabled={loading}
             style={{
               flex: 1,
-              background: 'rgba(255,255,255,.06)',
-              border: `1px solid ${borderColor}`,
+              background: listening ? 'rgba(255,60,60,.08)' : 'rgba(255,255,255,.06)',
+              border: listening
+                ? '1px solid rgba(255,80,80,.4)'
+                : `1px solid ${borderColor}`,
               borderRadius: 10,
               padding: '11px 14px',
               color: '#e8e8e8',
-              fontSize: '16px', // iOS 자동 확대 방지
+              fontSize: '16px',
               outline: 'none',
               opacity: loading ? 0.6 : 1,
+              transition: 'background .2s, border .2s',
             }}
           />
           <button
@@ -341,6 +394,10 @@ export default function CounselPanel({
         @keyframes dot-blink {
           0%, 100% { opacity: 0.2; transform: scale(0.8); }
           50%       { opacity: 1;   transform: scale(1.1); }
+        }
+        @keyframes mic-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255,60,60,.4); }
+          50%       { box-shadow: 0 0 0 6px rgba(255,60,60,0); }
         }
       `}</style>
     </div>

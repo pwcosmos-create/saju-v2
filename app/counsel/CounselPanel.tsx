@@ -102,6 +102,39 @@ export default function CounselPanel({
     videoRef.current.play().catch(() => { });
   }, [open]);
 
+  /** 탭 닫기·앱 전환·화면 꺼짐 → TTS 정지 + Wake Lock 해제 */
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.hidden) {
+        // 페이지가 숨겨질 때 (탭 전환, 홈 버튼, 앱 전환 등)
+        stop();
+        wakeLockRef.current?.release().catch(() => { });
+        wakeLockRef.current = null;
+        videoRef.current?.pause();
+      } else if (open) {
+        // 다시 보일 때 Wake Lock 재획득
+        if ('wakeLock' in navigator) {
+          (navigator as Navigator & { wakeLock: { request: (type: string) => Promise<WakeLockSentinel> } })
+            .wakeLock.request('screen')
+            .then(lock => { wakeLockRef.current = lock; })
+            .catch(() => { });
+        }
+        videoRef.current?.play().catch(() => { });
+      }
+    }
+    function handlePageHide() {
+      // 브라우저 탭 닫기 / 새로고침 / 페이지 이탈
+      stop();
+      wakeLockRef.current?.release().catch(() => { });
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [open, stop]);
+
 
   useEffect(() => {
     if (!aiSummaryReady) {

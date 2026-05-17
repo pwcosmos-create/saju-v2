@@ -102,38 +102,74 @@ export function useTts(counselor: string) {
     const chunks = chunkText(text);
     if (chunks.length === 0) { setPlaying(false); return; }
 
+    const useWebSpeechForFirst = typeof window !== 'undefined' && 'speechSynthesis' in window;
+
     /**
      * 병렬 fetch: 모든 청크를 동시에 요청하고 Promise 배열로 관리.
-     * → 첫 청크가 도착하면 즉시 재생 시작, 그 사이 다음 청크들은 이미 받아지는 중.
-     * → 순차 방식 대비 대기 시간 = 첫 청크 1회분만 발생.
+     * 단, 첫 번째 청크는 Web Speech API를 쓸 경우 서버 요청 생략.
      */
-    const fetchPromises = chunks.map(chunk =>
-      fetch('/api/tts', {
+    const fetchPromises = chunks.map((chunk, i) => {
+      if (i === 0 && useWebSpeechForFirst) return Promise.resolve(null);
+      return fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: chunk, counselorName: counselor }),
         signal: ac.signal,
       })
         .then(r => r.ok ? r.json() as Promise<{ audioBase64?: string; mimeType?: string }> : null)
-        .catch(() => null),
-    );
+        .catch(() => null);
+    });
 
     const ctxRef = ctx; // closure 용
     try {
-      for (const fetchPromise of fetchPromises) {
+      for (let i = 0; i < chunks.length; i++) {
         if (ac.signal.aborted) break;
 
-        const data = await fetchPromise; // 이 청크만 기다림 (나머지는 백그라운드에서 계속 fetch 중)
-        if (!data?.audioBase64 || ac.signal.aborted) break;
+        const chunk = chunks[i];
+
+        // 1. 첫 번째 문장: Web Speech API로 대기 시간 0초 (즉시 재생)
+        if (i === 0 && useWebSpeechForFirst) {
+          await new Promise<void>((resolve) => {
+            const utterance = new SpeechSynthesisUtterance(chunk);
+            utterance.lang = 'ko-KR';
+            utterance.rate = 1.0;
+            
+            // 모바일 백그라운드 정책 등으로 음성 시작이 막히면 3초 후 다음(Gemini)으로 강제 스킵
+            const fallbackTimer = setTimeout(() => {
+                window.speechSynthesis.cancel();
+                resolve();
+            }, 3000);
+
+            utterance.onstart = () => clearTimeout(fallbackTimer);
+            utterance.onend = () => { clearTimeout(fallbackTimer); resolve(); };
+            utterance.onerror = () => { clearTimeout(fallbackTimer); resolve(); };
+            
+            ac.signal.addEventListener('abort', () => {
+              clearTimeout(fallbackTimer);
+              window.speechSynthesis.cancel();
+              resolve();
+            }, { once: true });
+            
+            window.speechSynthesis.speak(utterance);
+          });
+          continue; // Web Speech 끝나면 바로 다음 문장(Gemini) 재생으로 넘어감
+        }
+
+        // 2. 나머지 문장: 고품질 Gemini TTS
+        const data = await fetchPromises[i];
+        
+        // 데이터가 없거나 서버 에러여도 break 하지 않고 다음 문장으로 스킵 (continue)
+        if (!data?.audioBase64 || ac.signal.aborted) continue;
 
         const binary = atob(data.audioBase64);
         const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
 
         let audioBuffer: AudioBuffer;
         try {
           audioBuffer = await ctxRef.decodeAudioData(bytes.buffer.slice(0));
-        } catch { break; }
+        } catch { continue; } // 디코딩 실패해도 끊기지 않게 continue
+        
         if (ac.signal.aborted) break;
 
         await new Promise<void>((resolve) => {

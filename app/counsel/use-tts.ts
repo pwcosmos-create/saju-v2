@@ -1,17 +1,17 @@
 'use client';
 /**
- * useTts — AI 상담 응답 음성 재생 훅
+ * useTts — AI 상담 응답 음성 재생 훅 (v2 - 모바일 대응)
  *
- * /api/tts 는 최대 520자 제한이 있으므로 텍스트를 문장 단위로 청크 분할 후
- * AudioContext 로 순차 재생한다.
+ * iOS Safari 정책:
+ *   AudioContext는 사용자 제스처(터치/클릭) 없이 resume() 불가.
+ *   → AudioContext를 최초 send 클릭 시 "primeAudio()"로 잠금 해제.
+ *   → 이후 응답이 오면 이미 unlocked된 ctx를 재사용 → 자동재생 가능.
  */
 import { useState, useRef, useCallback } from 'react';
 
-const TTS_MAX = 470; // 서버 제한 520 보다 여유 두기
+const TTS_MAX = 470;
 
-/** 문장 경계로 텍스트를 ≤ TTS_MAX 자 청크로 분할 */
 function chunkText(text: string): string[] {
-  // 마크다운 기호 제거
   const cleaned = text
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
@@ -19,7 +19,6 @@ function chunkText(text: string): string[] {
     .replace(/`{1,3}[^`]*`{1,3}/g, '')
     .trim();
 
-  // 문장 분리 (마침표·느낌표·물음표·줄바꿈 뒤)
   const sentences = cleaned.split(/(?<=[.!?。！？\n])\s*/);
   const chunks: string[] = [];
   let current = '';
@@ -43,13 +42,31 @@ export function useTts(counselor: string) {
   const [enabled, setEnabled] = useState(true);
 
   const abortRef = useRef<AbortController | null>(null);
+  /** 전역 단일 AudioContext — 최초 사용자 클릭에서 생성·unlock 후 재사용 */
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const primedRef = useRef(false);
+
+  /**
+   * 사용자 클릭 이벤트 핸들러 안에서 호출 → iOS 잠금 해제.
+   * 한 번만 실행되고 이후 호출은 무시.
+   */
+  const primeAudio = useCallback(async () => {
+    if (primedRef.current) return;
+    primedRef.current = true;
+    try {
+      const ctx = new AudioContext();
+      audioCtxRef.current = ctx;
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+    } catch {
+      primedRef.current = false; // 실패 시 재시도 허용
+    }
+  }, []);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
-    try { audioCtxRef.current?.close(); } catch { /* noop */ }
-    audioCtxRef.current = null;
     setPlaying(false);
   }, []);
 
@@ -61,12 +78,21 @@ export function useTts(counselor: string) {
     abortRef.current = ac;
     setPlaying(true);
 
-    const ctx = new AudioContext();
-    audioCtxRef.current = ctx;
-
-    // iOS / Safari: AudioContext 가 suspended 상태면 resume
+    // AudioContext 재사용 (closed면 새로 생성)
+    let ctx = audioCtxRef.current;
+    if (!ctx || ctx.state === 'closed') {
+      ctx = new AudioContext();
+      audioCtxRef.current = ctx;
+    }
     if (ctx.state === 'suspended') {
-      await ctx.resume().catch(() => {});
+      // 이미 unlocked된 상황이면 바로 resume됨
+      // 미 unlocked(iOS where primeAudio wasn't called yet)면 실패 → 조용히 종료
+      try {
+        await ctx.resume();
+      } catch {
+        setPlaying(false);
+        return;
+      }
     }
 
     try {
@@ -84,12 +110,11 @@ export function useTts(counselor: string) {
           if (!res.ok || ac.signal.aborted) break;
           data = await res.json() as typeof data;
         } catch {
-          break; // 네트워크 오류·abort
+          break;
         }
 
         if (!data.audioBase64 || ac.signal.aborted) break;
 
-        // base64 → ArrayBuffer
         const binary = atob(data.audioBase64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -98,15 +123,14 @@ export function useTts(counselor: string) {
         try {
           audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
         } catch {
-          break; // 디코딩 실패
+          break;
         }
         if (ac.signal.aborted) break;
 
-        // 재생 후 다음 청크로
         await new Promise<void>((resolve) => {
-          const source = ctx.createBufferSource();
+          const source = ctx!.createBufferSource();
           source.buffer = audioBuffer;
-          source.connect(ctx.destination);
+          source.connect(ctx!.destination);
           source.onended = () => resolve();
           source.start();
           ac.signal.addEventListener('abort', () => {
@@ -117,9 +141,8 @@ export function useTts(counselor: string) {
       }
     } finally {
       if (!ac.signal.aborted) setPlaying(false);
-      try { ctx.close(); } catch { /* noop */ }
     }
   }, [enabled, counselor, stop]);
 
-  return { playing, enabled, setEnabled, speak, stop };
+  return { playing, enabled, setEnabled, speak, stop, primeAudio };
 }

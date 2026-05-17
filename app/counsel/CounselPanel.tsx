@@ -1,8 +1,9 @@
 'use client';
 /**
- * CounselPanel — AI 심층 상담 패널 (재구축 v3.1)
+ * CounselPanel — AI 심층 상담 패널 (v3.2 - 모바일 지원)
  *
- * Phase 3: TTS 음성 읽기 통합 (자동 재생 + 수동 토글)
+ * - iOS AudioContext 잠금 해제: handleSend 클릭 시 primeAudio() 호출
+ * - 모바일 레이아웃: dvh 기반, 키보드 대응, 안전 영역 패딩
  */
 import { useState, useEffect, useRef } from 'react';
 import type { SajuResult } from '../../core/pillar-calc/main-calculator';
@@ -10,7 +11,6 @@ import { COUNSELOR_NAMES } from '../../core/counselor-config';
 import { useTts } from './use-tts';
 import { useCounselChat } from './use-counsel-chat';
 
-/** 세션마다 랜덤 상담사 배정 */
 function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
 }
@@ -18,7 +18,7 @@ function pickCounselor(): string {
 const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
 
 function buildIntro(counselor: string, result: SajuResult): string {
-  return `${INTRO_PREFIX}.\n이번 세션의 배정 상담사는 「${counselor}」입니다. 생년월일·성별 조합이 같은 동안은 같은 분이 끝까지 해설해 드려요.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n\n사주나 운세에 관해 궁금한 점을 편하게 물어보세요.`;
+  return `${INTRO_PREFIX}.\n이번 세션의 배정 상담사는 「${counselor}」입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n\n사주나 운세에 관해 궁금한 점을 편하게 물어보세요.`;
 }
 
 export default function CounselPanel({
@@ -33,36 +33,30 @@ export default function CounselPanel({
   const [counselor] = useState(pickCounselor);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  /** 마지막 AI 응답 추적 (새 응답 도착 시 TTS 자동 재생용) */
   const lastAssistantRef = useRef('');
 
   const { msgs, loading, send, reset, applyMsgs } = useCounselChat(result, aiSummaryReady);
-  const { playing, enabled, setEnabled, speak, stop } = useTts(counselor);
+  const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
 
-  /** 풀이가 초기화되면 대화·TTS도 초기화 */
   useEffect(() => {
     if (!aiSummaryReady) {
-      stop();
-      reset();
-      setOpen(false);
+      stop(); reset(); setOpen(false);
       lastAssistantRef.current = '';
     }
   }, [aiSummaryReady, reset, stop]);
 
-  /** 패널 열 때: 인트로 메시지 세팅 */
   useEffect(() => {
     if (open && result && msgs.length === 0) {
       applyMsgs([{ role: 'assistant', content: buildIntro(counselor, result) }]);
     }
   }, [open, result, counselor, msgs.length, applyMsgs]);
 
-  /** 새 어시스턴트 응답 감지 → TTS 자동 재생 */
+  /** 새 어시스턴트 응답 → TTS 자동 재생 (primeAudio 후에만 작동) */
   useEffect(() => {
     if (!enabled || loading) return;
     const last = msgs[msgs.length - 1];
     if (!last || last.role !== 'assistant') return;
     const content = last.content.trim();
-    // 빈 버블(로딩 중)·에러·이미 재생한 응답 제외
     if (!content) return;
     if (content.startsWith('답변을 불러오지') || content.startsWith('응답 시간이')) return;
     if (content === lastAssistantRef.current) return;
@@ -70,7 +64,6 @@ export default function CounselPanel({
     void speak(content);
   }, [msgs, loading, enabled, speak]);
 
-  /** 새 메시지가 올 때마다 스크롤 */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs]);
@@ -78,7 +71,9 @@ export default function CounselPanel({
   async function handleSend() {
     const trimmed = input.trim();
     if (!trimmed || loading) return;
-    stop(); // 이전 TTS 중단
+    // iOS 첫 터치에서 AudioContext 잠금 해제
+    void primeAudio();
+    stop();
     setInput('');
     await send(trimmed);
     inputRef.current?.focus();
@@ -91,42 +86,30 @@ export default function CounselPanel({
     }
   }
 
-  /* ─── 스타일 상수 ─── */
   const GOLD = '#e8c97e';
   const PURPLE = '#8b6fc6';
   const panelBg = 'rgba(14,11,28,0.97)';
   const borderColor = 'rgba(255,255,255,0.1)';
 
-  /* ─── 음성 토글 버튼 ─── */
   function VoiceBtn() {
     if (playing) {
       return (
-        <button
-          id="counsel-tts-stop"
-          onClick={stop}
-          title="음성 정지"
-          style={{
-            background: 'rgba(220,80,80,.2)', border: '1px solid rgba(220,80,80,.4)',
-            borderRadius: 8, padding: '3px 10px',
-            color: 'rgba(255,160,160,.9)', cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
-          }}
-        >⏹ 정지</button>
+        <button id="counsel-tts-stop" onClick={stop} title="음성 정지" style={{
+          background: 'rgba(220,80,80,.2)', border: '1px solid rgba(220,80,80,.4)',
+          borderRadius: 8, padding: '3px 10px',
+          color: 'rgba(255,160,160,.9)', cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
+        }}>⏹ 정지</button>
       );
     }
     return (
-      <button
-        id="counsel-tts-toggle"
-        onClick={() => setEnabled(v => !v)}
-        title={enabled ? '음성 끄기' : '음성 켜기'}
-        style={{
-          background: enabled ? 'rgba(74,158,255,.15)' : 'rgba(255,255,255,.06)',
-          border: `1px solid ${enabled ? 'rgba(74,158,255,.4)' : 'rgba(255,255,255,.15)'}`,
-          borderRadius: 8, padding: '3px 10px',
-          color: enabled ? '#7bbfff' : 'rgba(255,255,255,.35)',
-          cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
-        }}
-      >
-        {enabled ? '🔊 음성 ON' : '🔇 음성 OFF'}
+      <button id="counsel-tts-toggle" onClick={() => setEnabled(v => !v)} title={enabled ? '음성 끄기' : '음성 켜기'} style={{
+        background: enabled ? 'rgba(74,158,255,.15)' : 'rgba(255,255,255,.06)',
+        border: `1px solid ${enabled ? 'rgba(74,158,255,.4)' : 'rgba(255,255,255,.15)'}`,
+        borderRadius: 8, padding: '3px 10px',
+        color: enabled ? '#7bbfff' : 'rgba(255,255,255,.35)',
+        cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
+      }}>
+        {enabled ? '🔊 음성' : '🔇 음소거'}
       </button>
     );
   }
@@ -139,24 +122,25 @@ export default function CounselPanel({
       aria-label="AI 심층 상담 열기"
       style={{
         position: 'fixed',
-        bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
-        right: 20,
+        bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
+        right: 16,
         zIndex: 9000,
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        padding: '12px 20px',
+        padding: '12px 18px',
         background: 'linear-gradient(135deg, #6b4fa0, #3a7bd5)',
         border: 'none',
         borderRadius: 100,
         color: '#fff',
         fontWeight: 700,
-        fontSize: '.88rem',
+        fontSize: '.85rem',
         cursor: 'pointer',
         boxShadow: '0 4px 20px rgba(107,79,160,0.5)',
+        WebkitTapHighlightColor: 'transparent',
       }}
     >
-      <span style={{ fontSize: '1rem' }}>✦</span>
+      <span>✦</span>
       AI 심층 상담
     </button>
   );
@@ -169,17 +153,24 @@ export default function CounselPanel({
       aria-label="AI 심층 상담"
       style={{
         position: 'fixed',
-        top: 'max(4dvh, env(safe-area-inset-top, 0px))',
-        bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))',
-        right: 12,
-        width: 'min(420px, calc(100vw - 24px))',
+        /* 모바일: 거의 전체화면, 데스크톱: 우측 고정 패널 */
+        top: 'env(safe-area-inset-top, 0px)',
+        bottom: 'env(safe-area-inset-bottom, 0px)',
+        right: 0,
+        left: 0,
+        /* 데스크톱에서만 작은 패널 */
+        maxWidth: 'min(420px, 100vw)',
+        marginLeft: 'auto',
+        marginRight: 0,
+        /* 데스크톱 여백 */
+        borderRadius: 'clamp(0px, calc((100vw - 480px) * 9999), 20px)',
+        margin: 'clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 80px)',
         zIndex: 9100,
         display: 'flex',
         flexDirection: 'column',
         background: panelBg,
         border: `1px solid ${borderColor}`,
-        borderRadius: 20,
-        boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
         overflow: 'hidden',
         backdropFilter: 'blur(24px)',
       }}
@@ -189,38 +180,37 @@ export default function CounselPanel({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '14px 18px',
+        padding: '14px 16px',
+        paddingTop: 'max(14px, env(safe-area-inset-top, 14px))',
         borderBottom: `1px solid ${borderColor}`,
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: GOLD, fontSize: '1rem' }}>✦</span>
+          <span style={{ color: GOLD }}>✦</span>
           <span style={{ fontWeight: 800, fontSize: '.95rem' }}>AI 심층 상담</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <VoiceBtn />
           <span style={{
-            fontSize: '.72rem', color: 'rgba(255,255,255,.4)',
+            fontSize: '.7rem', color: 'rgba(255,255,255,.4)',
             background: 'rgba(255,255,255,.06)',
-            padding: '3px 10px', borderRadius: 20,
-          }}>
-            {counselor}
-          </span>
+            padding: '3px 9px', borderRadius: 20,
+          }}>{counselor}</span>
           <button
             id="counsel-panel-close"
             onClick={() => { stop(); setOpen(false); }}
             aria-label="닫기"
             style={{
               background: 'rgba(255,255,255,.08)', border: 'none',
-              borderRadius: 8, width: 28, height: 28,
-              color: 'rgba(255,255,255,.6)', cursor: 'pointer',
-              fontSize: '1rem', lineHeight: 1,
+              borderRadius: 8, minWidth: 36, height: 36,
+              color: 'rgba(255,255,255,.7)', cursor: 'pointer',
+              fontSize: '1.1rem', WebkitTapHighlightColor: 'transparent',
             }}
           >✕</button>
         </div>
       </div>
 
-      {/* ── aiSummaryReady 가드 ── */}
+      {/* ── guard ── */}
       {!aiSummaryReady && (
         <div style={{
           flex: 1, display: 'flex', flexDirection: 'column',
@@ -228,7 +218,7 @@ export default function CounselPanel({
           padding: 32, textAlign: 'center', gap: 12,
         }}>
           <span style={{ fontSize: '2rem' }}>✦</span>
-          <p style={{ color: 'rgba(255,255,255,.6)', fontSize: '.88rem', lineHeight: 1.7, margin: 0 }}>
+          <p style={{ color: 'rgba(255,255,255,.6)', fontSize: '.9rem', lineHeight: 1.7, margin: 0 }}>
             AI 심층 풀이가 완료된 후<br />상담을 이용하실 수 있어요.
           </p>
         </div>
@@ -239,6 +229,7 @@ export default function CounselPanel({
         <div style={{
           flex: 1,
           overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
           padding: '12px 14px',
           display: 'flex',
           flexDirection: 'column',
@@ -247,11 +238,10 @@ export default function CounselPanel({
           {msgs.map((msg, i) => {
             const isUser = msg.role === 'user';
             const isError = !isUser && (
-              msg.content.startsWith('답변을 불러오지 못했습니다') ||
-              msg.content.startsWith('응답 시간이 초과')
+              msg.content.startsWith('답변을 불러오지') ||
+              msg.content.startsWith('응답 시간이')
             );
             const isEmpty = !isUser && msg.content === '';
-
             return (
               <div key={i} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
                 <div style={{
@@ -277,19 +267,15 @@ export default function CounselPanel({
                   ) : (
                     <>
                       {msg.content}
-                      {/* 어시스턴트 응답 — 재생 버튼 */}
                       {!isUser && !isError && msg.content.length > 10 && (
                         <button
-                          onClick={() => {
-                            if (playing) stop();
-                            else void speak(msg.content);
-                          }}
-                          title={playing ? '정지' : '이 내용 읽기'}
+                          onClick={() => playing ? stop() : void speak(msg.content)}
                           style={{
                             display: 'block', marginTop: 8,
                             background: 'none', border: 'none',
-                            color: 'rgba(255,255,255,.35)', cursor: 'pointer',
+                            color: 'rgba(255,255,255,.4)', cursor: 'pointer',
                             fontSize: '.72rem', padding: 0,
+                            WebkitTapHighlightColor: 'transparent',
                           }}
                         >
                           {playing ? '⏹ 정지' : '🔊 읽기'}
@@ -309,15 +295,18 @@ export default function CounselPanel({
       {aiSummaryReady && (
         <div style={{
           padding: '10px 12px',
+          paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))',
           borderTop: `1px solid ${borderColor}`,
           display: 'flex',
           gap: 8,
           flexShrink: 0,
+          background: panelBg,
         }}>
           <input
             ref={inputRef}
             id="counsel-input"
             type="text"
+            inputMode="text"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -328,9 +317,9 @@ export default function CounselPanel({
               background: 'rgba(255,255,255,.06)',
               border: `1px solid ${borderColor}`,
               borderRadius: 10,
-              padding: '9px 14px',
+              padding: '11px 14px',
               color: '#e8e8e8',
-              fontSize: '.88rem',
+              fontSize: '16px', // iOS 자동 확대 방지
               outline: 'none',
               opacity: loading ? 0.6 : 1,
             }}
@@ -341,7 +330,7 @@ export default function CounselPanel({
             disabled={loading || !input.trim()}
             aria-label="전송"
             style={{
-              padding: '9px 18px',
+              padding: '11px 18px',
               background: loading || !input.trim()
                 ? 'rgba(255,255,255,.1)'
                 : `linear-gradient(135deg, ${PURPLE}, #3a7bd5)`,
@@ -352,14 +341,13 @@ export default function CounselPanel({
               fontSize: '.88rem',
               cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
               transition: 'background .2s',
+              WebkitTapHighlightColor: 'transparent',
+              flexShrink: 0,
             }}
-          >
-            전송
-          </button>
+          >전송</button>
         </div>
       )}
 
-      {/* 애니메이션 */}
       <style>{`
         @keyframes dot-blink {
           0%, 100% { opacity: 0.2; transform: scale(0.8); }

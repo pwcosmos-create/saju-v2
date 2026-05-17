@@ -11,7 +11,7 @@
 import Link from 'next/link';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { SiteNav } from '../site-chrome';
-import ChatWidget from '../chat-widget';
+import CounselPanel from '../counsel/CounselPanel';
 import { calculate, SajuResult } from '../../core/pillar-calc/main-calculator';
 import {
   STEMS, BRANCHES, STEMS_H, BRANCHES_H, ZODIAC,
@@ -788,7 +788,7 @@ export default function Home() {
         </p>
       </footer>
       </div>{/* /z-index wrapper */}
-      <ChatWidget result={result} aiSummaryReady={aiFortuneComplete} />
+      <CounselPanel result={result} aiSummaryReady={aiFortuneComplete} />
     </div>
   );
 }

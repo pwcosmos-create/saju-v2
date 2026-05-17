@@ -1,13 +1,12 @@
 /**
- * AI Saju Fortune Stream API - v2.0.4
+ * AI Saju Fortune Stream API - v2.1.0
  *
- * - prompt: AI 심층 풀이 스트리밍
- * - mode counsel (+ messages): 심층 상담 JSON (차단 회피 — 클라이언트가 동일 URL 사용)
+ * AI 심층 풀이 전용 SSE 스트리밍 엔드포인트.
+ * counsel 분기 제거 — 상담은 /api/saju-chat 단일 경로 사용.
  */
 import { NextRequest } from 'next/server';
 import { fetchLlmStream } from '../../../core/config/llm';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
-import { postConsult, type ConsultRequestBody } from '../../../core/api/consult-post';
 
 const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문가입니다.
 사용자의 사주 분석 결과를 전문적이면서도 따뜻한 상담가의 어조로 풀어주세요.
@@ -22,10 +21,6 @@ const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문�
 
 const checkFortuneStreamRateLimit = makeRateLimiter(5, 600_000);
 
-function isConsultBody(body: Record<string, unknown>): body is ConsultRequestBody {
-  return body.mode === 'counsel';
-}
-
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
 
@@ -34,10 +29,6 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return new Response(JSON.stringify({ error: '잘못된 요청 형식' }), { status: 400 });
-  }
-
-  if (isConsultBody(body)) {
-    return postConsult(ip, { ...body, stream: false });
   }
 
   if (!checkFortuneStreamRateLimit(ip)) {
@@ -81,3 +72,4 @@ export function OPTIONS() {
     },
   });
 }
+

@@ -1,0 +1,29 @@
+[Figma 파일 내용: (실제 Figma 링크 또는 컴포넌트 구조 정의)]
+**Project Name:** 보배시즌 - Core Components Library v1.0
+**Goal:** CTA 및 대시보드 핵심 요소의 재사용성 극대화.
+
+**I. Color Palette (Design Tokens)**
+*   Primary: Midnight Blue (`#0A1931`) [근거: Designer 검증된 지식]
+*   Secondary/CTA: Deep Copper (`#B8860B`) [근거: Designer 검증된 지식]
+*   Accent/Flow: Clear Sky Blue (`#ADD8E6`) [근거: Designer 검증된 지식]
+*   Text/Neutral: #333333 (Body), #FFFFFF (Background)
+
+**II. Typography Scale (Pretendard)**
+*   H1 (Title): 48px / Bold
+*   H2 (Section Title): 32px / SemiBold
+*   Body Large: 20px / Regular
+*   Body Small: 16px / Regular
+
+**III. Core Components**
+1.  **CTA Button Component:**
+    *   State 1 (Default): Deep Copper fill, Midnight Blue text. Corner Radius: 8px. [근거: Designer 검증된 지식]
+    *   State 2 (Hover/Active): Deep Copper darken by 10%.
+2.  **Dashboard Metric Card Component:**
+    *   Structure: Title (H3), Value (Large, Accent Color), Trend Indicator (Icon + Text). [근거: Designer 검증된 지식]
+    *   Background: Light Gray/White. Border: Subtle Midnight Blue line.
+3.  **Free Trial CTA Block Component:**
+    *   Structure: Headline (H2), Subtext (Body Large), Primary Button (CTA Component).
+    *   Visual Rule: Deep Copper를 사용하여 '행동 유도'에만 집중시키고, 배경은 Midnight Blue로 권위를 유지한다. [근거: Designer 검증된 지식]
+
+**IV. Layout Grid System:**
+*   Standard 12-column grid system (8pt base). 모든 섹션의 간격(Padding/Margin)은 8px 단위로 통일합니다. [추측]

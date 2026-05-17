@@ -646,39 +646,87 @@ function snapshotToApiMessages(messages: { role: string; content: string }[]): {
   );
 }
 
+const CONSULT_API_PATH = '/api/consult';
+
+function parseConsultResponseBody(raw: string, contentType: string): string {
+  if (contentType.includes('text/event-stream') || raw.trimStart().startsWith('data:')) {
+    let combined = '';
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const payload = trimmed.replace(/^data:\s*/, '').trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const json = JSON.parse(payload) as {
+          choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+        };
+        const part = json.choices?.[0]?.delta?.content ?? json.choices?.[0]?.message?.content ?? '';
+        if (typeof part === 'string' && part) combined += part;
+      } catch {
+        /* skip malformed chunk */
+      }
+    }
+    return combined;
+  }
+  const data = JSON.parse(raw) as { content?: string; error?: string };
+  if (data.error) throw new Error(data.error);
+  return typeof data.content === 'string' ? data.content : '';
+}
+
 async function fetchChatComplete(
   apiMessages: { role: string; content: string }[],
   sajuContext: string,
   options: { chatMode: 'single' | 'compatibility'; compareSajuContext?: string; counselorName: string },
   signal?: AbortSignal,
 ): Promise<string> {
+  if (!apiMessages.length) throw new Error('보낼 메시지가 없습니다');
+
   const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    signal,
-    body: JSON.stringify({
-      messages: apiMessages,
-      sajuContext,
-      chatMode: options.chatMode,
-      compareSajuContext: options.compareSajuContext ?? '',
-      counselorName: options.counselorName,
-      stream: false,
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${base}${CONSULT_API_PATH}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      cache: 'no-store',
+      signal,
+      body: JSON.stringify({
+        messages: apiMessages,
+        sajuContext,
+        chatMode: options.chatMode,
+        compareSajuContext: options.compareSajuContext ?? '',
+        counselorName: options.counselorName,
+        stream: false,
+      }),
+    });
+  } catch (e) {
+    const baseMsg = e instanceof Error ? e.message : String(e);
+    const blockedHint = e instanceof TypeError
+      ? ' (광고·추적 차단 확장 프로그램이 요청을 막았을 수 있습니다.)'
+      : '';
+    throw new Error(baseMsg + blockedHint);
+  }
+
+  const raw = await res.text();
+  const contentType = res.headers.get('content-type') ?? '';
   if (!res.ok) {
     try {
-      const errJson = await res.json() as { error?: string };
+      const errJson = JSON.parse(raw) as { error?: string };
       throw new Error(errJson.error ?? `연결 실패 (${res.status})`);
     } catch (e) {
-      if (e instanceof Error && e.message) throw e;
+      if (e instanceof Error && e.message && !e.message.startsWith('연결 실패')) throw e;
       throw new Error(`연결 실패 (${res.status})`);
     }
   }
-  const data = await res.json() as { content?: string; error?: string };
-  if (data.error) throw new Error(data.error);
-  return typeof data.content === 'string' ? data.content : '';
+
+  let text: string;
+  try {
+    text = parseConsultResponseBody(raw, contentType);
+  } catch (e) {
+    if (e instanceof Error) throw e;
+    throw new Error('응답 파싱 실패');
+  }
+  if (!text.trim()) throw new Error('빈 응답');
+  return text;
 }
 
 function buildCompatibilityContext(primary: SajuResult, compare: SajuResult): string {
@@ -1200,6 +1248,21 @@ export default function ChatWidget({
     const apiMessages = snapshotToApiMessages(
       snapshotForStream.map((m) => ({ role: m.role, content: m.content })),
     );
+    if (!apiMessages.length) {
+      setLoading(false);
+      setChatLoadingStep(0);
+      setMsgs((prev) => {
+        const u = [...prev];
+        if (u.length && u[u.length - 1].role === 'assistant') {
+          u[u.length - 1] = {
+            role: 'assistant',
+            content: '보낼 메시지가 없습니다. 다시 입력해 주세요.',
+          };
+        }
+        return u;
+      });
+      return;
+    }
     let streamFinished = false;
 
     chatStepTimersRef.current.t1 = window.setTimeout(() => {
@@ -1317,7 +1380,11 @@ export default function ChatWidget({
         ac.signal,
       );
     } catch (err) {
-      if (turnGen !== chatTurnGenRef.current) return;
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (turnGen !== chatTurnGenRef.current) {
+        setLoading(false);
+        return;
+      }
       streamFinished = true;
       chatStreamingDraftRef.current = '';
       clearChatStepTimers();
@@ -1338,7 +1405,10 @@ export default function ChatWidget({
       return;
     }
 
-    if (turnGen !== chatTurnGenRef.current) return;
+    if (turnGen !== chatTurnGenRef.current) {
+      setLoading(false);
+      return;
+    }
     streamFinished = true;
     chatStreamingDraftRef.current = '';
     clearChatStepTimers();

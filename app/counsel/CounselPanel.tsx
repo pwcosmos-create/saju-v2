@@ -13,6 +13,18 @@ import { useTts } from './use-tts';
 import { useStt } from './use-stt';
 import { useCounselChat } from './use-counsel-chat';
 
+/** TTS 자동 재생용: 첫 n문장만 추출 (마크다운 제거) */
+function extractFirstSentences(text: string, n: number): string {
+  const cleaned = text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\n+/g, ' ')
+    .trim();
+  const sentences = cleaned.match(/[^.!?。！？]+[.!?。！？]*/g) ?? [cleaned];
+  return sentences.slice(0, n).join('').trim() || cleaned.slice(0, 120);
+}
+
 function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
 }
@@ -43,7 +55,7 @@ export default function CounselPanel({
   const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
 
   /** STT 콜백에서 안전하게 호출하기 위한 ref (클로저 스테일 방지) */
-  const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => { });
 
   const { listening, supported: sttSupported, start: startStt } = useStt((text) => {
     setInput(text);              // 입력창에 인식 내용 표시
@@ -56,7 +68,7 @@ export default function CounselPanel({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     if (!open) {
-      wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current?.release().catch(() => { });
       wakeLockRef.current = null;
       videoRef.current?.pause();
       return;
@@ -66,7 +78,7 @@ export default function CounselPanel({
       (navigator as Navigator & { wakeLock: { request: (type: string) => Promise<WakeLockSentinel> } })
         .wakeLock.request('screen')
         .then(lock => { wakeLockRef.current = lock; })
-        .catch(() => {});
+        .catch(() => { });
     }
     // 방법 2: iOS 구버전 폴백 — 투명 1x1 video loop
     if (!videoRef.current) {
@@ -79,7 +91,7 @@ export default function CounselPanel({
       document.body.appendChild(v);
       videoRef.current = v;
     }
-    videoRef.current.play().catch(() => {});
+    videoRef.current.play().catch(() => { });
   }, [open]);
 
 
@@ -105,7 +117,12 @@ export default function CounselPanel({
     stop();
     setInput('');
     const responseContent = await send(trimmed);
-    if (enabled && responseContent) void speak(responseContent);
+    if (enabled && responseContent) {
+      // 첫 1문장만 TTS 전송 → 짧을수록 Gemini TTS 응답 빠름
+      // 나머지는 버블의 🔊 버튼으로 청취 가능
+      const firstLine = extractFirstSentences(responseContent, 1);
+      void speak(firstLine);
+    }
     inputRef.current?.focus();
   }
 

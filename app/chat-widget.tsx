@@ -646,7 +646,9 @@ function snapshotToApiMessages(messages: { role: string; content: string }[]): {
   );
 }
 
-const CONSULT_API_PATH = '/api/consult';
+/** chat/consult 경로는 광고·추적 차단에 걸리는 경우가 있음 */
+const CONSULT_API_PATH = '/api/saju-counsel';
+const CONSULT_FETCH_MS = 90_000;
 
 function parseConsultResponseBody(raw: string, contentType: string): string {
   if (contentType.includes('text/event-stream') || raw.trimStart().startsWith('data:')) {
@@ -688,6 +690,7 @@ async function fetchChatComplete(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       cache: 'no-store',
+      credentials: 'same-origin',
       signal,
       body: JSON.stringify({
         messages: apiMessages,
@@ -824,6 +827,7 @@ export default function ChatWidget({
   /** 새 전송 시 이전 스트림·연출 무시 */
   const chatTurnGenRef = useRef(0);
   const chatStreamAbortRef = useRef<AbortController | null>(null);
+  const sendInFlightRef = useRef(false);
   /** 스트리밍 중 마지막 assistant 버블과 동기화(중단 시 부분 본문 밀봉) */
   const chatStreamingDraftRef = useRef('');
   const chatStepTimersRef = useRef<{ t1: number | null; t2: number | null }>({ t1: null, t2: null });
@@ -1169,9 +1173,20 @@ export default function ChatWidget({
     }
   }, [chatMode]);
 
+  function setAssistantError(content: string) {
+    setMsgs((prev) => {
+      const u = [...prev];
+      if (u.length && u[u.length - 1].role === 'assistant') {
+        u[u.length - 1] = { role: 'assistant', content };
+      }
+      return u;
+    });
+  }
+
   async function send(text: string = input, options?: { fromVoice?: boolean }) {
     const trimmed = text.trim();
     if (!trimmed) return;
+    if (sendInFlightRef.current) return;
     if (!result) {
       setVoiceNote('먼저 사주 분석을 완료해 주세요.');
       setVoiceActivity(null);
@@ -1390,6 +1405,10 @@ export default function ChatWidget({
       }, verifyMs);
     };
 
+    sendInFlightRef.current = true;
+    const consultTimeoutId = window.setTimeout(() => {
+      if (!ac.signal.aborted) ac.abort();
+    }, CONSULT_FETCH_MS);
     let assistantText = '';
     try {
       assistantText = await fetchChatComplete(
@@ -1403,29 +1422,29 @@ export default function ChatWidget({
         ac.signal,
       );
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      if (turnGen !== chatTurnGenRef.current) {
+      const isAbort = err instanceof DOMException && err.name === 'AbortError';
+      if (turnGen === chatTurnGenRef.current) {
+        streamFinished = true;
+        clearChatStepTimers();
+        clearVerifyPauseTimer();
+        setChatLoadingStep(0);
         setLoading(false);
-        return;
+        setVoiceActivity(null);
+        setVoiceNote(null);
+        setReplyTyping(false);
+        typeCancelRef.current = null;
+        pendingAssistantFullRef.current = null;
+        if (isAbort) {
+          setAssistantError('요청 시간이 초과되었거나 중단되었습니다. 다시 질문해 주세요.');
+        } else {
+          const errorDetail = err instanceof Error ? err.message : String(err);
+          setAssistantError(`오류가 발생했습니다: ${errorDetail}`);
+        }
       }
-      streamFinished = true;
-      chatStreamingDraftRef.current = '';
-      clearChatStepTimers();
-      clearVerifyPauseTimer();
-      setChatLoadingStep(0);
-      const errorDetail = err instanceof Error ? err.message : String(err);
-      setMsgs((prev) => {
-        const u = [...prev];
-        u[u.length - 1] = { role: 'assistant', content: `오류가 발생했습니다: ${errorDetail}` };
-        return u;
-      });
-      setLoading(false);
-      setVoiceActivity(null);
-      setVoiceNote(null);
-      setReplyTyping(false);
-      typeCancelRef.current = null;
-      pendingAssistantFullRef.current = null;
       return;
+    } finally {
+      window.clearTimeout(consultTimeoutId);
+      sendInFlightRef.current = false;
     }
 
     if (turnGen !== chatTurnGenRef.current) {

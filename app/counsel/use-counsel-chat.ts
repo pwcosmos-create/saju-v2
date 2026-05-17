@@ -50,9 +50,10 @@ export function useCounselChat(
     setLoading(false);
   }, [applyMsgs]);
 
-  const send = useCallback(async (text: string) => {
+  /** 성공 시 응답 content 반환, 실패 시 null 반환 */
+  const send = useCallback(async (text: string): Promise<string | null> => {
     const trimmed = text.trim();
-    if (!trimmed || !result || !aiSummaryReady || loading) return;
+    if (!trimmed || !result || !aiSummaryReady || loading) return null;
 
     // ── 1. 현재 메시지 목록을 ref에서 동기적으로 읽는다 ──
     const current = msgsRef.current;
@@ -104,6 +105,7 @@ export function useCounselChat(
       const last = answered[answered.length - 1];
       if (last?.role === 'assistant') answered[answered.length - 1] = { role: 'assistant', content };
       applyMsgs(answered);
+      return content;  // ← 호출자가 TTS에 사용
     } catch (e) {
       const isAbort = e instanceof DOMException && e.name === 'AbortError';
       const errContent = isAbort
@@ -115,6 +117,7 @@ export function useCounselChat(
       const last = errored[errored.length - 1];
       if (last?.role === 'assistant') errored[errored.length - 1] = { role: 'assistant', content: errContent };
       applyMsgs(errored);
+      return null;
     } finally {
       window.clearTimeout(timeoutId);
       setLoading(false);

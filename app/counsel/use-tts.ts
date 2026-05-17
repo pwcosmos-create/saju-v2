@@ -48,7 +48,7 @@ export function useTts(counselor: string) {
 
   /**
    * 사용자 클릭 이벤트 핸들러 안에서 호출 → iOS 잠금 해제.
-   * 한 번만 실행되고 이후 호출은 무시.
+   * 무음 버퍼 재생으로 iOS Safari AudioContext를 완전히 unlock.
    */
   const primeAudio = useCallback(async () => {
     if (primedRef.current) return;
@@ -59,6 +59,12 @@ export function useTts(counselor: string) {
       if (ctx.state === 'suspended') {
         await ctx.resume();
       }
+      // iOS Safari: 무음 버퍼 재생으로 완전 unlock
+      const silentBuf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = silentBuf;
+      src.connect(ctx.destination);
+      src.start(0);
     } catch {
       primedRef.current = false; // 실패 시 재시도 허용
     }

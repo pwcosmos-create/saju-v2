@@ -33,7 +33,6 @@ export default function CounselPanel({
   const [counselor] = useState(pickCounselor);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const lastAssistantRef = useRef('');
 
   const { msgs, loading, send, reset, applyMsgs } = useCounselChat(result, aiSummaryReady);
   const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
@@ -41,7 +40,6 @@ export default function CounselPanel({
   useEffect(() => {
     if (!aiSummaryReady) {
       stop(); reset(); setOpen(false);
-      lastAssistantRef.current = '';
     }
   }, [aiSummaryReady, reset, stop]);
 
@@ -51,31 +49,22 @@ export default function CounselPanel({
     }
   }, [open, result, counselor, msgs.length, applyMsgs]);
 
-  /** 새 어시스턴트 응답 → TTS 자동 재생 (primeAudio 후에만 작동) */
-  useEffect(() => {
-    if (!enabled || loading) return;
-    const last = msgs[msgs.length - 1];
-    if (!last || last.role !== 'assistant') return;
-    const content = last.content.trim();
-    if (!content) return;
-    if (content.startsWith('답변을 불러오지') || content.startsWith('응답 시간이')) return;
-    if (content === lastAssistantRef.current) return;
-    lastAssistantRef.current = content;
-    void speak(content);
-  }, [msgs, loading, enabled, speak]);
-
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs]);
 
   async function handleSend() {
     const trimmed = input.trim();
-    if (!trimmed || loading) return;
+    if (!trimmed || !result || !aiSummaryReady || loading) return null;
     // iOS 첫 터치에서 AudioContext 잠금 해제
-    void primeAudio();
+    await primeAudio();
     stop();
     setInput('');
-    await send(trimmed);
+    // send 완료 시 content 반환 → 직접 TTS 호출
+    const responseContent = await send(trimmed);
+    if (enabled && responseContent) {
+      void speak(responseContent);
+    }
     inputRef.current?.focus();
   }
 

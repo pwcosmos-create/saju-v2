@@ -646,8 +646,8 @@ function snapshotToApiMessages(messages: { role: string; content: string }[]): {
   );
 }
 
-/** chat/consult 경로는 광고·추적 차단에 걸리는 경우가 있음 */
-const CONSULT_API_PATH = '/api/saju-counsel';
+/** fortune-stream 과 같은 prefix 우선 — chat/consult 는 차단 목록에 걸리기 쉬움 */
+const CONSULT_API_PATHS = ['/api/fortune-reply', '/api/saju-counsel', '/api/consult'] as const;
 const CONSULT_FETCH_MS = 90_000;
 
 function parseConsultResponseBody(raw: string, contentType: string): string {
@@ -675,39 +675,29 @@ function parseConsultResponseBody(raw: string, contentType: string): string {
   return typeof data.content === 'string' ? data.content : '';
 }
 
-async function fetchChatComplete(
+async function fetchConsultOnce(
+  apiPath: string,
   apiMessages: { role: string; content: string }[],
   sajuContext: string,
   options: { chatMode: 'single' | 'compatibility'; compareSajuContext?: string; counselorName: string },
   signal?: AbortSignal,
 ): Promise<string> {
-  if (!apiMessages.length) throw new Error('보낼 메시지가 없습니다');
-
   const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
-  let res: Response;
-  try {
-    res = await fetch(`${base}${CONSULT_API_PATH}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      cache: 'no-store',
-      credentials: 'same-origin',
-      signal,
-      body: JSON.stringify({
-        messages: apiMessages,
-        sajuContext,
-        chatMode: options.chatMode,
-        compareSajuContext: options.compareSajuContext ?? '',
-        counselorName: options.counselorName,
-        stream: false,
-      }),
-    });
-  } catch (e) {
-    const baseMsg = e instanceof Error ? e.message : String(e);
-    const blockedHint = e instanceof TypeError
-      ? ' (광고·추적 차단 확장 프로그램이 요청을 막았을 수 있습니다.)'
-      : '';
-    throw new Error(baseMsg + blockedHint);
-  }
+  const res = await fetch(`${base}${apiPath}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    cache: 'no-store',
+    credentials: 'same-origin',
+    signal,
+    body: JSON.stringify({
+      messages: apiMessages,
+      sajuContext,
+      chatMode: options.chatMode,
+      compareSajuContext: options.compareSajuContext ?? '',
+      counselorName: options.counselorName,
+      stream: false,
+    }),
+  });
 
   const raw = await res.text();
   const contentType = res.headers.get('content-type') ?? '';
@@ -721,15 +711,33 @@ async function fetchChatComplete(
     }
   }
 
-  let text: string;
-  try {
-    text = parseConsultResponseBody(raw, contentType);
-  } catch (e) {
-    if (e instanceof Error) throw e;
-    throw new Error('응답 파싱 실패');
-  }
+  const text = parseConsultResponseBody(raw, contentType);
   if (!text.trim()) throw new Error('빈 응답');
   return text;
+}
+
+async function fetchChatComplete(
+  apiMessages: { role: string; content: string }[],
+  sajuContext: string,
+  options: { chatMode: 'single' | 'compatibility'; compareSajuContext?: string; counselorName: string },
+  signal?: AbortSignal,
+): Promise<string> {
+  if (!apiMessages.length) throw new Error('보낼 메시지가 없습니다');
+
+  let lastErr: Error | null = null;
+  for (const apiPath of CONSULT_API_PATHS) {
+    try {
+      return await fetchConsultOnce(apiPath, apiMessages, sajuContext, options, signal);
+    } catch (e) {
+      if (signal?.aborted || (e instanceof DOMException && e.name === 'AbortError')) throw e;
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+
+  const blockedHint = lastErr instanceof TypeError
+    ? ' (광고·추적 차단 확장 프로그램이 요청을 막았을 수 있습니다.)'
+    : '';
+  throw new Error((lastErr?.message ?? '상담 서버에 연결하지 못했습니다') + blockedHint);
 }
 
 function buildCompatibilityContext(primary: SajuResult, compare: SajuResult): string {
@@ -827,7 +835,6 @@ export default function ChatWidget({
   /** 새 전송 시 이전 스트림·연출 무시 */
   const chatTurnGenRef = useRef(0);
   const chatStreamAbortRef = useRef<AbortController | null>(null);
-  const sendInFlightRef = useRef(false);
   /** 스트리밍 중 마지막 assistant 버블과 동기화(중단 시 부분 본문 밀봉) */
   const chatStreamingDraftRef = useRef('');
   const chatStepTimersRef = useRef<{ t1: number | null; t2: number | null }>({ t1: null, t2: null });
@@ -892,11 +899,15 @@ export default function ChatWidget({
   /** AI 심층 풀이가 초기화되면 상담 패널·대화를 닫아 다시 풀이 완료 후에만 이용하도록 함 */
   useEffect(() => {
     if (!aiSummaryReady) {
+      chatStreamAbortRef.current?.abort();
+      chatStreamAbortRef.current = null;
       setOpen(false);
       setIntroSpoken(false);
       setMsgs([]);
       setReplayOffered(false);
       replayLastAnswerPayloadRef.current = null;
+      setLoading(false);
+      setReplyTyping(false);
     }
   }, [aiSummaryReady]);
 
@@ -1183,10 +1194,91 @@ export default function ChatWidget({
     });
   }
 
+  function applyConsultReply(
+    assistantText: string,
+    turnGen: number,
+    snapshotForStream: Msg[],
+  ) {
+    if (turnGen !== chatTurnGenRef.current) return;
+
+    setLoading(false);
+    setVoiceActivity(null);
+    setVoiceNote(null);
+    setChatLoadingStep(0);
+    clearVerifyPauseTimer();
+
+    const streamed = assistantText.trim();
+    if (!streamed) {
+      setAssistantError('답변을 불러오지 못했습니다. 다시 질문해 주세요.');
+      setReplyTyping(false);
+      return;
+    }
+
+    const userTurn = snapshotForStream.filter((m) => m.role === 'user').length;
+    const finalized = addFollowUpPrompt(
+      finalizeKoreanAnswer(streamed) || streamed,
+      userTurn,
+    );
+    if (!finalized.trim()) {
+      setAssistantError('답변을 불러오지 못했습니다. 다시 질문해 주세요.');
+      setReplyTyping(false);
+      return;
+    }
+
+    pendingAssistantFullRef.current = finalized;
+    const shortReply = finalized.length > 0 && finalized.length <= 320;
+
+    if (isIosLikeDevice()) {
+      setAnswerPlayOffer(finalized);
+      void primeMediaForTts().then(() => {
+        void speakWithPreferredMode(finalized, selectedCounselor);
+      });
+    } else {
+      void speakWithPreferredMode(finalized, selectedCounselor);
+    }
+
+    typeCancelRef.current?.();
+    typeCancelRef.current = null;
+
+    if (shortReply) {
+      setMsgs((prev) => {
+        const u = [...prev];
+        if (u.length && u[u.length - 1].role === 'assistant') {
+          u[u.length - 1] = { role: 'assistant', content: finalized };
+        }
+        return u;
+      });
+      setReplyTyping(false);
+      pendingAssistantFullRef.current = null;
+      return;
+    }
+
+    setReplyTyping(true);
+    const syncMs = typeIntervalMsForSpeechSync(
+      finalized,
+      ttsOutputMode,
+      chatMode === 'compatibility',
+    );
+    typeCancelRef.current = typeEffect(finalized, syncMs, (typed) => {
+      if (turnGen !== chatTurnGenRef.current) return;
+      setMsgs((prev) => {
+        const u = [...prev];
+        if (u.length && u[u.length - 1].role === 'assistant') {
+          u[u.length - 1] = { role: 'assistant', content: typed };
+        }
+        return u;
+      });
+    }, () => {
+      if (turnGen !== chatTurnGenRef.current) return;
+      setReplyTyping(false);
+      typeCancelRef.current = null;
+      pendingAssistantFullRef.current = null;
+    });
+  }
+
   async function send(text: string = input, options?: { fromVoice?: boolean }) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    if (sendInFlightRef.current) return;
     if (!result) {
       setVoiceNote('먼저 사주 분석을 완료해 주세요.');
       setVoiceActivity(null);
@@ -1312,100 +1404,6 @@ export default function ChatWidget({
       setChatLoadingStep(3);
     }, CHAT_STEP_ADVANCE_MS[1]);
 
-    const scheduleAssistantReply = (assistantText: string) => {
-      const verifyMs = assistantText.trim().length < 120 ? 800 : VERIFY_PAUSE_MS;
-      verifyPauseTimerRef.current = window.setTimeout(() => {
-        verifyPauseTimerRef.current = null;
-        if (turnGen !== chatTurnGenRef.current) return;
-        setLoading(false);
-        setVoiceActivity(null);
-        setVoiceNote(null);
-        const streamed = assistantText.trim();
-        if (!streamed) {
-          setMsgs((prev) => {
-            const u = [...prev];
-            if (u.length && u[u.length - 1].role === 'assistant') {
-              u[u.length - 1] = {
-                role: 'assistant',
-                content: '답변을 불러오지 못했습니다. 다시 질문해 주세요.',
-              };
-            }
-            return u;
-          });
-          setChatLoadingStep(0);
-          setReplyTyping(false);
-          return;
-        }
-        const userTurn = snapshotForStream.filter((m) => m.role === 'user').length;
-        const finalized = addFollowUpPrompt(
-          finalizeKoreanAnswer(streamed) || streamed,
-          userTurn,
-        );
-        if (!finalized.trim()) {
-          setMsgs((prev) => {
-            const u = [...prev];
-            if (u.length && u[u.length - 1].role === 'assistant') {
-              u[u.length - 1] = {
-                role: 'assistant',
-                content: '답변을 불러오지 못했습니다. 다시 질문해 주세요.',
-              };
-            }
-            return u;
-          });
-          setChatLoadingStep(0);
-          setReplyTyping(false);
-          return;
-        }
-        setChatLoadingStep(4);
-        pendingAssistantFullRef.current = finalized;
-        const shortReply = finalized.length > 0 && finalized.length <= 320;
-        if (finalized) {
-          if (isIosLikeDevice()) {
-            setAnswerPlayOffer(finalized);
-            void primeMediaForTts().then(() => {
-              void speakWithPreferredMode(finalized, selectedCounselor);
-            });
-          } else {
-            void speakWithPreferredMode(finalized, selectedCounselor);
-          }
-        }
-        typeCancelRef.current?.();
-        typeCancelRef.current = null;
-        if (shortReply) {
-          setMsgs((prev) => {
-            const u = [...prev];
-            u[u.length - 1] = { role: 'assistant', content: finalized };
-            return u;
-          });
-          setReplyTyping(false);
-          setChatLoadingStep(0);
-          pendingAssistantFullRef.current = null;
-        } else {
-          setReplyTyping(true);
-          const syncMs = typeIntervalMsForSpeechSync(
-            finalized,
-            ttsOutputMode,
-            chatMode === 'compatibility',
-          );
-          typeCancelRef.current = typeEffect(finalized, syncMs, (typed) => {
-            if (turnGen !== chatTurnGenRef.current) return;
-            setMsgs((prev) => {
-              const u = [...prev];
-              u[u.length - 1] = { role: 'assistant', content: typed };
-              return u;
-            });
-          }, () => {
-            if (turnGen !== chatTurnGenRef.current) return;
-            setReplyTyping(false);
-            setChatLoadingStep(0);
-            typeCancelRef.current = null;
-            pendingAssistantFullRef.current = null;
-          });
-        }
-      }, verifyMs);
-    };
-
-    sendInFlightRef.current = true;
     const consultTimeoutId = window.setTimeout(() => {
       if (!ac.signal.aborted) ac.abort();
     }, CONSULT_FETCH_MS);
@@ -1444,18 +1442,12 @@ export default function ChatWidget({
       return;
     } finally {
       window.clearTimeout(consultTimeoutId);
-      sendInFlightRef.current = false;
     }
 
-    if (turnGen !== chatTurnGenRef.current) {
-      setLoading(false);
-      return;
-    }
     streamFinished = true;
     chatStreamingDraftRef.current = '';
     clearChatStepTimers();
-    setChatLoadingStep(3);
-    scheduleAssistantReply(assistantText);
+    applyConsultReply(assistantText, turnGen, snapshotForStream);
   }
 
   function stopRecordingTracks() {

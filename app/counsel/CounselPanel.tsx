@@ -38,25 +38,47 @@ export default function CounselPanel({
 
   const { msgs, loading, send, reset, applyMsgs } = useCounselChat(result, aiSummaryReady);
   const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
+
+  /** STT 콜백에서 안전하게 호출하기 위한 ref (클로저 스테일 방지) */
+  const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => {});
+
   const { listening, supported: sttSupported, start: startStt } = useStt((text) => {
-    setInput(prev => prev + text);
+    setInput(text);              // 입력창에 인식 내용 표시
+    void sendVoiceRef.current(text); // 자동 전송
   });
 
-  /** Wake Lock — 패널 열릴 때 화면 꺼짐 방지, 닫힐 때 해제 */
+
+  /** Wake Lock + iOS 폴백 (hidden video 루프) — 화면 꺼짐 방지 */
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     if (!open) {
       wakeLockRef.current?.release().catch(() => {});
       wakeLockRef.current = null;
+      videoRef.current?.pause();
       return;
     }
+    // 방법 1: Wake Lock API (크롬/엣지/iOS 16.4+)
     if ('wakeLock' in navigator) {
       (navigator as Navigator & { wakeLock: { request: (type: string) => Promise<WakeLockSentinel> } })
         .wakeLock.request('screen')
         .then(lock => { wakeLockRef.current = lock; })
-        .catch(() => {}); // 권한 없거나 미지원 시 무시
+        .catch(() => {});
     }
+    // 방법 2: iOS 구버전 폴백 — 투명 1x1 video loop
+    if (!videoRef.current) {
+      const v = document.createElement('video');
+      v.setAttribute('loop', '');
+      v.setAttribute('playsinline', '');
+      v.setAttribute('muted', '');
+      v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0';
+      v.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAO1tZGF0';
+      document.body.appendChild(v);
+      videoRef.current = v;
+    }
+    videoRef.current.play().catch(() => {});
   }, [open]);
+
 
   useEffect(() => {
     if (!aiSummaryReady) {
@@ -74,20 +96,26 @@ export default function CounselPanel({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs]);
 
-  async function handleSend() {
-    const trimmed = input.trim();
-    if (!trimmed || !result || !aiSummaryReady || loading) return null;
-    // iOS 첫 터치에서 AudioContext 잠금 해제
-    await primeAudio();
+  /** 전송 공통 로직 — 텍스트 직접 받음 (input state 타이밍 무관) */
+  async function handleSendWithText(trimmed: string) {
+    if (!trimmed || !result || !aiSummaryReady || loading) return;
     stop();
     setInput('');
-    // send 완료 시 content 반환 → 직접 TTS 호출
     const responseContent = await send(trimmed);
-    if (enabled && responseContent) {
-      void speak(responseContent);
-    }
+    if (enabled && responseContent) void speak(responseContent);
     inputRef.current?.focus();
   }
+
+  /** 화면 터치 전송 버튼 */
+  async function handleSend() {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    await primeAudio(); // 화면 터치 → iOS AudioContext unlock
+    await handleSendWithText(trimmed);
+  }
+
+  // sendVoiceRef: 항상 최신 함수 참조 유지 (클로저 스테일 방지)
+  sendVoiceRef.current = handleSendWithText;
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -316,7 +344,10 @@ export default function CounselPanel({
           {sttSupported && (
             <button
               id="counsel-mic-btn"
-              onClick={startStt}
+              onClick={async () => {
+                await primeAudio(); // 마이크 탭 = 사용자 제스처 → iOS AudioContext unlock
+                startStt();
+              }}
               disabled={loading}
               aria-label={listening ? '음성 입력 중지' : '음성으로 입력'}
               title={listening ? '듣는 중... (탭하여 중지)' : '마이크로 입력'}

@@ -54,6 +54,14 @@ export default function CounselPanel({
   const { msgs, loading, send, reset, applyMsgs } = useCounselChat(result, aiSummaryReady);
   const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
 
+  /** 현재 TTS로 읽히는 메시지 콘텐츠 추적 (버블 강조 용) */
+  const [speakingContent, setSpeakingContent] = useState<string | null>(null);
+
+  // playing이 끌리면 강조 해제
+  useEffect(() => {
+    if (!playing) setSpeakingContent(null);
+  }, [playing]);
+
   /** STT 콜백에서 안전하게 호출하기 위한 ref (클로저 스테일 방지) */
   const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => { });
 
@@ -118,8 +126,7 @@ export default function CounselPanel({
     setInput('');
     const responseContent = await send(trimmed);
     if (enabled && responseContent) {
-      // 전체 응답을 speak에 전달 → chunkText가 150자씩 분할 후 병렬 fetch
-      // 첫 청크(≈1문장) 오디오 도착 즉시 재생, 나머지는 백그라운드에서 수신
+      setSpeakingContent(responseContent); // 버블 강조 시작
       void speak(responseContent);
     }
     inputRef.current?.focus();
@@ -204,6 +211,13 @@ export default function CounselPanel({
 
   /* ─── 패널 ─── */
   const Panel = (
+    <>
+    <style>{`
+      @keyframes reading-glow {
+        0%, 100% { box-shadow: 0 0 10px rgba(139,111,198,.25), inset 0 0 6px rgba(139,111,198,.06); }
+        50%       { box-shadow: 0 0 22px rgba(139,111,198,.55), inset 0 0 12px rgba(139,111,198,.15); }
+      }
+    `}</style>
     <div
       id="counsel-panel"
       role="dialog"
@@ -299,6 +313,7 @@ export default function CounselPanel({
               msg.content.startsWith('응답 시간이')
             );
             const isEmpty = !isUser && msg.content === '';
+            const isReading = playing && !isUser && speakingContent === msg.content;
             return (
               <div key={i} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
                 <div style={{
@@ -307,13 +322,20 @@ export default function CounselPanel({
                   borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                   background: isUser
                     ? `linear-gradient(135deg, ${PURPLE}, #3a7bd5)`
-                    : isError ? 'rgba(220,80,80,.15)' : 'rgba(255,255,255,.07)',
-                  border: isError ? '1px solid rgba(220,80,80,.3)' : '1px solid rgba(255,255,255,.08)',
+                    : isError ? 'rgba(220,80,80,.15)' : isReading ? 'rgba(139,111,198,.18)' : 'rgba(255,255,255,.07)',
+                  border: isError
+                    ? '1px solid rgba(220,80,80,.3)'
+                    : isReading
+                      ? '1px solid rgba(139,111,198,.6)'
+                      : '1px solid rgba(255,255,255,.08)',
+                  boxShadow: isReading ? '0 0 16px rgba(139,111,198,.35), inset 0 0 8px rgba(139,111,198,.08)' : 'none',
                   color: isError ? 'rgba(255,180,180,.9)' : '#e8e8e8',
                   fontSize: '.88rem',
                   lineHeight: 1.75,
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
+                  animation: isReading ? 'reading-glow 2s ease-in-out infinite' : 'none',
+                  transition: 'border 0.3s, box-shadow 0.3s, background 0.3s',
                 }}>
                   {isEmpty ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -383,11 +405,19 @@ export default function CounselPanel({
                       {msg.content}
                       {!isUser && !isError && msg.content.length > 10 && (
                         <button
-                          onClick={() => playing ? stop() : void speak(msg.content)}
+                          onClick={() => {
+                            if (playing) {
+                              stop();
+                            } else {
+                              setSpeakingContent(msg.content);
+                              void speak(msg.content);
+                            }
+                          }}
                           style={{
                             display: 'block', marginTop: 8,
                             background: 'none', border: 'none',
-                            color: 'rgba(255,255,255,.4)', cursor: 'pointer',
+                            color: isReading ? 'rgba(180,140,255,.8)' : 'rgba(255,255,255,.4)',
+                            cursor: 'pointer',
                             fontSize: '.72rem', padding: 0,
                             WebkitTapHighlightColor: 'transparent',
                           }}
@@ -508,6 +538,7 @@ export default function CounselPanel({
         }
       `}</style>
     </div>
+    </>
   );
 
   return (

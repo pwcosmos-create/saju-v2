@@ -13,6 +13,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - App directory on server: `/home/ubuntu/saju-v2`.
 - Runtime/process manager: PM2, app name `saju-v2`.
 - Active runtime port is `3001` (current PM2 start command: `npm start -- -p 3001`).
+- **Safe deploy** (avoids 502 / broken `.next` chunks): stop PM2 → delete `.next` → build → start. On the server: `bash scripts/deploy-oracle.sh`. Do not `rm -rf .next` while `saju-v2` is still running.
 
 ### Toss Apps in Toss (WebView mini app) — **separate codebase**
 

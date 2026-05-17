@@ -29,7 +29,7 @@ type BrandMarkProps = {
 
 export function BrandMarkLink({ href = '/', logoPx = 34, wordmarkRem = '1.6rem' }: BrandMarkProps) {
   return (
-    <Link href={href} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+    <Link href={href} prefetch={false} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
       <svg width={logoPx} height={logoPx} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
         <path d={SPARKLE_MAIN} fill={BRAND.sparkleMain} />
         <path d={SPARKLE_A} fill={BRAND.sparkleMid} />

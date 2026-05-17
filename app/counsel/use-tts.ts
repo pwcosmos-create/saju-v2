@@ -9,7 +9,11 @@
  */
 import { useState, useRef, useCallback } from 'react';
 
-const TTS_MAX = 470;
+/**
+ * TTS 청크 크기: 작을수록 첩 첩크의 Gemini TTS 응답이 빠름.
+ * 150자 ≈ 2만 여 가 → 첫 음성이 빨리 도착하면서 나머지는 백그라운드 fetch.
+ */
+const TTS_MAX = 150;
 
 function chunkText(text: string): string[] {
   const cleaned = text
@@ -19,7 +23,8 @@ function chunkText(text: string): string[] {
     .replace(/`{1,3}[^`]*`{1,3}/g, '')
     .trim();
 
-  const sentences = cleaned.split(/(?<=[.!?。！？\n])\s*/);
+  // 한국어 종결 부호 + 영문 + 줄바꽔 연속된 문자열로 연달 (여백 포함)
+  const sentences = cleaned.split(/((?<=[.!?。！？다요죠네니])[\s]*)/);
   const chunks: string[] = [];
   let current = '';
 

@@ -118,10 +118,9 @@ export default function CounselPanel({
     setInput('');
     const responseContent = await send(trimmed);
     if (enabled && responseContent) {
-      // 첫 1문장만 TTS 전송 → 짧을수록 Gemini TTS 응답 빠름
-      // 나머지는 버블의 🔊 버튼으로 청취 가능
-      const firstLine = extractFirstSentences(responseContent, 1);
-      void speak(firstLine);
+      // 전체 응답을 speak에 전달 → chunkText가 150자씩 분할 후 병렬 fetch
+      // 첫 청크(≈1문장) 오디오 도착 즉시 재생, 나머지는 백그라운드에서 수신
+      void speak(responseContent);
     }
     inputRef.current?.focus();
   }

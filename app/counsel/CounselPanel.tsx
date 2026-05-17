@@ -1,12 +1,13 @@
 'use client';
 /**
- * CounselPanel — AI 심층 상담 패널 (재구축 v3.0)
+ * CounselPanel — AI 심층 상담 패널 (재구축 v3.1)
  *
- * Phase 2 MVP: 텍스트 상담만. TTS/STT/궁합은 Phase 4/5에서 추가.
+ * Phase 3: TTS 음성 읽기 통합 (자동 재생 + 수동 토글)
  */
 import { useState, useEffect, useRef } from 'react';
 import type { SajuResult } from '../../core/pillar-calc/main-calculator';
 import { COUNSELOR_NAMES } from '../../core/counselor-config';
+import { useTts } from './use-tts';
 import { useCounselChat } from './use-counsel-chat';
 
 /** 세션마다 랜덤 상담사 배정 */
@@ -32,16 +33,21 @@ export default function CounselPanel({
   const [counselor] = useState(pickCounselor);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** 마지막 AI 응답 추적 (새 응답 도착 시 TTS 자동 재생용) */
+  const lastAssistantRef = useRef('');
 
   const { msgs, loading, send, reset, applyMsgs } = useCounselChat(result, aiSummaryReady);
+  const { playing, enabled, setEnabled, speak, stop } = useTts(counselor);
 
-  /** 풀이가 초기화되면 대화도 초기화 */
+  /** 풀이가 초기화되면 대화·TTS도 초기화 */
   useEffect(() => {
     if (!aiSummaryReady) {
+      stop();
       reset();
       setOpen(false);
+      lastAssistantRef.current = '';
     }
-  }, [aiSummaryReady, reset]);
+  }, [aiSummaryReady, reset, stop]);
 
   /** 패널 열 때: 인트로 메시지 세팅 */
   useEffect(() => {
@@ -49,6 +55,20 @@ export default function CounselPanel({
       applyMsgs([{ role: 'assistant', content: buildIntro(counselor, result) }]);
     }
   }, [open, result, counselor, msgs.length, applyMsgs]);
+
+  /** 새 어시스턴트 응답 감지 → TTS 자동 재생 */
+  useEffect(() => {
+    if (!enabled || loading) return;
+    const last = msgs[msgs.length - 1];
+    if (!last || last.role !== 'assistant') return;
+    const content = last.content.trim();
+    // 빈 버블(로딩 중)·에러·이미 재생한 응답 제외
+    if (!content) return;
+    if (content.startsWith('답변을 불러오지') || content.startsWith('응답 시간이')) return;
+    if (content === lastAssistantRef.current) return;
+    lastAssistantRef.current = content;
+    void speak(content);
+  }, [msgs, loading, enabled, speak]);
 
   /** 새 메시지가 올 때마다 스크롤 */
   useEffect(() => {
@@ -58,6 +78,7 @@ export default function CounselPanel({
   async function handleSend() {
     const trimmed = input.trim();
     if (!trimmed || loading) return;
+    stop(); // 이전 TTS 중단
     setInput('');
     await send(trimmed);
     inputRef.current?.focus();
@@ -75,6 +96,40 @@ export default function CounselPanel({
   const PURPLE = '#8b6fc6';
   const panelBg = 'rgba(14,11,28,0.97)';
   const borderColor = 'rgba(255,255,255,0.1)';
+
+  /* ─── 음성 토글 버튼 ─── */
+  function VoiceBtn() {
+    if (playing) {
+      return (
+        <button
+          id="counsel-tts-stop"
+          onClick={stop}
+          title="음성 정지"
+          style={{
+            background: 'rgba(220,80,80,.2)', border: '1px solid rgba(220,80,80,.4)',
+            borderRadius: 8, padding: '3px 10px',
+            color: 'rgba(255,160,160,.9)', cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
+          }}
+        >⏹ 정지</button>
+      );
+    }
+    return (
+      <button
+        id="counsel-tts-toggle"
+        onClick={() => setEnabled(v => !v)}
+        title={enabled ? '음성 끄기' : '음성 켜기'}
+        style={{
+          background: enabled ? 'rgba(74,158,255,.15)' : 'rgba(255,255,255,.06)',
+          border: `1px solid ${enabled ? 'rgba(74,158,255,.4)' : 'rgba(255,255,255,.15)'}`,
+          borderRadius: 8, padding: '3px 10px',
+          color: enabled ? '#7bbfff' : 'rgba(255,255,255,.35)',
+          cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
+        }}
+      >
+        {enabled ? '🔊 음성 ON' : '🔇 음성 OFF'}
+      </button>
+    );
+  }
 
   /* ─── 플로팅 버튼 ─── */
   const FabButton = (
@@ -142,17 +197,18 @@ export default function CounselPanel({
           <span style={{ color: GOLD, fontSize: '1rem' }}>✦</span>
           <span style={{ fontWeight: 800, fontSize: '.95rem' }}>AI 심층 상담</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <VoiceBtn />
           <span style={{
-            fontSize: '.72rem', color: 'rgba(255,255,255,.5)',
+            fontSize: '.72rem', color: 'rgba(255,255,255,.4)',
             background: 'rgba(255,255,255,.06)',
             padding: '3px 10px', borderRadius: 20,
           }}>
-            상담사: {counselor}
+            {counselor}
           </span>
           <button
             id="counsel-panel-close"
-            onClick={() => setOpen(false)}
+            onClick={() => { stop(); setOpen(false); }}
             aria-label="닫기"
             style={{
               background: 'rgba(255,255,255,.08)', border: 'none',
@@ -197,22 +253,14 @@ export default function CounselPanel({
             const isEmpty = !isUser && msg.content === '';
 
             return (
-              <div
-                key={i}
-                style={{
-                  display: 'flex',
-                  justifyContent: isUser ? 'flex-end' : 'flex-start',
-                }}
-              >
+              <div key={i} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
                 <div style={{
                   maxWidth: '88%',
                   padding: '10px 14px',
                   borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                   background: isUser
                     ? `linear-gradient(135deg, ${PURPLE}, #3a7bd5)`
-                    : isError
-                      ? 'rgba(220,80,80,.15)'
-                      : 'rgba(255,255,255,.07)',
+                    : isError ? 'rgba(220,80,80,.15)' : 'rgba(255,255,255,.07)',
                   border: isError ? '1px solid rgba(220,80,80,.3)' : '1px solid rgba(255,255,255,.08)',
                   color: isError ? 'rgba(255,180,180,.9)' : '#e8e8e8',
                   fontSize: '.88rem',
@@ -220,16 +268,35 @@ export default function CounselPanel({
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                 }}>
-                  {isEmpty
-                    ? (
-                      <span style={{ opacity: 0.5, display: 'flex', gap: 4, alignItems: 'center' }}>
-                        <span style={{ animation: 'dot-blink 1.2s .0s infinite', display: 'inline-block' }}>●</span>
-                        <span style={{ animation: 'dot-blink 1.2s .2s infinite', display: 'inline-block' }}>●</span>
-                        <span style={{ animation: 'dot-blink 1.2s .4s infinite', display: 'inline-block' }}>●</span>
-                      </span>
-                    )
-                    : msg.content
-                  }
+                  {isEmpty ? (
+                    <span style={{ opacity: 0.5, display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <span style={{ animation: 'dot-blink 1.2s .0s infinite', display: 'inline-block' }}>●</span>
+                      <span style={{ animation: 'dot-blink 1.2s .2s infinite', display: 'inline-block' }}>●</span>
+                      <span style={{ animation: 'dot-blink 1.2s .4s infinite', display: 'inline-block' }}>●</span>
+                    </span>
+                  ) : (
+                    <>
+                      {msg.content}
+                      {/* 어시스턴트 응답 — 재생 버튼 */}
+                      {!isUser && !isError && msg.content.length > 10 && (
+                        <button
+                          onClick={() => {
+                            if (playing) stop();
+                            else void speak(msg.content);
+                          }}
+                          title={playing ? '정지' : '이 내용 읽기'}
+                          style={{
+                            display: 'block', marginTop: 8,
+                            background: 'none', border: 'none',
+                            color: 'rgba(255,255,255,.35)', cursor: 'pointer',
+                            fontSize: '.72rem', padding: 0,
+                          }}
+                        >
+                          {playing ? '⏹ 정지' : '🔊 읽기'}
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             );

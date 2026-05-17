@@ -36,7 +36,7 @@ function finalizeKoreanAnswer(text: string): string {
     .replace(/[,\-:;~\s]+$/g, '')
     .replace(/(그리고|또한|다만|특히|예를 들면|예를 들어|즉|및)$/g, '')
     .trim();
-  if (!cleaned) return '';
+  if (!cleaned) return t;
   if (/[.!?…]$/.test(cleaned)) return cleaned;
   /** 이미 완결된 어미 — 마침표만 없으면 추가. 불완전 스트림 끝(예: …마음먹)에 억지로 「입니다」를 붙이면 비문이 됨 */
   if (
@@ -640,15 +640,42 @@ function messagesForChatApi(messages: { role: string; content: string }[]): { ro
 function extractStreamDeltaText(rawJson: string): string {
   try {
     const json = JSON.parse(rawJson) as {
-      choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+      choices?: Array<{
+        delta?: { content?: string | Array<{ type?: string; text?: string }> };
+        message?: { content?: string | Array<{ type?: string; text?: string }> };
+      }>;
       error?: { message?: string };
     };
     if (json.error?.message) return '';
     const choice = json.choices?.[0];
-    return choice?.delta?.content ?? choice?.message?.content ?? '';
+    const raw =
+      choice?.delta?.content
+      ?? choice?.message?.content
+      ?? '';
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw)) {
+      return raw
+        .map((p) => (typeof p === 'string' ? p : p?.text ?? ''))
+        .join('');
+    }
+    return '';
   } catch {
     return '';
   }
+}
+
+/** 라인 단위 파싱이 놓친 청크가 있을 때 전체 SSE 버퍼에서 한 번 더 합침 */
+function collectAllSseText(rawSse: string): string {
+  let combined = '';
+  for (const line of rawSse.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) continue;
+    const payload = trimmed.replace(/^data:\s*/, '').trim();
+    if (!payload || payload === '[DONE]') continue;
+    const part = extractStreamDeltaText(payload);
+    if (part) combined += part;
+  }
+  return combined;
 }
 
 function processSseLines(
@@ -708,13 +735,41 @@ async function streamChat(
       }),
     });
     if (signal?.aborted) return;
-    if (!res.ok || !res.body) {
-      finish(() => onError(res.ok ? '연결 실패' : `연결 실패 (${res.status})`));
+    const contentType = res.headers.get('content-type') ?? '';
+    if (!res.ok) {
+      let detail = `연결 실패 (${res.status})`;
+      try {
+        const errJson = await res.json() as { error?: string };
+        if (errJson.error) detail = errJson.error;
+      } catch {
+        /* noop */
+      }
+      finish(() => onError(detail));
+      return;
+    }
+    if (!res.body) {
+      finish(() => onError('연결 실패'));
+      return;
+    }
+    if (contentType.includes('application/json')) {
+      try {
+        const errJson = await res.json() as { error?: string };
+        finish(() => onError(errJson.error ?? '응답 형식 오류'));
+      } catch {
+        finish(() => onError('응답 형식 오류'));
+      }
       return;
     }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let sseBuffer = '';
+    let rawAccum = '';
+    let assembled = '';
+    const emitChunk = (t: string) => {
+      if (!t) return;
+      assembled += t;
+      onChunk(t);
+    };
     const handleDone = () => finish(onDone);
 
     const drainSseBuffer = (finalFlush: boolean) => {
@@ -722,10 +777,10 @@ async function streamChat(
       if (finalFlush) {
         const lines = parts.filter((l) => l.trim().length > 0);
         sseBuffer = '';
-        return processSseLines(lines, onChunk, handleDone);
+        return processSseLines(lines, emitChunk, handleDone);
       }
       sseBuffer = parts.pop() ?? '';
-      return processSseLines(parts, onChunk, handleDone);
+      return processSseLines(parts, emitChunk, handleDone);
     };
 
     while (true) {
@@ -739,13 +794,22 @@ async function streamChat(
         return;
       }
       if (value) {
-        sseBuffer += dec.decode(value, { stream: true });
+        const piece = dec.decode(value, { stream: true });
+        rawAccum += piece;
+        sseBuffer += piece;
         if (drainSseBuffer(false)) return;
       }
       if (done) {
+        sseBuffer += dec.decode();
         if (drainSseBuffer(true)) return;
         break;
       }
+    }
+    const recovered = collectAllSseText(rawAccum);
+    if (recovered && !assembled) {
+      emitChunk(recovered);
+    } else if (recovered.length > assembled.length) {
+      emitChunk(recovered.slice(assembled.length));
     }
     if (!signal?.aborted) finish(onDone);
   } catch (e) {
@@ -1270,7 +1334,7 @@ export default function ChatWidget({
 
     const sajuContext = buildChatContext(result);
     const compareSajuContext = compareResult ? buildCompatibilityContext(result, compareResult) : undefined;
-    let buffer = '';
+    const bufferRef = { current: '' };
     let streamFinished = false;
 
     chatStepTimersRef.current.t1 = window.setTimeout(() => {
@@ -1292,15 +1356,15 @@ export default function ChatWidget({
       },
       (chunk) => {
         if (turnGen !== chatTurnGenRef.current) return;
-        buffer += chunk;
-        chatStreamingDraftRef.current = buffer;
-        if (buffer.length % 500 === 0 && !streamFinished) setChatLoadingStep(2);
-        if (buffer.length > 0) {
+        bufferRef.current += chunk;
+        chatStreamingDraftRef.current = bufferRef.current;
+        if (bufferRef.current.length % 500 === 0 && !streamFinished) setChatLoadingStep(2);
+        if (bufferRef.current.length > 0) {
           setMsgs((prev) => {
             const u = [...prev];
             const last = u[u.length - 1];
             if (last?.role !== 'assistant') return prev;
-            u[u.length - 1] = { role: 'assistant', content: buffer };
+            u[u.length - 1] = { role: 'assistant', content: bufferRef.current };
             return u;
           });
         }
@@ -1308,24 +1372,26 @@ export default function ChatWidget({
       () => {
         if (turnGen !== chatTurnGenRef.current) return;
         streamFinished = true;
+        const draftAtEnd = chatStreamingDraftRef.current;
         chatStreamingDraftRef.current = '';
         clearChatStepTimers();
         setChatLoadingStep(3);
 
-        const verifyMs = buffer.trim().length < 120 ? 800 : VERIFY_PAUSE_MS;
+        const verifyMs = bufferRef.current.trim().length < 120 ? 800 : VERIFY_PAUSE_MS;
         verifyPauseTimerRef.current = window.setTimeout(() => {
           verifyPauseTimerRef.current = null;
           if (turnGen !== chatTurnGenRef.current) return;
           setLoading(false);
           setVoiceActivity(null);
           setVoiceNote(null);
-          if (!buffer.trim()) {
+          const streamed = bufferRef.current.trim() || draftAtEnd.trim();
+          if (!streamed) {
             setMsgs((prev) => {
               const u = [...prev];
               if (u.length && u[u.length - 1].role === 'assistant') {
                 u[u.length - 1] = {
                   role: 'assistant',
-                  content: '답변을 받지 못했습니다. 잠시 후 다시 질문해 주세요.',
+                  content: '답변을 불러오지 못했습니다. 다시 질문해 주세요.',
                 };
               }
               return u;
@@ -1334,8 +1400,27 @@ export default function ChatWidget({
             setReplyTyping(false);
             return;
           }
+          bufferRef.current = streamed;
           const userTurn = snapshotForStream.filter((m) => m.role === 'user').length;
-          const finalized = addFollowUpPrompt(finalizeKoreanAnswer(buffer), userTurn);
+          const finalized = addFollowUpPrompt(
+            finalizeKoreanAnswer(streamed) || streamed,
+            userTurn,
+          );
+          if (!finalized.trim()) {
+            setMsgs((prev) => {
+              const u = [...prev];
+              if (u.length && u[u.length - 1].role === 'assistant') {
+                u[u.length - 1] = {
+                  role: 'assistant',
+                  content: '답변을 불러오지 못했습니다. 다시 질문해 주세요.',
+                };
+              }
+              return u;
+            });
+            setChatLoadingStep(0);
+            setReplyTyping(false);
+            return;
+          }
           setChatLoadingStep(4);
           pendingAssistantFullRef.current = finalized;
           const shortReply = finalized.length > 0 && finalized.length <= 320;

@@ -91,35 +91,35 @@ export function useTts(counselor: string) {
       audioCtxRef.current = ctx;
     }
     if (ctx.state === 'suspended') {
-      // 이미 unlocked된 상황이면 바로 resume됨
-      // 미 unlocked(iOS where primeAudio wasn't called yet)면 실패 → 조용히 종료
-      try {
-        await ctx.resume();
-      } catch {
-        setPlaying(false);
-        return;
-      }
+      try { await ctx.resume(); } catch { setPlaying(false); return; }
     }
 
+    const chunks = chunkText(text);
+    if (chunks.length === 0) { setPlaying(false); return; }
+
+    /**
+     * 병렬 fetch: 모든 청크를 동시에 요청하고 Promise 배열로 관리.
+     * → 첫 청크가 도착하면 즉시 재생 시작, 그 사이 다음 청크들은 이미 받아지는 중.
+     * → 순차 방식 대비 대기 시간 = 첫 청크 1회분만 발생.
+     */
+    const fetchPromises = chunks.map(chunk =>
+      fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: chunk, counselorName: counselor }),
+        signal: ac.signal,
+      })
+        .then(r => r.ok ? r.json() as Promise<{ audioBase64?: string; mimeType?: string }> : null)
+        .catch(() => null),
+    );
+
+    const ctxRef = ctx; // closure 용
     try {
-      for (const chunk of chunkText(text)) {
+      for (const fetchPromise of fetchPromises) {
         if (ac.signal.aborted) break;
 
-        let data: { audioBase64?: string; mimeType?: string };
-        try {
-          const res = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: chunk, counselorName: counselor }),
-            signal: ac.signal,
-          });
-          if (!res.ok || ac.signal.aborted) break;
-          data = await res.json() as typeof data;
-        } catch {
-          break;
-        }
-
-        if (!data.audioBase64 || ac.signal.aborted) break;
+        const data = await fetchPromise; // 이 청크만 기다림 (나머지는 백그라운드에서 계속 fetch 중)
+        if (!data?.audioBase64 || ac.signal.aborted) break;
 
         const binary = atob(data.audioBase64);
         const bytes = new Uint8Array(binary.length);
@@ -127,16 +127,14 @@ export function useTts(counselor: string) {
 
         let audioBuffer: AudioBuffer;
         try {
-          audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
-        } catch {
-          break;
-        }
+          audioBuffer = await ctxRef.decodeAudioData(bytes.buffer.slice(0));
+        } catch { break; }
         if (ac.signal.aborted) break;
 
         await new Promise<void>((resolve) => {
-          const source = ctx!.createBufferSource();
+          const source = ctxRef.createBufferSource();
           source.buffer = audioBuffer;
-          source.connect(ctx!.destination);
+          source.connect(ctxRef.destination);
           source.onended = () => resolve();
           source.start();
           ac.signal.addEventListener('abort', () => {
@@ -149,6 +147,7 @@ export function useTts(counselor: string) {
       if (!ac.signal.aborted) setPlaying(false);
     }
   }, [enabled, counselor, stop]);
+
 
   return { playing, enabled, setEnabled, speak, stop, primeAudio };
 }

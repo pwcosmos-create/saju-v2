@@ -9,7 +9,7 @@
 *   **필수 선행 조건:** PayPal Developer Dashboard에서 최신 Client ID와 Secret Key를 `c:\dev\ai 메모리\_company\_agents\business\tools\paypal_revenue.json`에 재설정해야 함.
 
 ## 🗓️ 마일스톤 로드맵 (Milestone Roadmap)
-| 단계 | 목표 (Goal) | 담당 에이전트 | 예상 소요 시간 | 현재 상태 | 다음 액션 (Next Action) |
+| 단계 | 목표 (Goal) | 담당 에이전트 | 예상 소요 시간 | 🚨 데이터 파이프라인 안정화 대기 (최우선) | 다음 액션 (Next Action) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Phase 1** | 데이터 파이프라인 안정화 및 원천 데이터 확보 | 코다리 / 사장님(사용자) | TBD (API Key 복구 후 즉시) | 🔴 대기/진행 중 | API 키 재설정 → 데이터 수집 스크립트 재실행 |
 | **Phase 2** | 핵심 KPI 측정 변수 유효성 검증 및 가설 확정 | 현빈 / 영숙(나) | Data 확보 후 1일 | 🟡 준비 완료 | (데이터 확보 시) 분석 체크리스트 기반 가설 검증 시작 |

@@ -633,8 +633,17 @@ function isAbortError(e: unknown): boolean {
   ) || (e instanceof Error && e.name === 'AbortError');
 }
 
+const CHAT_PANEL_INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
+
 function messagesForChatApi(messages: { role: string; content: string }[]): { role: string; content: string }[] {
   return messages.filter((m) => typeof m.content === 'string' && m.content.trim().length > 0);
+}
+
+/** UI 인트로 말풍선은 API에 넣지 않음 — 스트림 실패·토큰 낭비 방지 */
+function snapshotToApiMessages(messages: { role: string; content: string }[]): { role: string; content: string }[] {
+  return messagesForChatApi(messages).filter(
+    (m) => !(m.role === 'assistant' && m.content.startsWith(CHAT_PANEL_INTRO_PREFIX)),
+  );
 }
 
 function extractStreamDeltaText(rawJson: string): string {
@@ -698,6 +707,41 @@ function processSseLines(
   return false;
 }
 
+async function fetchChatComplete(
+  apiMessages: { role: string; content: string }[],
+  sajuContext: string,
+  options: { chatMode: 'single' | 'compatibility'; compareSajuContext?: string; counselorName: string },
+  signal?: AbortSignal,
+): Promise<string> {
+  const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    signal,
+    body: JSON.stringify({
+      messages: apiMessages,
+      sajuContext,
+      chatMode: options.chatMode,
+      compareSajuContext: options.compareSajuContext ?? '',
+      counselorName: options.counselorName,
+      stream: false,
+    }),
+  });
+  if (!res.ok) {
+    try {
+      const errJson = await res.json() as { error?: string };
+      throw new Error(errJson.error ?? `연결 실패 (${res.status})`);
+    } catch (e) {
+      if (e instanceof Error && e.message) throw e;
+      throw new Error(`연결 실패 (${res.status})`);
+    }
+  }
+  const data = await res.json() as { content?: string; error?: string };
+  if (data.error) throw new Error(data.error);
+  return typeof data.content === 'string' ? data.content : '';
+}
+
 async function streamChat(
   messages: { role: string; content: string }[],
   sajuContext: string,
@@ -715,7 +759,7 @@ async function streamChat(
   };
 
   try {
-    const apiMessages = messagesForChatApi(messages);
+    const apiMessages = snapshotToApiMessages(messages);
     if (!apiMessages.length) {
       finish(() => onError('보낼 메시지가 없습니다'));
       return;
@@ -725,6 +769,7 @@ async function streamChat(
     const res = await fetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
       signal,
       body: JSON.stringify({
         messages: apiMessages,
@@ -732,6 +777,7 @@ async function streamChat(
         chatMode: options.chatMode,
         compareSajuContext: options.compareSajuContext ?? '',
         counselorName: options.counselorName,
+        stream: true,
       }),
     });
     if (signal?.aborted) return;
@@ -810,6 +856,17 @@ async function streamChat(
       emitChunk(recovered);
     } else if (recovered.length > assembled.length) {
       emitChunk(recovered.slice(assembled.length));
+    }
+    if (!assembled && !signal?.aborted) {
+      try {
+        const complete = await fetchChatComplete(apiMessages, sajuContext, options, signal);
+        if (complete.trim()) emitChunk(complete);
+      } catch (e) {
+        if (!isAbortError(e) && !signal?.aborted) {
+          finish(() => onError(e instanceof Error ? e.message : String(e)));
+          return;
+        }
+      }
     }
     if (!signal?.aborted) finish(onDone);
   } catch (e) {
@@ -2685,7 +2742,12 @@ export default function ChatWidget({
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (canStartCounseling && input.trim()) void send();
+                  }
+                }}
                 placeholder={result ? (chatMode === 'compatibility' ? '궁합/비교 질문을 입력하세요...' : '질문을 입력하세요...') : '사주 분석 먼저 해주세요'}
                 disabled={!result || !canStartCounseling}
                 style={{

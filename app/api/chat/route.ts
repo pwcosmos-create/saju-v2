@@ -6,6 +6,22 @@ import { COUNSELOR_ALLOWLIST } from '../../../core/counselor-config';
 // IP당 1분에 20회
 const checkRateLimit = makeRateLimiter(20, 60_000);
 
+function extractCompletionText(json: unknown): string {
+  const j = json as {
+    choices?: Array<{
+      message?: { content?: string | Array<{ type?: string; text?: string }> };
+    }>;
+    error?: { message?: string };
+  };
+  if (j.error?.message) return '';
+  const raw = j.choices?.[0]?.message?.content ?? '';
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw)) {
+    return raw.map((p) => (typeof p === 'string' ? p : p?.text ?? '')).join('');
+  }
+  return '';
+}
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
   if (!checkRateLimit(ip))
@@ -17,6 +33,7 @@ export async function POST(req: NextRequest) {
     compareSajuContext?: string;
     chatMode?: 'single' | 'compatibility';
     counselorName?: string;
+    stream?: boolean;
   };
   try { body = await req.json(); }
   catch { return new Response(JSON.stringify({ error: '잘못된 요청 형식' }), { status: 400 }); }
@@ -72,19 +89,39 @@ ${modeGuide}
 【사주 데이터】
 ${sajuContext}`;
 
+  const llmMessages = [
+    { role: 'system', content: system },
+    ...chatMessages.slice(-10),
+  ];
+  const streamRequested = body.stream !== false;
+
   const upstream = await fetchLlmStream({
-    stream: true,
+    stream: streamRequested,
     max_tokens: 3072,
     temperature: 0.7,
-    messages: [
-      { role: 'system', content: system },
-      ...chatMessages.slice(-10),
-    ],
+    messages: llmMessages,
   });
 
-  if (!upstream.ok || !upstream.body) {
+  if (!upstream.ok) {
     const err = await upstream.text();
     return new Response(JSON.stringify({ error: `오류: ${err}` }), { status: 502 });
+  }
+
+  if (!streamRequested) {
+    try {
+      const json = await upstream.json();
+      const content = extractCompletionText(json);
+      if (!content.trim()) {
+        return new Response(JSON.stringify({ error: '빈 응답' }), { status: 502 });
+      }
+      return Response.json({ content });
+    } catch {
+      return new Response(JSON.stringify({ error: '응답 파싱 실패' }), { status: 502 });
+    }
+  }
+
+  if (!upstream.body) {
+    return new Response(JSON.stringify({ error: '스트림 본문 없음' }), { status: 502 });
   }
 
   return new Response(upstream.body, {

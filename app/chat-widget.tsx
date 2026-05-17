@@ -646,13 +646,16 @@ function snapshotToApiMessages(messages: { role: string; content: string }[]): {
   );
 }
 
-/** Network 에서 통과하는 fortune-stream URL 을 상담에도 사용 (차단·캐시 회피) */
+/** 풀이용 fortune-stream 과 URL 분리 — 동시 연결·차단 목록 회피 */
+const CONSULT_API_PATHS = ['/api/saju-chat', '/api/fortune-reply', '/api/saju-counsel', '/api/fortune-stream'] as const;
 const FORTUNE_STREAM_CONSULT_PATH = '/api/fortune-stream';
-const CONSULT_API_PATHS = [FORTUNE_STREAM_CONSULT_PATH, '/api/fortune-reply', '/api/saju-counsel'] as const;
 const CONSULT_FETCH_MS = 90_000;
 
 function parseConsultResponseBody(raw: string, contentType: string): string {
-  if (contentType.includes('text/event-stream') || raw.trimStart().startsWith('data:')) {
+  const trimmedRaw = raw.trim();
+  if (!trimmedRaw) throw new Error('빈 응답');
+
+  if (contentType.includes('text/event-stream') || trimmedRaw.startsWith('data:')) {
     let combined = '';
     for (const line of raw.split(/\r?\n/)) {
       const trimmed = line.trim();
@@ -669,11 +672,21 @@ function parseConsultResponseBody(raw: string, contentType: string): string {
         /* skip malformed chunk */
       }
     }
+    if (!combined.trim()) throw new Error('빈 응답');
     return combined;
   }
-  const data = JSON.parse(raw) as { content?: string; error?: string };
+
+  let data: { content?: string; error?: string; choices?: Array<{ message?: { content?: string } }> };
+  try {
+    data = JSON.parse(trimmedRaw) as typeof data;
+  } catch {
+    throw new Error('응답 형식 오류');
+  }
   if (data.error) throw new Error(data.error);
-  return typeof data.content === 'string' ? data.content : '';
+  if (typeof data.content === 'string' && data.content.trim()) return data.content;
+  const fromChoice = data.choices?.[0]?.message?.content;
+  if (typeof fromChoice === 'string' && fromChoice.trim()) return fromChoice;
+  throw new Error('빈 응답');
 }
 
 async function fetchConsultOnce(
@@ -1207,18 +1220,26 @@ export default function ChatWidget({
     });
   }
 
-  function applyConsultReply(
-    assistantText: string,
-    turnGen: number,
-    snapshotForStream: Msg[],
-  ) {
+  function finishConsultTurn(turnGen: number) {
     if (turnGen !== chatTurnGenRef.current) return;
-
     setLoading(false);
     setVoiceActivity(null);
     setVoiceNote(null);
     setChatLoadingStep(0);
     clearVerifyPauseTimer();
+  }
+
+  function applyConsultReply(
+    assistantText: string,
+    turnGen: number,
+    snapshotForStream: Msg[],
+  ) {
+    if (turnGen !== chatTurnGenRef.current) {
+      finishConsultTurn(turnGen);
+      return;
+    }
+
+    finishConsultTurn(turnGen);
 
     const streamed = assistantText.trim();
     if (!streamed) {
@@ -1432,19 +1453,16 @@ export default function ChatWidget({
         },
         ac.signal,
       );
+      streamFinished = true;
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === 'AbortError';
       if (turnGen === chatTurnGenRef.current) {
         streamFinished = true;
         clearChatStepTimers();
-        clearVerifyPauseTimer();
-        setChatLoadingStep(0);
-        setLoading(false);
-        setVoiceActivity(null);
-        setVoiceNote(null);
-        setReplyTyping(false);
         typeCancelRef.current = null;
         pendingAssistantFullRef.current = null;
+        setReplyTyping(false);
+        finishConsultTurn(turnGen);
         if (isAbort) {
           setAssistantError('요청 시간이 초과되었거나 중단되었습니다. 다시 질문해 주세요.');
         } else {
@@ -1457,7 +1475,6 @@ export default function ChatWidget({
       window.clearTimeout(consultTimeoutId);
     }
 
-    streamFinished = true;
     chatStreamingDraftRef.current = '';
     clearChatStepTimers();
     applyConsultReply(assistantText, turnGen, snapshotForStream);

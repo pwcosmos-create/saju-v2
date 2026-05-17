@@ -1,2 +1,23 @@
-/** 심층 상담 LLM — `/api/chat`, `/api/consult` 는 일부 차단 목록에 걸릴 수 있어 saju-counsel 사용 */
-export { POST, OPTIONS } from '../chat/route';
+import { NextRequest } from 'next/server';
+import { postConsult, type ConsultRequestBody } from '../../../core/api/consult-post';
+
+export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
+  let body: ConsultRequestBody;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ error: '잘못된 요청 형식' }), { status: 400 });
+  }
+  return postConsult(ip, { ...body, stream: false });
+}
+
+export function OPTIONS() {
+  return new Response(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
+}

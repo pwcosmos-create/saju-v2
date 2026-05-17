@@ -23,8 +23,7 @@ const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문�
 const checkFortuneStreamRateLimit = makeRateLimiter(5, 600_000);
 
 function isConsultBody(body: Record<string, unknown>): body is ConsultRequestBody {
-  if (body.mode === 'counsel') return true;
-  return Array.isArray(body.messages) && body.messages.length > 0;
+  return body.mode === 'counsel';
 }
 
 export async function POST(req: NextRequest) {

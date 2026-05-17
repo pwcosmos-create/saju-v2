@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { postConsult, type ConsultRequestBody } from '../../../core/api/consult-post';
 
+/** AI 심층 상담 전용 — fortune-stream(풀이)과 URL 분리 */
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
   let body: ConsultRequestBody;

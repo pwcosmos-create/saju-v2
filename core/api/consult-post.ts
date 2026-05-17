@@ -6,12 +6,14 @@ const checkConsultRateLimit = makeRateLimiter(20, 60_000);
 
 function extractCompletionText(json: unknown): string {
   const j = json as {
+    content?: string;
     choices?: Array<{
       message?: { content?: string | Array<{ type?: string; text?: string }> };
     }>;
     error?: { message?: string };
   };
   if (j.error?.message) return '';
+  if (typeof j.content === 'string' && j.content.trim()) return j.content;
   const raw = j.choices?.[0]?.message?.content ?? '';
   if (typeof raw === 'string') return raw;
   if (Array.isArray(raw)) {

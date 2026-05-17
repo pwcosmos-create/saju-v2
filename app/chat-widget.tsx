@@ -646,67 +646,6 @@ function snapshotToApiMessages(messages: { role: string; content: string }[]): {
   );
 }
 
-function extractStreamDeltaText(rawJson: string): string {
-  try {
-    const json = JSON.parse(rawJson) as {
-      choices?: Array<{
-        delta?: { content?: string | Array<{ type?: string; text?: string }> };
-        message?: { content?: string | Array<{ type?: string; text?: string }> };
-      }>;
-      error?: { message?: string };
-    };
-    if (json.error?.message) return '';
-    const choice = json.choices?.[0];
-    const raw =
-      choice?.delta?.content
-      ?? choice?.message?.content
-      ?? '';
-    if (typeof raw === 'string') return raw;
-    if (Array.isArray(raw)) {
-      return raw
-        .map((p) => (typeof p === 'string' ? p : p?.text ?? ''))
-        .join('');
-    }
-    return '';
-  } catch {
-    return '';
-  }
-}
-
-/** 라인 단위 파싱이 놓친 청크가 있을 때 전체 SSE 버퍼에서 한 번 더 합침 */
-function collectAllSseText(rawSse: string): string {
-  let combined = '';
-  for (const line of rawSse.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('data:')) continue;
-    const payload = trimmed.replace(/^data:\s*/, '').trim();
-    if (!payload || payload === '[DONE]') continue;
-    const part = extractStreamDeltaText(payload);
-    if (part) combined += part;
-  }
-  return combined;
-}
-
-function processSseLines(
-  lines: string[],
-  onChunk: (t: string) => void,
-  onDone: () => void,
-): boolean {
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('data:')) continue;
-    const raw = trimmed.replace(/^data:\s*/, '').trim();
-    if (!raw) continue;
-    if (raw === '[DONE]') {
-      onDone();
-      return true;
-    }
-    const text = extractStreamDeltaText(raw);
-    if (text) onChunk(text);
-  }
-  return false;
-}
-
 async function fetchChatComplete(
   apiMessages: { role: string; content: string }[],
   sajuContext: string,
@@ -740,139 +679,6 @@ async function fetchChatComplete(
   const data = await res.json() as { content?: string; error?: string };
   if (data.error) throw new Error(data.error);
   return typeof data.content === 'string' ? data.content : '';
-}
-
-async function streamChat(
-  messages: { role: string; content: string }[],
-  sajuContext: string,
-  options: { chatMode: 'single' | 'compatibility'; compareSajuContext?: string; counselorName: string },
-  onChunk: (t: string) => void,
-  onDone: () => void,
-  onError: (e: string) => void,
-  signal?: AbortSignal,
-) {
-  let settled = false;
-  const finish = (fn: () => void) => {
-    if (settled) return;
-    settled = true;
-    fn();
-  };
-
-  try {
-    const apiMessages = snapshotToApiMessages(messages);
-    if (!apiMessages.length) {
-      finish(() => onError('보낼 메시지가 없습니다'));
-      return;
-    }
-
-    const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
-    const res = await fetch(`${base}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',
-      signal,
-      body: JSON.stringify({
-        messages: apiMessages,
-        sajuContext,
-        chatMode: options.chatMode,
-        compareSajuContext: options.compareSajuContext ?? '',
-        counselorName: options.counselorName,
-        stream: true,
-      }),
-    });
-    if (signal?.aborted) return;
-    const contentType = res.headers.get('content-type') ?? '';
-    if (!res.ok) {
-      let detail = `연결 실패 (${res.status})`;
-      try {
-        const errJson = await res.json() as { error?: string };
-        if (errJson.error) detail = errJson.error;
-      } catch {
-        /* noop */
-      }
-      finish(() => onError(detail));
-      return;
-    }
-    if (!res.body) {
-      finish(() => onError('연결 실패'));
-      return;
-    }
-    if (contentType.includes('application/json')) {
-      try {
-        const errJson = await res.json() as { error?: string };
-        finish(() => onError(errJson.error ?? '응답 형식 오류'));
-      } catch {
-        finish(() => onError('응답 형식 오류'));
-      }
-      return;
-    }
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let sseBuffer = '';
-    let rawAccum = '';
-    let assembled = '';
-    const emitChunk = (t: string) => {
-      if (!t) return;
-      assembled += t;
-      onChunk(t);
-    };
-    const handleDone = () => finish(onDone);
-
-    const drainSseBuffer = (finalFlush: boolean) => {
-      const parts = sseBuffer.split(/\r?\n/);
-      if (finalFlush) {
-        const lines = parts.filter((l) => l.trim().length > 0);
-        sseBuffer = '';
-        return processSseLines(lines, emitChunk, handleDone);
-      }
-      sseBuffer = parts.pop() ?? '';
-      return processSseLines(parts, emitChunk, handleDone);
-    };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (signal?.aborted) {
-        try {
-          reader.releaseLock();
-        } catch {
-          /* noop */
-        }
-        return;
-      }
-      if (value) {
-        const piece = dec.decode(value, { stream: true });
-        rawAccum += piece;
-        sseBuffer += piece;
-        if (drainSseBuffer(false)) return;
-      }
-      if (done) {
-        sseBuffer += dec.decode();
-        if (drainSseBuffer(true)) return;
-        break;
-      }
-    }
-    const recovered = collectAllSseText(rawAccum);
-    if (recovered && !assembled) {
-      emitChunk(recovered);
-    } else if (recovered.length > assembled.length) {
-      emitChunk(recovered.slice(assembled.length));
-    }
-    if (!assembled && !signal?.aborted) {
-      try {
-        const complete = await fetchChatComplete(apiMessages, sajuContext, options, signal);
-        if (complete.trim()) emitChunk(complete);
-      } catch (e) {
-        if (!isAbortError(e) && !signal?.aborted) {
-          finish(() => onError(e instanceof Error ? e.message : String(e)));
-          return;
-        }
-      }
-    }
-    if (!signal?.aborted) finish(onDone);
-  } catch (e) {
-    if (isAbortError(e) || signal?.aborted) return;
-    finish(() => onError(String(e)));
-  }
 }
 
 function buildCompatibilityContext(primary: SajuResult, compare: SajuResult): string {
@@ -1391,7 +1197,9 @@ export default function ChatWidget({
 
     const sajuContext = buildChatContext(result);
     const compareSajuContext = compareResult ? buildCompatibilityContext(result, compareResult) : undefined;
-    const bufferRef = { current: '' };
+    const apiMessages = snapshotToApiMessages(
+      snapshotForStream.map((m) => ({ role: m.role, content: m.content })),
+    );
     let streamFinished = false;
 
     chatStepTimersRef.current.t1 = window.setTimeout(() => {
@@ -1403,151 +1211,139 @@ export default function ChatWidget({
       setChatLoadingStep(3);
     }, CHAT_STEP_ADVANCE_MS[1]);
 
-    await streamChat(
-      snapshotForStream.map(m => ({ role: m.role, content: m.content })),
-      sajuContext,
-      {
-        chatMode,
-        compareSajuContext,
-        counselorName: selectedCounselor,
-      },
-      (chunk) => {
+    const scheduleAssistantReply = (assistantText: string) => {
+      const verifyMs = assistantText.trim().length < 120 ? 800 : VERIFY_PAUSE_MS;
+      verifyPauseTimerRef.current = window.setTimeout(() => {
+        verifyPauseTimerRef.current = null;
         if (turnGen !== chatTurnGenRef.current) return;
-        bufferRef.current += chunk;
-        chatStreamingDraftRef.current = bufferRef.current;
-        if (bufferRef.current.length % 500 === 0 && !streamFinished) setChatLoadingStep(2);
-        if (bufferRef.current.length > 0) {
-          setMsgs((prev) => {
-            const u = [...prev];
-            const last = u[u.length - 1];
-            if (last?.role !== 'assistant') return prev;
-            u[u.length - 1] = { role: 'assistant', content: bufferRef.current };
-            return u;
-          });
-        }
-      },
-      () => {
-        if (turnGen !== chatTurnGenRef.current) return;
-        streamFinished = true;
-        const draftAtEnd = chatStreamingDraftRef.current;
-        chatStreamingDraftRef.current = '';
-        clearChatStepTimers();
-        setChatLoadingStep(3);
-
-        const verifyMs = bufferRef.current.trim().length < 120 ? 800 : VERIFY_PAUSE_MS;
-        verifyPauseTimerRef.current = window.setTimeout(() => {
-          verifyPauseTimerRef.current = null;
-          if (turnGen !== chatTurnGenRef.current) return;
-          setLoading(false);
-          setVoiceActivity(null);
-          setVoiceNote(null);
-          const streamed = bufferRef.current.trim() || draftAtEnd.trim();
-          if (!streamed) {
-            setMsgs((prev) => {
-              const u = [...prev];
-              if (u.length && u[u.length - 1].role === 'assistant') {
-                u[u.length - 1] = {
-                  role: 'assistant',
-                  content: '답변을 불러오지 못했습니다. 다시 질문해 주세요.',
-                };
-              }
-              return u;
-            });
-            setChatLoadingStep(0);
-            setReplyTyping(false);
-            return;
-          }
-          bufferRef.current = streamed;
-          const userTurn = snapshotForStream.filter((m) => m.role === 'user').length;
-          const finalized = addFollowUpPrompt(
-            finalizeKoreanAnswer(streamed) || streamed,
-            userTurn,
-          );
-          if (!finalized.trim()) {
-            setMsgs((prev) => {
-              const u = [...prev];
-              if (u.length && u[u.length - 1].role === 'assistant') {
-                u[u.length - 1] = {
-                  role: 'assistant',
-                  content: '답변을 불러오지 못했습니다. 다시 질문해 주세요.',
-                };
-              }
-              return u;
-            });
-            setChatLoadingStep(0);
-            setReplyTyping(false);
-            return;
-          }
-          setChatLoadingStep(4);
-          pendingAssistantFullRef.current = finalized;
-          const shortReply = finalized.length > 0 && finalized.length <= 320;
-          if (finalized) {
-            if (isIosLikeDevice()) {
-              setAnswerPlayOffer(finalized);
-              void primeMediaForTts().then(() => {
-                void speakWithPreferredMode(finalized, selectedCounselor);
-              });
-            } else {
-              void speakWithPreferredMode(finalized, selectedCounselor);
-            }
-          }
-          typeCancelRef.current?.();
-          typeCancelRef.current = null;
-          if (shortReply) {
-            setMsgs((prev) => {
-              const u = [...prev];
-              u[u.length - 1] = { role: 'assistant', content: finalized };
-              return u;
-            });
-            setReplyTyping(false);
-            setChatLoadingStep(0);
-            pendingAssistantFullRef.current = null;
-          } else {
-            setReplyTyping(true);
-            const syncMs = typeIntervalMsForSpeechSync(
-              finalized,
-              ttsOutputMode,
-              chatMode === 'compatibility',
-            );
-            typeCancelRef.current = typeEffect(finalized, syncMs, (typed) => {
-              if (turnGen !== chatTurnGenRef.current) return;
-              setMsgs((prev) => {
-                const u = [...prev];
-                u[u.length - 1] = { role: 'assistant', content: typed };
-                return u;
-              });
-            }, () => {
-              if (turnGen !== chatTurnGenRef.current) return;
-              setReplyTyping(false);
-              setChatLoadingStep(0);
-              typeCancelRef.current = null;
-              pendingAssistantFullRef.current = null;
-            });
-          }
-        }, verifyMs);
-      },
-      (err) => {
-        if (turnGen !== chatTurnGenRef.current) return;
-        streamFinished = true;
-        chatStreamingDraftRef.current = '';
-        clearChatStepTimers();
-        clearVerifyPauseTimer();
-        setChatLoadingStep(0);
-        setMsgs(prev => {
-          const u = [...prev];
-          u[u.length - 1] = { role: 'assistant', content: `오류가 발생했습니다: ${err}` };
-          return u;
-        });
         setLoading(false);
         setVoiceActivity(null);
         setVoiceNote(null);
-        setReplyTyping(false);
+        const streamed = assistantText.trim();
+        if (!streamed) {
+          setMsgs((prev) => {
+            const u = [...prev];
+            if (u.length && u[u.length - 1].role === 'assistant') {
+              u[u.length - 1] = {
+                role: 'assistant',
+                content: '답변을 불러오지 못했습니다. 다시 질문해 주세요.',
+              };
+            }
+            return u;
+          });
+          setChatLoadingStep(0);
+          setReplyTyping(false);
+          return;
+        }
+        const userTurn = snapshotForStream.filter((m) => m.role === 'user').length;
+        const finalized = addFollowUpPrompt(
+          finalizeKoreanAnswer(streamed) || streamed,
+          userTurn,
+        );
+        if (!finalized.trim()) {
+          setMsgs((prev) => {
+            const u = [...prev];
+            if (u.length && u[u.length - 1].role === 'assistant') {
+              u[u.length - 1] = {
+                role: 'assistant',
+                content: '답변을 불러오지 못했습니다. 다시 질문해 주세요.',
+              };
+            }
+            return u;
+          });
+          setChatLoadingStep(0);
+          setReplyTyping(false);
+          return;
+        }
+        setChatLoadingStep(4);
+        pendingAssistantFullRef.current = finalized;
+        const shortReply = finalized.length > 0 && finalized.length <= 320;
+        if (finalized) {
+          if (isIosLikeDevice()) {
+            setAnswerPlayOffer(finalized);
+            void primeMediaForTts().then(() => {
+              void speakWithPreferredMode(finalized, selectedCounselor);
+            });
+          } else {
+            void speakWithPreferredMode(finalized, selectedCounselor);
+          }
+        }
         typeCancelRef.current?.();
         typeCancelRef.current = null;
-        pendingAssistantFullRef.current = null;
-      },
-      ac.signal,
-    );
+        if (shortReply) {
+          setMsgs((prev) => {
+            const u = [...prev];
+            u[u.length - 1] = { role: 'assistant', content: finalized };
+            return u;
+          });
+          setReplyTyping(false);
+          setChatLoadingStep(0);
+          pendingAssistantFullRef.current = null;
+        } else {
+          setReplyTyping(true);
+          const syncMs = typeIntervalMsForSpeechSync(
+            finalized,
+            ttsOutputMode,
+            chatMode === 'compatibility',
+          );
+          typeCancelRef.current = typeEffect(finalized, syncMs, (typed) => {
+            if (turnGen !== chatTurnGenRef.current) return;
+            setMsgs((prev) => {
+              const u = [...prev];
+              u[u.length - 1] = { role: 'assistant', content: typed };
+              return u;
+            });
+          }, () => {
+            if (turnGen !== chatTurnGenRef.current) return;
+            setReplyTyping(false);
+            setChatLoadingStep(0);
+            typeCancelRef.current = null;
+            pendingAssistantFullRef.current = null;
+          });
+        }
+      }, verifyMs);
+    };
+
+    let assistantText = '';
+    try {
+      assistantText = await fetchChatComplete(
+        apiMessages,
+        sajuContext,
+        {
+          chatMode,
+          compareSajuContext,
+          counselorName: selectedCounselor,
+        },
+        ac.signal,
+      );
+    } catch (err) {
+      if (turnGen !== chatTurnGenRef.current) return;
+      streamFinished = true;
+      chatStreamingDraftRef.current = '';
+      clearChatStepTimers();
+      clearVerifyPauseTimer();
+      setChatLoadingStep(0);
+      const errorDetail = err instanceof Error ? err.message : String(err);
+      setMsgs((prev) => {
+        const u = [...prev];
+        u[u.length - 1] = { role: 'assistant', content: `오류가 발생했습니다: ${errorDetail}` };
+        return u;
+      });
+      setLoading(false);
+      setVoiceActivity(null);
+      setVoiceNote(null);
+      setReplyTyping(false);
+      typeCancelRef.current = null;
+      pendingAssistantFullRef.current = null;
+      return;
+    }
+
+    if (turnGen !== chatTurnGenRef.current) return;
+    streamFinished = true;
+    chatStreamingDraftRef.current = '';
+    clearChatStepTimers();
+    setChatLoadingStep(3);
+    scheduleAssistantReply(assistantText);
   }
 
   function stopRecordingTracks() {

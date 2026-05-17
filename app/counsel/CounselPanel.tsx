@@ -34,7 +34,7 @@ const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
 function buildIntro(counselor: string, result: SajuResult): string {
   return (
     `${INTRO_PREFIX}.\n이번 세션의 배정 상담사는 「${counselor}」입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n\n사주나 운세에 관해 궁금한 점을 편하게 물어보세요.`
-    + `\n\n💛 운영 후원 안내\n서버비·운영비 명목으로 소액 후원을 받습니다.\n후원 여부와 관계없이 서비스 이용에는 제한이 없습니다.`
+    + `\n\n💛 운영 후원 안내\n서버비·운영비 명목으로 소액 후원을 받습니다.\n후원 여부와 관계없이 서비스 이용에는 제한이 없습니다.\n(토스뱅크 100091449133)`
   );
 }
 

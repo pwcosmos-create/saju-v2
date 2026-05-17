@@ -69,7 +69,21 @@ ${compareSajuContext}
 `
     : '';
 
-  const system = `【상담 원칙】
+  // 서버 사이드에서 한국 시간(KST) 기준 날짜 생성
+  const now = new Date();
+  const kstFormatter = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric', month: 'long', day: 'numeric',
+    weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const todayStr = kstFormatter.format(now); // 예: 2026년 5월 17일 일요일 21:52
+
+  const system = `【오늘 날짜 및 시간】
+- 현재 날짜·시각(KST): ${todayStr}
+- 이 날짜를 기준으로 오늘의 운세, 올해 운, 현재 시기의 흐름을 답변하세요.
+- 사용자가 "오늘", "요즘", "지금", "이번 달", "올해" 등을 언급할 때 반드시 이 날짜를 기준으로 하세요.
+
+【상담 원칙】
 - **오직 사주 명리학 및 운세와 관련된 질문에만 답변하세요.**
 - 사주와 관련 없는 질문(맛집 추천, 일반 상식, 프로그래밍 등)에는 "저는 사주 명리 상담을 위한 AI입니다. 사주나 운세에 관한 질문을 해주시면 정성껏 답변해 드리겠습니다."라고 정중히 거절하세요.
 - **인사**(안녕하세요, 반갑습니다, 하이, dkssud, hello 등)에는 거절하지 말고, 상담사로서 따뜻하게 짧게 맞이한 뒤 이어서 사주·오늘의 기운·궁금한 운세를 편하게 물어보도록 자연스럽게 유도하세요.
@@ -91,6 +105,7 @@ ${modeGuide}
 
 【사주 데이터】
 ${sajuContext}`;
+
 
   const llmMessages = [
     { role: 'system', content: system },

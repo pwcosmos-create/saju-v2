@@ -115,7 +115,7 @@ ${sajuContext}`;
 
   const upstream = await fetchLlmStream({
     stream: streamRequested,
-    max_tokens: 3072,
+    max_tokens: 8192,
     temperature: 0.7,
     messages: llmMessages,
   });

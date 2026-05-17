@@ -792,6 +792,8 @@ export default function ChatWidget({
   const ttsBlobUrlRef = useRef<string | null>(null);
   /** 정지·새 재생 시 이전 비동기 TTS 루프 무효화 */
   const speakGenRef = useRef(0);
+  const ttsFetchAbortRef = useRef<AbortController | null>(null);
+  const introTtsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wakeLockRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef  = useRef<any>(null);
@@ -913,6 +915,12 @@ export default function ChatWidget({
     chatStreamAbortRef.current = null;
     clearChatStepTimers();
     clearVerifyPauseTimer();
+    if (introTtsTimerRef.current) {
+      clearTimeout(introTtsTimerRef.current);
+      introTtsTimerRef.current = null;
+    }
+    ttsFetchAbortRef.current?.abort();
+    ttsFetchAbortRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -1134,8 +1142,19 @@ export default function ChatWidget({
     setIntroSpoken(true);
     /** iOS는 useEffect 시점에 오디오 정책이 막혀 인트로 TTS가 실패하는 경우가 많아 생략 */
     if (isIosLikeDevice()) return;
-    const intro = `${selectedCounselor} 상담사가 이 세션 내내 함께합니다. 궁금한 점을 편하게 물어보세요.`;
-    void speakWithPreferredMode(intro, selectedCounselor);
+    if (introTtsTimerRef.current) clearTimeout(introTtsTimerRef.current);
+    introTtsTimerRef.current = setTimeout(() => {
+      introTtsTimerRef.current = null;
+      if (!open) return;
+      const intro = `${selectedCounselor} 상담사가 이 세션 내내 함께합니다. 궁금한 점을 편하게 물어보세요.`;
+      void speakWithPreferredMode(intro, selectedCounselor);
+    }, 1800);
+    return () => {
+      if (introTtsTimerRef.current) {
+        clearTimeout(introTtsTimerRef.current);
+        introTtsTimerRef.current = null;
+      }
+    };
   }, [open, result, canStartCounseling, introSpoken, selectedCounselor]);
 
   useEffect(() => {
@@ -1184,6 +1203,10 @@ export default function ChatWidget({
 
     clearVerifyPauseTimer();
     clearChatStepTimers();
+    if (introTtsTimerRef.current) {
+      clearTimeout(introTtsTimerRef.current);
+      introTtsTimerRef.current = null;
+    }
 
     stopTTS();
     typeCancelRef.current?.();
@@ -1726,6 +1749,8 @@ export default function ChatWidget({
   }
 
   function stopTTS() {
+    ttsFetchAbortRef.current?.abort();
+    ttsFetchAbortRef.current = null;
     speakKoreanSessionId += 1;
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       clearVoiceWaitRegistration(window.speechSynthesis);
@@ -1785,6 +1810,7 @@ export default function ChatWidget({
     chunkText: string,
     counselorName: string,
     ttsContext: 'single' | 'compatibility',
+    signal?: AbortSignal,
   ): Promise<{ mimeType: string; audioBase64: string } | null> {
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
@@ -1793,13 +1819,16 @@ export default function ChatWidget({
       const res = await fetch(`${base}/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        signal,
         body: JSON.stringify(body),
       });
       if (!res.ok) return null;
       const data = await res.json() as { audioBase64?: string; mimeType?: string; error?: string };
       if (data.error || !data.audioBase64 || !data.mimeType) return null;
       return { mimeType: data.mimeType, audioBase64: data.audioBase64 };
-    } catch {
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return null;
       return null;
     }
   }
@@ -1853,6 +1882,8 @@ export default function ChatWidget({
     if (!text) return;
     /** isSpeaking 상태가 늦게 반영되면 stopTTS 가 스킵되어 이전 HTMLAudio 가 고아로 재생될 수 있음(궁합 등 연속 답변에서 겹침) */
     stopTTS();
+    const ttsAc = new AbortController();
+    ttsFetchAbortRef.current = ttsAc;
     const gen = speakGenRef.current;
 
     setIsSpeaking(true);
@@ -1895,13 +1926,13 @@ export default function ChatWidget({
     }
 
     let serverOk = true;
-    let pendingPayload = fetchServerTtsPayload(chunks[0], counselorName, ttsContext);
+    let pendingPayload = fetchServerTtsPayload(chunks[0], counselorName, ttsContext, ttsAc.signal);
     for (let i = 0; i < chunks.length; i++) {
-      if (gen !== speakGenRef.current) return;
+      if (gen !== speakGenRef.current || ttsAc.signal.aborted) return;
       // eslint-disable-next-line no-await-in-loop
       const payload = await pendingPayload;
       pendingPayload = i + 1 < chunks.length
-        ? fetchServerTtsPayload(chunks[i + 1], counselorName, ttsContext)
+        ? fetchServerTtsPayload(chunks[i + 1], counselorName, ttsContext, ttsAc.signal)
         : Promise.resolve(null);
       if (!payload) {
         serverOk = false;
@@ -1924,7 +1955,8 @@ export default function ChatWidget({
       }
     }
 
-    if (gen !== speakGenRef.current) return;
+    if (gen !== speakGenRef.current || ttsAc.signal.aborted) return;
+    if (ttsFetchAbortRef.current === ttsAc) ttsFetchAbortRef.current = null;
 
     if (!serverOk) {
       runBrowserTts();

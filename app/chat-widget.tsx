@@ -646,8 +646,9 @@ function snapshotToApiMessages(messages: { role: string; content: string }[]): {
   );
 }
 
-/** fortune-stream 과 같은 prefix 우선 — chat/consult 는 차단 목록에 걸리기 쉬움 */
-const CONSULT_API_PATHS = ['/api/fortune-reply', '/api/saju-counsel', '/api/consult'] as const;
+/** Network 에서 통과하는 fortune-stream URL 을 상담에도 사용 (차단·캐시 회피) */
+const FORTUNE_STREAM_CONSULT_PATH = '/api/fortune-stream';
+const CONSULT_API_PATHS = [FORTUNE_STREAM_CONSULT_PATH, '/api/fortune-reply', '/api/saju-counsel'] as const;
 const CONSULT_FETCH_MS = 90_000;
 
 function parseConsultResponseBody(raw: string, contentType: string): string {
@@ -683,20 +684,32 @@ async function fetchConsultOnce(
   signal?: AbortSignal,
 ): Promise<string> {
   const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
+  const useFortuneStream = apiPath === FORTUNE_STREAM_CONSULT_PATH;
   const res = await fetch(`${base}${apiPath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     cache: 'no-store',
     credentials: 'same-origin',
     signal,
-    body: JSON.stringify({
-      messages: apiMessages,
-      sajuContext,
-      chatMode: options.chatMode,
-      compareSajuContext: options.compareSajuContext ?? '',
-      counselorName: options.counselorName,
-      stream: false,
-    }),
+    body: JSON.stringify(
+      useFortuneStream
+        ? {
+            mode: 'counsel',
+            messages: apiMessages,
+            sajuContext,
+            chatMode: options.chatMode,
+            compareSajuContext: options.compareSajuContext ?? '',
+            counselorName: options.counselorName,
+          }
+        : {
+            messages: apiMessages,
+            sajuContext,
+            chatMode: options.chatMode,
+            compareSajuContext: options.compareSajuContext ?? '',
+            counselorName: options.counselorName,
+            stream: false,
+          },
+    ),
   });
 
   const raw = await res.text();

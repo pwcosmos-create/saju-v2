@@ -1,13 +1,13 @@
 /**
  * AI Saju Fortune Stream API - v2.0.4
- * 
- * - Gemini 2.5 Flash를 통한 실시간 사주 분석 스트리밍
- * - max_tokens를 충분히 확보하여 끊김 방지 (16384)
- * - IP 기반 레이트 리미팅 적용
+ *
+ * - prompt: AI 심층 풀이 스트리밍
+ * - mode counsel (+ messages): 심층 상담 JSON (차단 회피 — 클라이언트가 동일 URL 사용)
  */
 import { NextRequest } from 'next/server';
 import { fetchLlmStream } from '../../../core/config/llm';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
+import { postConsult, type ConsultRequestBody } from '../../../core/api/consult-post';
 
 const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문가입니다.
 사용자의 사주 분석 결과를 전문적이면서도 따뜻한 상담가의 어조로 풀어주세요.
@@ -20,33 +20,41 @@ const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문�
 5. 오직 한국어로만 답변하며, 친절하고 상세한 평어체(~해요, ~네요)를 사용하세요.
 6. 약 2700~3600자 수준의 풍부한 분량으로 상세하게 풀이해 주세요. 중간에 끊기지 않도록 문장 마무리를 확실히 하세요.`;
 
-// IP당 10분에 5회
-const checkRateLimit = makeRateLimiter(5, 600_000);
+const checkFortuneStreamRateLimit = makeRateLimiter(5, 600_000);
+
+function isConsultBody(body: Record<string, unknown>): body is ConsultRequestBody {
+  if (body.mode === 'counsel') return true;
+  return Array.isArray(body.messages) && body.messages.length > 0;
+}
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
 
-  if (!checkRateLimit(ip)) {
-    return new Response(JSON.stringify({ error: '요청 한도 초과. 1분 후 다시 시도해주세요.' }), { status: 429 });
-  }
-
-  let body: { prompt?: string };
+  let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
     return new Response(JSON.stringify({ error: '잘못된 요청 형식' }), { status: 400 });
   }
 
-  const prompt = body.prompt?.slice(0, 20000); // blueprints.ts 전체 프롬프트 수용 (월별 데이터 포함)
+  if (isConsultBody(body)) {
+    return postConsult(ip, { ...body, stream: false });
+  }
+
+  if (!checkFortuneStreamRateLimit(ip)) {
+    return new Response(JSON.stringify({ error: '요청 한도 초과. 1분 후 다시 시도해주세요.' }), { status: 429 });
+  }
+
+  const prompt = typeof body.prompt === 'string' ? body.prompt.slice(0, 20000) : '';
   if (!prompt) return new Response(JSON.stringify({ error: 'prompt 없음' }), { status: 400 });
 
   const upstream = await fetchLlmStream({
-    stream:      true,
-    max_tokens:  32768, // Gemini 2.5 Flash 최대 출력 토큰
+    stream: true,
+    max_tokens: 32768,
     temperature: 0.7,
     messages: [
       { role: 'system', content: SYSTEM },
-      { role: 'user',   content: prompt },
+      { role: 'user', content: prompt },
     ],
   });
 
@@ -57,9 +65,9 @@ export async function POST(req: NextRequest) {
 
   return new Response(upstream.body, {
     headers: {
-      'Content-Type':  'text/event-stream',
+      'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection':    'keep-alive',
+      Connection: 'keep-alive',
       'Access-Control-Allow-Origin': '*',
     },
   });

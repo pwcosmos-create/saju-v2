@@ -1,4 +1,5 @@
 import { fetchLlmStream } from '../config/llm';
+import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
 import { makeRateLimiter } from '../http-client/rate-limit';
 import { COUNSELOR_ALLOWLIST } from '../counselor-config';
 
@@ -78,6 +79,13 @@ ${compareSajuContext}
   });
   const todayStr = kstFormatter.format(now); // 예: 2026년 5월 17일 일요일 21:52
 
+  const lastUserMessage = [...chatMessages].reverse().find((m) => m.role === 'user')?.content?.trim() ?? '';
+  const cardKnowledge = buildConsultCouncilKnowledgeResult(
+    sajuContext,
+    lastUserMessage,
+    chatMode === 'compatibility' ? compareSajuContext : '',
+  );
+
   const system = `【오늘 날짜 및 시간】
 - 현재 날짜·시각(KST): ${todayStr}
 - 이 날짜를 기준으로 오늘의 운세, 올해 운, 현재 시기의 흐름을 답변하세요.
@@ -102,7 +110,7 @@ ${counselorPersona}
 사용자가 한국어로 질문하면 한국어로, 다른 언어로 질문하면 그 언어로 답변하세요. 단, 사주 용어는 한국 명리학 용어를 기준으로 유지하세요.
 
 ${modeGuide}
-
+${cardKnowledge.systemAppend ? `\n${cardKnowledge.systemAppend}\n` : ''}
 【사주 데이터】
 ${sajuContext}`;
 
@@ -132,7 +140,12 @@ ${sajuContext}`;
       if (!content.trim()) {
         return new Response(JSON.stringify({ error: '빈 응답' }), { status: 502 });
       }
-      return Response.json({ content });
+      return Response.json({ content }, {
+        headers: {
+          'X-Gemma24-Knowledge-Count': String(cardKnowledge.cardCount),
+          'X-Saju-Council-Badge': cardKnowledge.badge,
+        },
+      });
     } catch {
       return new Response(JSON.stringify({ error: '응답 파싱 실패' }), { status: 502 });
     }
@@ -149,6 +162,8 @@ ${sajuContext}`;
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
       'Access-Control-Allow-Origin': '*',
+      'X-Gemma24-Knowledge-Count': String(cardKnowledge.cardCount),
+      'X-Saju-Council-Badge': cardKnowledge.badge,
     },
   });
 }

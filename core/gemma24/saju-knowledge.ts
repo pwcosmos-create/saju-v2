@@ -189,6 +189,18 @@ export function extractPromptFacts(query: string): PromptFacts {
     }
   }
 
+  if (!resolvedStemKo) {
+    const chatDay = query.match(/일주\s+(\S)/);
+    if (chatDay) {
+      const ch = chatDay[1];
+      const idx = STEM_KO.findIndex((s) => s.startsWith(ch));
+      if (idx >= 0) {
+        resolvedStemKo = STEM_KO[idx];
+        stemHanja = STEM_HANJA[idx];
+      }
+    }
+  }
+
   let gyeokguk: string | null = null;
   for (const name of GYEOK_NAMES) {
     if (query.includes(name)) {
@@ -203,12 +215,26 @@ export function extractPromptFacts(query: string): PromptFacts {
     const line = yongsinMatch[1];
     yongsinElem = ELEM_CHARS.find((e) => line.includes(e)) ?? null;
   }
+  if (!yongsinElem) {
+    const chatYong = query.match(/용신\(用神\):\s*(\S+)/);
+    if (chatYong) {
+      yongsinElem = ELEM_CHARS.find((e) => chatYong[1].includes(e)) ?? null;
+    }
+  }
 
   const gisinElems: string[] = [];
   const gisinMatch = query.match(/기신\(忌神\)\s*=\s*([^\n]+)/);
   if (gisinMatch) {
     for (const e of ELEM_CHARS) {
       if (gisinMatch[1].includes(e)) gisinElems.push(e);
+    }
+  }
+  if (!gisinElems.length) {
+    const chatGisin = query.match(/기신\(忌神\):\s*([^\n]+)/);
+    if (chatGisin) {
+      for (const e of ELEM_CHARS) {
+        if (chatGisin[1].includes(e)) gisinElems.push(e);
+      }
     }
   }
 
@@ -502,4 +528,88 @@ function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[], councilCertified:
 
 export function buildGemma24KnowledgeForSystem(query: string): string {
   return buildGemma24KnowledgeResult(query).systemAppend;
+}
+
+/** 상담(채팅) 질문 주제 → 심층·[N] 카드 id */
+const CONSULT_TOPIC_DEEP: [RegExp, number][] = [
+  [/연애|애인|결혼|짝|궁합|관계|배우자|이별|썸/, 8],
+  [/재물|돈|금전|투자|수입|벌이|재테크/, 7],
+  [/직업|커리어|사업|취업|이직|승진|직장/, 9],
+  [/건강|몸|질병|컨디션|체력/, 10],
+  [/대운|세운|올해|월운|시기|흐름|언제|오늘|요즘/, 6],
+  [/성격|성향|처음|타인/, 1],
+  [/오행|균형/, 4],
+  [/용신|기신|희신/, 5],
+  [/사주팔자|팔자|명식/, 2],
+];
+
+function pickConsultDeepIds(userMessage: string): number[] {
+  const ids: number[] = [];
+  for (const [re, id] of CONSULT_TOPIC_DEEP) {
+    if (re.test(userMessage) && !ids.includes(id)) ids.push(id);
+    if (ids.length >= 2) break;
+  }
+  return ids;
+}
+
+export function buildConsultCardSearchQuery(
+  sajuContext: string,
+  userMessage: string,
+  compareSajuContext = '',
+): string {
+  return [sajuContext.trim(), compareSajuContext.trim(), userMessage.trim()].filter(Boolean).join('\n\n');
+}
+
+/** 음성·텍스트 상담 — PASS 카드 RAG (질문 주제 + 사주 매칭) */
+export function buildConsultCouncilKnowledgeResult(
+  sajuContext: string,
+  userMessage: string,
+  compareSajuContext = '',
+): Gemma24KnowledgeResult {
+  if (!knowledgeEnabled()) {
+    return { systemAppend: '', badge: 'none', cardCount: 0 };
+  }
+
+  const query = buildConsultCardSearchQuery(sajuContext, userMessage, compareSajuContext);
+  const certifiedOnly = process.env.GEMMA24_COUNCIL_CERTIFIED_ONLY !== '0';
+  const pack = loadKnowledge();
+  if (!pack?.cards.length) {
+    return { systemAppend: '', badge: 'none', cardCount: 0 };
+  }
+
+  const facts = extractPromptFacts(query);
+  const seen = new Set<number>();
+  const out: Gemma24SajuCard[] = [];
+
+  for (const c of filterCouncilCertifiedCards(searchGemma24SajuKnowledge(query))) {
+    pushCouncilCard(out, seen, c);
+  }
+  enrichCouncilStemCards(pack, facts, out, seen);
+
+  for (const n of pickConsultDeepIds(userMessage)) {
+    const prefix = `심층·[${n}]`;
+    const deep = pack.cards.find(
+      (c) => c.title.trim().startsWith(prefix) && c.councilCertified,
+    );
+    pushCouncilCard(out, seen, deep);
+  }
+
+  if (!out.some((c) => cardKind(c).startsWith('deep-'))) {
+    const fallback = pack.cards.find(
+      (c) => c.title.trim().startsWith('심층·[1]') && c.councilCertified,
+    );
+    pushCouncilCard(out, seen, fallback);
+  }
+
+  if (certifiedOnly && !out.length) {
+    return { systemAppend: '', badge: 'none', cardCount: 0 };
+  }
+
+  const hasCertified = out.some((c) => c.councilCertified);
+  const systemAppend = formatGemma24KnowledgeBlock(out, hasCertified);
+  return {
+    systemAppend,
+    badge: out.length === 0 ? 'none' : hasCertified ? 'certified' : 'reviewed',
+    cardCount: out.length,
+  };
 }

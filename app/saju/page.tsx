@@ -33,7 +33,6 @@ import type { OhaengResult } from '../../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
 import {
-  fortuneSectionDisplayNumber,
   fortuneSectionNumberedLabel,
   fortuneSectionSortIndex,
 } from '../../core/gemma24/fortune-display-order';
@@ -1803,7 +1802,6 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
         .sort((a, b) => fortuneSectionSortIndex(a.id) - fortuneSectionSortIndex(b.id))
         .map(sec => {
         const isOpen = openSections.has(sec.id);
-        const displayNum = fortuneSectionDisplayNumber(sec.id);
         const meta = SECTION_LABELS[sec.id] ?? { emoji:'✦', color:'#c4a8ff' };
         return (
           <div key={sec.id} style={{
@@ -1826,7 +1824,7 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
                 color: meta.color, fontWeight:900, fontSize:'.7rem',
                 padding:'3px 9px', borderRadius:100, flexShrink:0, letterSpacing:'.04em',
               }}>
-                {meta.emoji} {displayNum}
+                {meta.emoji}
               </span>
               <span style={{ flex:1, fontWeight:800, fontSize:'.95rem', color:'#e0cfff' }}>
                 {fortuneSectionNumberedLabel(sec.id, sec.title)}

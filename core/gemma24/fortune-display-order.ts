@@ -63,23 +63,30 @@ export function fortuneSectionDisplayNumber(sectionId: string): number {
   return idx >= 0 ? idx + 1 : Number.parseInt(sectionId, 10) || 0;
 }
 
-export function fortuneSectionTopicTitle(sectionId: string, parsedTitle?: string): string {
-  const t = (parsedTitle ?? '').trim();
-  const fromNumbered = t.replace(/^섹션\s*\d+\s*·\s*/, '').trim();
-  if (fromNumbered && fromNumbered !== t) return fromNumbered;
-  const full = fortuneSectionDisplayTitle(sectionId, parsedTitle);
-  const topic = full.replace(/^심층·\[\d+\]\s*/, '').trim();
-  return topic || full;
+function formatTopicReadable(topic: string): string {
+  return topic.replace(/·/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-/** 헤더: 섹션 3 · 오행 균형 */
+export function fortuneSectionTopicTitle(sectionId: string, parsedTitle?: string): string {
+  const t = (parsedTitle ?? '').trim();
+  const fromNumbered = t
+    .replace(/^(?:섹션\s*)?\d+\s*[.·]\s*/, '')
+    .replace(/^\d+\.\s*/, '')
+    .trim();
+  if (fromNumbered && fromNumbered !== t) return formatTopicReadable(fromNumbered);
+  const full = fortuneSectionDisplayTitle(sectionId, parsedTitle);
+  const topic = full.replace(/^심층·\[\d+\]\s*/, '').trim();
+  return formatTopicReadable(topic || full);
+}
+
+/** 헤더: 3. 오행 균형 */
 export function fortuneSectionNumberedLabel(sectionId: string, parsedTitle?: string): string {
   const n = fortuneSectionDisplayNumber(sectionId);
   const topic = fortuneSectionTopicTitle(sectionId, parsedTitle);
-  return n > 0 ? `섹션 ${n} · ${topic}` : topic;
+  return n > 0 ? `${n}. ${topic}` : topic;
 }
 
-/** 본문 첫 줄: [4] 섹션 3 · 오행 균형 */
+/** 본문 첫 줄: [4] 3. 오행 균형 */
 export function formatFortuneSectionHeader(sectionId: string, parsedTitle?: string): string {
   return `[${sectionId}] ${fortuneSectionNumberedLabel(sectionId, parsedTitle)}`;
 }
@@ -122,6 +129,6 @@ export const FORTUNE_DISPLAY_ORDER_HINT = [
   '━━━ 섹션 출력 순서 (반드시 준수) ━━━',
   '아래 번호 순서대로만 작성하세요. 번호 자체는 바꾸지 마세요:',
   '[1] → [2] → [4] → [3] → [5] → [9] → [8] → [7] → [6] → [10]',
-  '각 섹션 제목 형식: [본문id] 섹션 표시번호 · 주제 (예: [1] 섹션 1 · 인사·성향, [4] 섹션 3 · 오행 균형, [9] 섹션 6 · 대운·세운).',
+  '각 섹션 제목 형식: [본문id] 표시번호. 주제 (예: [1] 1. 인사 성향, [4] 3. 오행 균형, [9] 6. 대운 세운).',
   '표시번호는 읽는 순서 1~10, [본문id]는 위 순서의 번호를 그대로 유지하세요.',
 ].join('\n');

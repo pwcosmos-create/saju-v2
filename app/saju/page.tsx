@@ -1577,20 +1577,26 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
     );
   }
 
-  const SECTION_CHART: Record<string, React.ReactNode> = result ? {
-    '1': <><SectionBanner key="img1" src="/saju-pillars-visual.png" alt="사주 핵심 구조" />
-          <div key="c1" style={{ margin:'8px 0 16px' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div></>,
+  /** 섹션 배너 — result 없어도 인증 카드 풀이에 표시 */
+  const SECTION_BANNERS: Record<string, React.ReactNode> = {
+    '1': <SectionBanner key="img1" src="/saju-pillars-visual.png" alt="사주 핵심 구조" />,
     '2': <SectionBanner key="img2" src="/saju-personality-visual.png" alt="실생활 패턴" />,
-    '3': <SectionBanner key="img3" src="/saju-personality-visual.png" alt="격국과 심리" />,
-    '4': <><SectionBanner key="img4" src="/saju-ohaeng-visual.png" alt="오행 분포" height={80} />
-          <div key="c4" style={{ margin:'4px 0 12px', display:'flex', justifyContent:'center' }}><OhaengRadar counts={result.ohaeng.counts} /></div></>,
+    '3': <SectionBanner key="img3" src="/saju-hero-mandala.png" alt="격국과 기질" height={88} />,
+    '4': <SectionBanner key="img4" src="/saju-ohaeng-visual.png" alt="오행 분포" height={80} />,
     '5': <SectionBanner key="img5" src="/saju-ohaeng-visual.png" alt="용신 희신" height={80} />,
     '6': <SectionBanner key="img6" src="/saju-career-visual.png" alt="직업과 적성" />,
     '7': <SectionBanner key="img7" src="/saju-relations-visual.png" alt="인간관계" />,
     '8': <SectionBanner key="img8" src="/saju-wealth-visual.png" alt="돈과 재물" />,
-    '9': <><SectionBanner key="img9" src="/saju-monthly-visual.png" alt="월별 흐름" height={80} />
-          {monthlyBriefs ? <MonthlyChart key="c9" briefs={monthlyBriefs} /> : null}</>,
-    '10': <SectionBanner key="img10" src="/saju-strategy-visual.png" alt="인생 전략" />,
+    '9': <SectionBanner key="img9" src="/saju-monthly-visual.png" alt="월별 흐름" height={80} />,
+    '10': <SectionBanner key="img10" src="/saju-daeun-visual.png" alt="대운과 인생 전략" />,
+  };
+
+  /** 사주 결과가 있을 때만 차트·게이지 */
+  const SECTION_EXTRAS: Record<string, React.ReactNode> = result ? {
+    '1': <div key="c1" style={{ margin:'8px 0 16px' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div>,
+    '4': <div key="c4" style={{ margin:'4px 0 12px', display:'flex', justifyContent:'center' }}><OhaengRadar counts={result.ohaeng.counts} /></div>,
+    '9': monthlyBriefs ? <MonthlyChart key="c9" briefs={monthlyBriefs} /> : null,
+    '10': <SectionBanner key="img10b" src="/saju-strategy-visual.png" alt="인생 전략" height={72} />,
   } : {};
 
   // 섹션 레이블 매핑
@@ -1755,7 +1761,8 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
             {/* 섹션 본문 */}
             {isOpen && (
               <div style={{ padding:'16px 20px' }}>
-                {SECTION_CHART[sec.id]}
+                {SECTION_BANNERS[sec.id]}
+                {SECTION_EXTRAS[sec.id]}
                 {renderLines(sec.lines)}
               </div>
             )}

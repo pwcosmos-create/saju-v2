@@ -3,7 +3,7 @@
  * AI Saju Analytics Platform - v2.0.3
  * 
  * 주요 변경 사항:
- * - Draft-Review-Type 워크플로우 도입 (전체 생성 후 검토 및 타이핑)
+ * - Draft-Review-Type: 서버 응답 전체 수신·검토 후 본문 일괄 표시 (스트리밍 중 미노출)
  * - 단계별 로딩 상태 애니메이션 최적화
  * - 스트리밍 데이터 누락 방지 로직 강화
  */
@@ -155,12 +155,12 @@ export default function Home() {
   const [aiFortuneComplete, setAiFortuneComplete] = useState(false);
   const [aiLoading, setAiLoad] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
-  const [waitTick, setWaitTick] = useState(0);
+  const [, setCooldownPulse] = useState(0);
   const steps = [
-    "운명의 기운을 읽는 중...", 
-    "AI 분석 초안을 작성하는 중...", 
-    "내용의 정확도를 최종 검토 중...", 
-    "전문적인 조언을 정성껏 작성 중..."
+    '운명의 기운을 읽는 중...',
+    'AI 분석 초안을 작성하는 중...',
+    '내용의 정확도를 최종 검토 중...',
+    '풀이 본문을 정리하는 중...',
   ];
   const [showFb,   setShowFb]   = useState(false);
   const [fbDone,   setFbDone]   = useState(false);
@@ -179,7 +179,7 @@ export default function Home() {
         setAiCooldownUntil(0);
         return;
       }
-      setWaitTick((t) => t + 1);
+      setCooldownPulse((t) => t + 1);
     }, 1000);
     return () => clearInterval(id);
   }, [aiCooldownUntil, aiOnCooldown]);
@@ -195,15 +195,6 @@ export default function Home() {
     const id = setInterval(() => setCalcTick(t => t + 1), 900);
     return () => clearInterval(id);
   }, [loading]);
-
-  useEffect(() => {
-    if (!aiLoading) {
-      setWaitTick(0);
-      return;
-    }
-    const id = setInterval(() => setWaitTick(t => t + 1), 1200);
-    return () => clearInterval(id);
-  }, [aiLoading]);
 
   useEffect(() => {
     localStorage.removeItem('saju_year');
@@ -274,27 +265,29 @@ export default function Home() {
       },
       onChunk: t => {
         fullText += t;
-        // 작성 중 단계에서는 진행률만 표시하거나 아주 가끔 업데이트 (사용자 안심용)
-        if (fullText.length % 500 === 0) {
-           setLoadingStep(2); 
-        }
+        if (fullText.length >= 400) setLoadingStep((s) => (s < 2 ? 2 : s));
+        if (fullText.length >= 1200) setLoadingStep((s) => (s < 3 ? 3 : s));
       },
       onDone: () => {
         isFinished = true;
         clearTimeout(t1);
         clearTimeout(t2);
+        setLoadingStep(4);
 
         const rateLimited = fullText.includes('과부하') || fullText.includes('한도 초과');
-        if (rateLimited) {
-          setAiCooldownUntil(Date.now() + 90_000);
-          setAiFortuneComplete(false);
-        } else {
-          setAiFortuneComplete(true);
-        }
-        setAiText(fullText);
-        setAiLoad(false);
-        setShowFb(!rateLimited);
-        setLoadingStep(0);
+        const reveal = () => {
+          if (rateLimited) {
+            setAiCooldownUntil(Date.now() + 90_000);
+            setAiFortuneComplete(false);
+          } else {
+            setAiFortuneComplete(true);
+          }
+          setAiText(fullText);
+          setAiLoad(false);
+          setShowFb(!rateLimited);
+          setLoadingStep(0);
+        };
+        window.setTimeout(reveal, 450);
       },
       onError: (err) => { 
         console.error("AI Stream Error:", err);
@@ -309,39 +302,6 @@ export default function Home() {
       },
     });
   }
-
-  const waitFacts = useMemo(() => {
-    if (!result) return [];
-    const dpLocal = result.pillars[2];
-    if (!dpLocal) return [];
-    const dayStemIdx = dpLocal.s;
-    const dayElemIdx = STEM_ELEM[dayStemIdx];
-    const strength = calcStrength(result.pillars, dayElemIdx);
-    const cls = classifyElements(dayStemIdx, strength.isWeak, result.ohaeng.counts);
-    const elemName = (i: number) => ELEM_NAMES[i] + `(${ELEM_NAMES_H[i]})`;
-    const yongsin = elemName(cls.yongsin);
-    const huisin = cls.huisin.length ? cls.huisin.map(elemName).join(' · ') : '없음';
-    const gisin = cls.gisin.length ? cls.gisin.map(elemName).join(' · ') : '없음';
-    const dom = result.ohaeng.counts
-      .map((c, i) => ({ c, i }))
-      .filter(x => x.c >= 2)
-      .sort((a, b) => b.c - a.c)
-      .slice(0, 2)
-      .map(x => `${elemName(x.i)} ${x.c}개`)
-      .join(', ') || '없음';
-    const lack = result.ohaeng.counts
-      .map((c, i) => ({ c, i }))
-      .filter(x => x.c === 0)
-      .map(x => elemName(x.i))
-      .join(', ') || '없음';
-
-    return [
-      `일간은 ${STEMS[dayStemIdx]}(${STEMS_H[dayStemIdx]})이고, 전체 균형은 ${strength.isWeak ? '신약(身弱)' : '신강(身强)'} 쪽이에요.`,
-      `오행 분포에서 지배 오행은 ${dom}, 부족 오행은 ${lack}로 잡혔어요.`,
-      `용신(用神)은 ${yongsin}이고, 희신(喜神)은 ${huisin}이에요.`,
-      `기신(忌神)은 ${gisin}로 분류돼요. 이 관점으로 전 항목이 일관되게 써져요.`,
-    ];
-  }, [result]);
 
   const calcSteps = useMemo(() => ([
     '만세력 기준으로 연·월·일·시 간지를 계산하는 중...',
@@ -799,49 +759,37 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div style={{ height: 10 }} />
-
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {waitFacts.slice(0, Math.min(waitFacts.length, Math.max(1, waitTick))).map((t, i) => (
-                    <div key={i} style={{
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'flex-start',
-                      padding: '10px 12px',
-                      borderRadius: 12,
-                      background: 'rgba(0,0,0,0.18)',
-                      border: '1px solid rgba(255,255,255,0.06)',
-                    }}>
-                      <span className="rotating-star" style={{ marginTop: 1, fontSize: '.9rem', lineHeight: 1 }}>✦</span>
-                      <div style={{ fontSize: '.84rem', color: 'rgba(248,246,255,.92)', lineHeight: 1.75 }}>
-                        {t}
-                      </div>
-                    </div>
-                  ))}
-
-                  {waitTick < waitFacts.length && (
-                    <div className="ai-wait-skeleton" style={{
-                      height: 44,
-                      borderRadius: 12,
-                      border: '1px solid rgba(255,255,255,0.06)',
-                      background: 'rgba(0,0,0,0.18)',
-                      overflow: 'hidden',
-                    }} />
-                  )}
+                <p style={{ margin: '10px 0 0', fontSize: '.8rem', color: 'rgba(248,246,255,.72)', lineHeight: 1.65 }}>
+                  초안을 모두 작성한 뒤 심층 풀이 본문을 한 번에 보여드려요. 잠시만 기다려 주세요.
+                </p>
+                <div style={{
+                  marginTop: 12,
+                  height: 4,
+                  borderRadius: 99,
+                  background: 'rgba(255,255,255,0.08)',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${Math.min(95, 15 + loadingStep * 22)}%`,
+                    borderRadius: 99,
+                    background: 'linear-gradient(90deg, #6b4fa0, #3a7bd5)',
+                    transition: 'width 0.6s ease',
+                  }} />
                 </div>
               </div>
             )}
 
             {/* 프리미엄 게이트 모달 */}
 
-            {(aiText||aiLoading)&&(
+            {aiText && !aiLoading && (
               <>
-                {aiCouncilBadge !== 'none' && !aiLoading && (
+                {aiCouncilBadge !== 'none' && (
                   <div style={{ display:'flex', justifyContent:'center', marginTop:14 }}>
                     <SajuCouncilBadge level={aiCouncilBadge} />
                   </div>
                 )}
-                <AiRenderer text={aiText} loading={aiLoading} result={result} fortuneMode={aiFortuneMode} />
+                <AiRenderer text={aiText} loading={false} result={result} fortuneMode={aiFortuneMode} />
               </>
             )}
 
@@ -1773,7 +1721,6 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
         );
       })}
 
-      {loading && <span className="typing-cursor">▌</span>}
       <style>{`
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(0.98); } }

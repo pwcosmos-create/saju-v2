@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 import { resolveGeminiTtsVoiceForCounselor } from '../../../core/counselor-config';
+import { stripHanjaForTts } from '../../../lib/strip-hanja-for-tts';
+import { geminiTtsGenerateUrl, resolveGeminiTtsModel } from '../../../lib/gemini-tts-config';
 
 /** 긴 답은 여러 청크로 호출되므로 채팅보다 여유 있게 */
 const checkRateLimit = makeRateLimiter(48, 60_000);
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest) {
     body.ttsContext === 'compatibility' ? 'compatibility' : 'single',
   );
 
-  const text = (body.text ?? '').trim();
+  const text = stripHanjaForTts((body.text ?? '').trim());
   if (!text) {
     return new Response(JSON.stringify({ error: 'text 없음' }), { status: 400 });
   }
@@ -84,11 +86,10 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'GOOGLE_AI_API_KEY 누락' }), { status: 500 });
   }
 
+  const ttsModel = resolveGeminiTtsModel();
+
   try {
-    const upstream = await fetch(
-      // flash-preview-tts 는 2026-03 기준 "text only" 400 오류 — pro-preview-tts 사용
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent?key=${key}`,
-      {
+    const upstream = await fetch(geminiTtsGenerateUrl(ttsModel, key), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -51,7 +51,7 @@ export default function CounselPanel({
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { msgs, loading, send, reset, applyMsgs } = useCounselChat(result, aiSummaryReady);
+  const { msgs, loading, send, reset, applyMsgs } = useCounselChat(result, aiSummaryReady, counselor);
   const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
 
   /** 현재 TTS로 읽히는 메시지 콘텐츠 추적 (버블 강조 용) */

@@ -1,45 +1,97 @@
 'use client';
 /**
- * useTts — AI 상담 응답 음성 재생 훅 (v2 - 모바일 대응)
- *
- * iOS Safari 정책:
- *   AudioContext는 사용자 제스처(터치/클릭) 없이 resume() 불가.
- *   → AudioContext를 최초 send 클릭 시 "primeAudio()"로 잠금 해제.
- *   → 이후 응답이 오면 이미 unlocked된 ctx를 재사용 → 자동재생 가능.
+ * useTts — 브라우저 Web Speech, 문장·단락마다 끊어 읽기
  */
 import { useState, useRef, useCallback } from 'react';
+import { stripHanjaForTts } from '../../lib/strip-hanja-for-tts';
+import { primeBrowserTtsVoices, speakWithBrowserTts } from '../../lib/browser-tts-voice';
 
-/**
- * TTS 청크 크기: 작을수록 첩 첩크의 Gemini TTS 응답이 빠름.
- * 150자 ≈ 2만 여 가 → 첫 음성이 빨리 도착하면서 나머지는 백그라운드 fetch.
- */
-const TTS_MAX = 150;
+/** 문장 사이 쉼 (ms) */
+const PAUSE_BETWEEN_SENTENCES_MS = 650;
+/** 단락 사이 쉼 (ms) */
+const PAUSE_BETWEEN_PARAGRAPHS_MS = 1100;
+/** 한 utterance 상한 — 넘으면 쉼표 등으로 추가 분할 */
+const SENTENCE_HARD_MAX = 200;
 
-function chunkText(text: string): string[] {
-  const cleaned = text
+type ReadUnit = { text: string; pauseAfterMs: number };
+
+function cleanForTts(text: string): string {
+  return text
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/#{1,6}\s/g, '')
     .replace(/`{1,3}[^`]*`{1,3}/g, '')
     .trim();
+}
 
-  // 한국어 종결 부호 + 영문 + 줄바꽔 연속된 문자열로 연달 (여백 포함)
-  const sentences = cleaned.split(/((?<=[.!?。！？다요죠네니])[\s]*)/);
-  const chunks: string[] = [];
-  let current = '';
-
-  for (const s of sentences) {
-    const trimmed = s.trim();
-    if (!trimmed) continue;
-    if ((current + ' ' + trimmed).length > TTS_MAX && current) {
-      chunks.push(current.trim());
-      current = trimmed;
+function splitLongClause(sentence: string): string[] {
+  if (sentence.length <= SENTENCE_HARD_MAX) return [sentence];
+  const clauses = sentence.split(/(?<=[,，、])\s*/).map((c) => c.trim()).filter(Boolean);
+  if (clauses.length <= 1) return [sentence];
+  const out: string[] = [];
+  let cur = '';
+  for (const c of clauses) {
+    if ((cur ? `${cur} ${c}` : c).length > SENTENCE_HARD_MAX && cur) {
+      out.push(cur.trim());
+      cur = c;
     } else {
-      current = current ? current + ' ' + trimmed : trimmed;
+      cur = cur ? `${cur} ${c}` : c;
     }
   }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.filter(c => c.length > 0);
+  if (cur.trim()) out.push(cur.trim());
+  return out.length ? out : [sentence];
+}
+
+/** 문장·단락 단위로 나누고, 단위마다 읽은 뒤 쉬는 시간을 붙인다 */
+function splitForPausedReading(text: string): ReadUnit[] {
+  const cleaned = cleanForTts(text);
+  if (!cleaned) return [];
+
+  const paragraphs = cleaned.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const units: ReadUnit[] = [];
+
+  for (let pi = 0; pi < paragraphs.length; pi++) {
+    const para = paragraphs[pi].replace(/\n+/g, ' ');
+    const rawSentences = para
+      .split(/(?<=[.!?。！？…])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const sentences = (rawSentences.length ? rawSentences : [para]).flatMap(splitLongClause);
+
+    for (let si = 0; si < sentences.length; si++) {
+      const isLastInPara = si === sentences.length - 1;
+      const isLastOverall = pi === paragraphs.length - 1 && isLastInPara;
+      units.push({
+        text: sentences[si],
+        pauseAfterMs: isLastOverall
+          ? 0
+          : isLastInPara
+            ? PAUSE_BETWEEN_PARAGRAPHS_MS
+            : PAUSE_BETWEEN_SENTENCES_MS,
+      });
+    }
+  }
+
+  return units;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = window.setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        window.clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 export function useTts(counselor: string) {
@@ -47,170 +99,51 @@ export function useTts(counselor: string) {
   const [enabled, setEnabled] = useState(true);
 
   const abortRef = useRef<AbortController | null>(null);
-  /** 전역 단일 AudioContext — 최초 사용자 클릭에서 생성·unlock 후 재사용 */
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const primedRef = useRef(false);
+  const counselorRef = useRef(counselor);
+  counselorRef.current = counselor;
 
-  /**
-   * 사용자 클릭 이벤트 핸들러 안에서 호출 → iOS 잠금 해제.
-   * 무음 버퍼 재생으로 iOS Safari AudioContext를 완전히 unlock.
-   */
   const primeAudio = useCallback(async () => {
-    if (primedRef.current) return;
-    primedRef.current = true;
-    try {
-      const ctx = new AudioContext();
-      audioCtxRef.current = ctx;
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      // iOS Safari: 무음 버퍼 재생으로 완전 unlock
-      const silentBuf = ctx.createBuffer(1, 1, 22050);
-      const src = ctx.createBufferSource();
-      src.buffer = silentBuf;
-      src.connect(ctx.destination);
-      src.start(0);
-    } catch {
-      primedRef.current = false; // 실패 시 재시도 허용
-    }
+    primeBrowserTtsVoices();
   }, []);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
     setPlaying(false);
   }, []);
 
   const speak = useCallback(async (text: string) => {
-    if (!enabled || !text.trim()) return;
+    const ttsText = stripHanjaForTts(text);
+    if (!enabled || !ttsText) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     stop();
 
     const ac = new AbortController();
     abortRef.current = ac;
     setPlaying(true);
 
-    let ctx = audioCtxRef.current;
-    if (!ctx || ctx.state === 'closed') {
-      ctx = new AudioContext();
-      audioCtxRef.current = ctx;
+    const units = splitForPausedReading(ttsText);
+    if (units.length === 0) {
+      setPlaying(false);
+      return;
     }
-    if (ctx.state === 'suspended') {
-      try { await ctx.resume(); } catch { setPlaying(false); return; }
-    }
-
-    const chunks = chunkText(text);
-    if (chunks.length === 0) { setPlaying(false); return; }
-
-    const useWebSpeechForFirst = typeof window !== 'undefined' && 'speechSynthesis' in window;
-
-    // Fetch chunk data lazily
-    const fetchedData: (Promise<{ audioBase64?: string } | null> | null)[] = new Array(chunks.length).fill(null);
-
-    const triggerFetch = (index: number) => {
-      if (index >= chunks.length || fetchedData[index] !== null) return;
-      if (index === 0 && useWebSpeechForFirst) {
-        fetchedData[index] = Promise.resolve(null);
-        return;
-      }
-      fetchedData[index] = fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: chunks[index], counselorName: counselor }),
-        signal: ac.signal,
-      }).then(r => r.ok ? r.json() : null).catch(() => null);
-    };
-
-    const ctxRef = ctx;
-    
-    // Play with SpeechSynthesis fallback
-    const playWithFallback = async (text: string) => {
-      if (!useWebSpeechForFirst) return;
-      await new Promise<void>((resolve) => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ko-KR';
-        utterance.rate = 1.0;
-        
-        const fallbackTimer = setTimeout(() => {
-            window.speechSynthesis.cancel();
-            resolve();
-        }, text.length * 300 + 3000); // Dynamic timeout based on text length
-
-        utterance.onstart = () => clearTimeout(fallbackTimer);
-        utterance.onend = () => { clearTimeout(fallbackTimer); resolve(); };
-        utterance.onerror = () => { clearTimeout(fallbackTimer); resolve(); };
-        
-        ac.signal.addEventListener('abort', () => {
-          clearTimeout(fallbackTimer);
-          window.speechSynthesis.cancel();
-          resolve();
-        }, { once: true });
-        
-        window.speechSynthesis.speak(utterance);
-      });
-    };
 
     try {
-      // Start fetching the first 2 chunks to build a buffer
-      triggerFetch(0);
-      triggerFetch(1);
-
-      for (let i = 0; i < chunks.length; i++) {
+      for (let i = 0; i < units.length; i++) {
         if (ac.signal.aborted) break;
-
-        const chunk = chunks[i];
-        
-        // Trigger fetch for the next chunk while playing this one
-        triggerFetch(i + 2);
-
-        if (i === 0 && useWebSpeechForFirst) {
-          await playWithFallback(chunk);
-          continue; 
+        const { text: line, pauseAfterMs } = units[i];
+        await speakWithBrowserTts(line, counselorRef.current, ac.signal);
+        if (pauseAfterMs > 0 && !ac.signal.aborted) {
+          await sleep(pauseAfterMs, ac.signal);
         }
-
-        const data = await fetchedData[i];
-        
-        // Fallback to Web Speech API if Gemini TTS fails (e.g. rate limit, decode error)
-        if (!data?.audioBase64 || ac.signal.aborted) {
-          await playWithFallback(chunk);
-          continue;
-        }
-
-        const binary = atob(data.audioBase64);
-        const bytes = new Uint8Array(binary.length);
-        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
-
-        let audioBuffer: AudioBuffer;
-        try {
-          audioBuffer = await ctxRef.decodeAudioData(bytes.buffer.slice(0));
-        } catch (e) { 
-          // decode failed -> fallback
-          await playWithFallback(chunk);
-          continue; 
-        }
-        
-        if (ac.signal.aborted) break;
-
-        // Ensure ctx is awake before playing (OS might sleep it during long SpeechSynthesis)
-        if (ctxRef.state === 'suspended') {
-          try { await ctxRef.resume(); } catch (e) { /* ignore */ }
-        }
-
-        await new Promise<void>((resolve) => {
-          const source = ctxRef.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(ctxRef.destination);
-          source.onended = () => resolve();
-          source.start();
-          ac.signal.addEventListener('abort', () => {
-            try { source.stop(); } catch (e) { /* noop */ }
-            resolve();
-          }, { once: true });
-        });
       }
     } finally {
       if (!ac.signal.aborted) setPlaying(false);
     }
-  }, [enabled, counselor, stop]);
+  }, [enabled, stop]);
 
   return { playing, enabled, setEnabled, speak, stop, primeAudio };
 }

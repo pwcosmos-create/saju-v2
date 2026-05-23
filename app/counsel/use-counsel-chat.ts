@@ -28,10 +28,12 @@ function buildApiMessages(msgs: Msg[]): { role: string; content: string }[] {
 export function useCounselChat(
   result: SajuResult | null,
   aiSummaryReady: boolean,
+  counselorName: string,
 ) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
-  const [counselor, setCounselor] = useState('도화');
+  const counselorRef = useRef(counselorName);
+  counselorRef.current = counselorName;
 
   /**
    * msgsRef: React 상태 타이밍과 무관하게 현재 메시지 목록을 동기적으로 읽기 위한 ref.
@@ -84,7 +86,7 @@ export function useCounselChat(
           messages: apiMessages,
           sajuContext: buildChatContext(result),
           chatMode: 'single',
-          counselorName: counselor,
+          counselorName: counselorRef.current,
         }),
       });
 
@@ -122,7 +124,7 @@ export function useCounselChat(
       window.clearTimeout(timeoutId);
       setLoading(false);
     }
-  }, [result, aiSummaryReady, loading, counselor, applyMsgs]);
+  }, [result, aiSummaryReady, loading, applyMsgs]);
 
-  return { msgs, loading, counselor, setCounselor, send, reset, applyMsgs };
+  return { msgs, loading, send, reset, applyMsgs };
 }

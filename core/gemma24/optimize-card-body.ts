@@ -1,11 +1,12 @@
 /**
- * 인증 카드 본문 → 화면용 짧은 풀이 (중복·면책·메타 제거)
+ * 인증 카드 본문 → 화면용 풀이 (중복·면책·메타 제거, 변수 카드 구조 보존)
  */
 import type { Gemma24SajuCard } from './saju-knowledge';
 
-const MAX_CARD_CHARS = 420;
-const MAX_SECTION_CHARS = 900;
-const MAX_PARAS = 3;
+const MAX_CARD_CHARS = 520;
+const MAX_VARIABLE_CARD_CHARS = 720;
+const MAX_SECTION_CHARS = 1100;
+const MAX_PARAS = 4;
 
 const DISCLAIMER_RE =
   /본 내용은 명리 참고용이며[\s\S]*?달라질 수 있습니다\.?/g;
@@ -30,10 +31,17 @@ const STRIP_LINE_PATTERNS: RegExp[] = [
 const META_TAIL_RE =
   /(?:학파|환경|해석)에 따라[\s\S]*?달라질 수 있습니다\.?/g;
 
+function isVariableCard(card: Gemma24SajuCard): boolean {
+  return card.title.trim().startsWith('변수·');
+}
+
 /** 카드 제목에서 화면용 짧은 소제목 */
 export function shortCardSubtitle(title: string): string {
   let t = title
     .replace(/【[^】]+】/g, '')
+    .replace(/^변수·격\s+/, '')
+    .replace(/^변수·지지관계\s+/, '')
+    .replace(/^변수·천간\s+/, '')
     .replace(/\s*[·•]\s*[^·•]+지식\s*카드.*$/i, '')
     .replace(/\s*지식\s*카드\s*$/i, '')
     .replace(/\s*[·•]\s*오행[\s\S]*$/i, '')
@@ -63,6 +71,31 @@ export function sanitizeCardBody(body: string): string {
     .trim();
 }
 
+/** 변수·카드 【개요】【핵심】 블록 → ◆ 소제목 (내용 보존) */
+function formatVariableCardBody(body: string): string {
+  const cleaned = body
+    .replace(DISCLAIMER_RE, '')
+    .replace(META_TAIL_RE, '')
+    .replace(/「[^」]+」/g, '')
+    .trim();
+
+  const blocks: string[] = [];
+  const re = /【([^】]+)】\s*([^【]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cleaned)) !== null) {
+    const label = m[1].trim();
+    let content = m[2].trim().replace(/\s+/g, ' ');
+    if (!content || /^(PASS|FAIL|판정|검증)$/i.test(label)) continue;
+    if (/^개요$/.test(label) && /변수는 사주 풀이에서/.test(content) && content.length > 180) {
+      content = `${content.slice(0, 178)}…`;
+    }
+    blocks.push(`◆ ${label}\n${content}`);
+  }
+
+  if (blocks.length) return blocks.join('\n\n');
+  return sanitizeCardBody(body);
+}
+
 function truncateAtSentence(text: string, max: number): string {
   if (text.length <= max) return text;
   const slice = text.slice(0, max);
@@ -72,6 +105,7 @@ function truncateAtSentence(text: string, max: number): string {
     slice.lastIndexOf('?'),
     slice.lastIndexOf('요 '),
     slice.lastIndexOf('다 '),
+    slice.lastIndexOf('\n\n'),
   );
   if (cut > max * 0.45) return `${slice.slice(0, cut + 1).trim()}…`;
   return `${slice.trim()}…`;
@@ -104,6 +138,7 @@ function stripKeywordBlock(text: string): string {
 }
 
 function preferSummaryOrBody(card: Gemma24SajuCard): string {
+  if (isVariableCard(card)) return card.body;
   const summary = card.summary?.trim();
   const body = sanitizeCardBody(card.body);
   if (summary && summary.length >= 24 && summary.length <= 320) {
@@ -148,8 +183,15 @@ function formatAsBullets(paragraphs: string[]): string {
   return paragraphs.map((p) => `— ${p}`).join('\n');
 }
 
-/** 카드 1장 → 화면용 본문 (길이·중복 제한) */
+/** 카드 1장 → 화면용 본문 */
 export function optimizeCardBodyForDisplay(card: Gemma24SajuCard): string {
+  if (isVariableCard(card)) {
+    const sub = shortCardSubtitle(card.title);
+    const body = formatVariableCardBody(card.body);
+    const text = body.startsWith('◆') ? body : `◆ ${sub}\n${body}`;
+    return truncateAtSentence(text, MAX_VARIABLE_CARD_CHARS);
+  }
+
   const raw = preferSummaryOrBody(card);
   const kwLine = extractKeywordLine(raw);
   let core = stripKeywordBlock(raw);
@@ -166,8 +208,7 @@ export function optimizeCardBodyForDisplay(card: Gemma24SajuCard): string {
   const picked = pickTopParagraphs(pool.length ? pool : [core], MAX_PARAS);
   let text = picked.length ? formatAsBullets(picked) : core;
   if (kwLine) text = `${text}\n\n${kwLine}`;
-  text = truncateAtSentence(text, MAX_CARD_CHARS);
-  return text.trim();
+  return truncateAtSentence(text, MAX_CARD_CHARS);
 }
 
 function dedupeAcrossCards(blocks: string[]): string[] {
@@ -196,6 +237,7 @@ export function mergeOptimizedCardBodies(cards: Gemma24SajuCard[]): string {
     cards.map((c) => {
       const body = optimizeCardBodyForDisplay(c);
       if (!body) return '';
+      if (isVariableCard(c) && body.startsWith('◆')) return body;
       const sub = shortCardSubtitle(c.title);
       return `◆ ${sub}\n${body}`;
     }),

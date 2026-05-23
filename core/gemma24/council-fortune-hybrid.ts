@@ -4,6 +4,7 @@
 import { fetchLlmCompletionText } from '../config/llm';
 import type { Gemma24SajuCard } from './saju-knowledge';
 import { cardKind, searchCouncilContextCards, searchCouncilDisplayCards } from './saju-knowledge';
+import { buildOfflineHybridSupplement } from './council-fortune-enrich';
 import {
   canComposeCouncilFreeFortune,
   composeCouncilFreeFortune,
@@ -26,12 +27,6 @@ const SUPPLEMENT_SYSTEM = `당신은 사주팔자 전문가입니다.
 이미 「사주위원회 인증」 지식 카드로 작성된 본문이 있습니다. 그 내용을 반복·요약하지 마세요.
 지시된 번호 섹션만 추가 작성하세요. ◆ 소제목 사용. 평어체(~해요).
 전문 용어는 쉬운 풀이 후 괄호 한자. [1][2] 같은 각주·출처 표시 금지.`;
-
-const SUPPLEMENT_SKIP_NOTICE = [
-  '',
-  '※ 안내: 직업·관계·재물·월별·대운 맞춤 보충은 현재 AI 서버 한도로 잠시 생략되었습니다.',
-  '2~3분 후 「다시 분석하기」를 누르시면 아래에 맞춤 보충 풀이가 이어질 수 있습니다.',
-].join('\n');
 
 function hybridGroqEnabled(): boolean {
   return process.env.GEMMA24_HYBRID_GROQ !== '0';
@@ -58,7 +53,7 @@ export type CouncilHybridResult = {
 export function tryCouncilHybridBase(query: string): CouncilHybridResult | null {
   const displayCards = searchCouncilDisplayCards(query);
   if (!canComposeCouncilFreeFortune(displayCards)) return null;
-  const composed = composeCouncilFreeFortune(displayCards);
+  const composed = composeCouncilFreeFortune(displayCards, query);
   const missingSections = hybridGroqEnabled()
     ? getGroqSupplementSections(displayCards)
     : [];
@@ -107,9 +102,15 @@ export async function buildCouncilHybridFortune(
   );
 
   if (!supplement || isOverloadText(supplement)) {
+    const offline = buildOfflineHybridSupplement(query);
     const text = [
       composed.text.replace(baseFooter, '').trim(),
-      SUPPLEMENT_SKIP_NOTICE,
+      '',
+      '━━━ 맞춤 풀이 (사주 데이터 기반) ━━━',
+      '',
+      offline,
+      '',
+      '※ AI 서버 한도로 위는 확정 사주 데이터 기반 초안입니다. 2~3분 후 「다시 분석하기」로 AI 맞춤 보충을 시도할 수 있습니다.',
       '',
       '—',
       baseFooter,

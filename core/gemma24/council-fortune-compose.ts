@@ -3,6 +3,7 @@
  */
 import type { Gemma24SajuCard } from './saju-knowledge';
 import { cardKind, searchCouncilDisplayCards } from './saju-knowledge';
+import { buildPromptEnrichedSections } from './council-fortune-enrich';
 import { mergeOptimizedCardBodies, sanitizeCardBody } from './optimize-card-body';
 
 /** 화면용 카드 1장 이상이면 조합 (프레임 카드로 수만 채우지 않음) */
@@ -35,11 +36,19 @@ export function canComposeCouncilFreeFortune(cards: Gemma24SajuCard[]): boolean 
   return display.every((c) => c.councilCertified === true);
 }
 
-/** 인증 카드 → [1][3][5][7] 섹션 (이미지·접기 UI 호환) */
-export function composeCouncilFreeFortune(cards: Gemma24SajuCard[]): CouncilFreeFortuneResult {
+function sectionId(line: string): number {
+  return parseInt(line.match(/^\[(\d+)\]/)?.[1] ?? '99', 10);
+}
+
+/** 인증 카드 → [1][3][5][7] 섹션 + 프롬프트 확정 데이터 보강 */
+export function composeCouncilFreeFortune(
+  cards: Gemma24SajuCard[],
+  query = '',
+): CouncilFreeFortuneResult {
   const displayCards = cards.filter((c) => cardKind(c) !== 'foundation');
   const usedIds: number[] = [];
   const sectionTexts: string[] = [];
+  const filledIds = new Set<string>();
 
   for (const block of COMPOSE_SECTIONS) {
     const matched = displayCards.filter((c) => block.kinds.includes(cardKind(c)));
@@ -49,8 +58,17 @@ export function composeCouncilFreeFortune(cards: Gemma24SajuCard[]): CouncilFree
     if (!body) continue;
 
     for (const c of matched) usedIds.push(c.id);
+    filledIds.add(block.id);
     sectionTexts.push(`[${block.id}] ${block.title}\n\n${body}`);
   }
+
+  if (query.trim()) {
+    for (const sec of buildPromptEnrichedSections(query, filledIds)) {
+      sectionTexts.push(`[${sec.id}] ${sec.title}\n\n${sec.body}`);
+    }
+  }
+
+  sectionTexts.sort((a, b) => sectionId(a) - sectionId(b));
 
   const text = [
     '✦ AI 심층 풀이 — ✓ 사주위원회 인증',
@@ -74,5 +92,5 @@ export function tryCouncilFreeFortune(query: string): CouncilFreeFortuneResult |
   if (!councilComposeEnabled()) return null;
   const cards = searchCouncilDisplayCards(query);
   if (!canComposeCouncilFreeFortune(cards)) return null;
-  return composeCouncilFreeFortune(cards);
+  return composeCouncilFreeFortune(cards, query);
 }

@@ -175,7 +175,7 @@ function isTestCard(card: Gemma24SajuCard): boolean {
   return t === 'test' || t.startsWith('test ');
 }
 
-function extractPromptFacts(query: string): PromptFacts {
+export function extractPromptFacts(query: string): PromptFacts {
   let stemHanja: string | null = null;
   let resolvedStemKo: string | null = null;
 

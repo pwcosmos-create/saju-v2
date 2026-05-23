@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
+import { fetchLlmStream } from '../../../core/config/llm';
 
 const SYSTEM = `당신은 30년 경력의 명리학(命理學) 전문가입니다.
 사주팔자를 분석할 때 전통 명리학 이론을 정확하게 적용하고, 전문 용어는 한자와 설명을 함께 제공합니다.
@@ -32,22 +33,15 @@ export async function POST(req: NextRequest) {
 6. 2026년 병오년(丙午年) 운세와 월별 흐름
 7. 종합 조언과 구체적인 개운법`;
 
-  const geminiKey = process.env.GOOGLE_AI_API_KEY ?? '';
-
   try {
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${geminiKey}` },
-      body: JSON.stringify({
-        model: 'gemini-2.5-flash',
-        stream: false,
-        max_tokens: 8192,
-        temperature: 0.7,
-        messages: [
-          { role: 'system', content: SYSTEM },
-          { role: 'user',   content: prompt },
-        ],
-      }),
+    const res = await fetchLlmStream({
+      stream: false,
+      max_tokens: 8192,
+      temperature: 0.7,
+      messages: [
+        { role: 'system', content: SYSTEM },
+        { role: 'user',   content: prompt },
+      ],
     });
 
     if (!res.ok) {

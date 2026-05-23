@@ -102,9 +102,11 @@ function streamTextToOpenAiSse(text: string): ReadableStream {
   }
 
   let chunkIdx = 0;
+  let interval: any;
+
   return new ReadableStream({
     start(controller) {
-      const interval = setInterval(() => {
+      interval = setInterval(() => {
         if (chunkIdx < chunks.length) {
           const content = chunks[chunkIdx];
           const payload = `data: ${JSON.stringify({
@@ -118,6 +120,9 @@ function streamTextToOpenAiSse(text: string): ReadableStream {
           controller.close();
         }
       }, 10);
+    },
+    cancel() {
+      if (interval) clearInterval(interval);
     }
   });
 }
@@ -150,7 +155,7 @@ export async function fetchLlmStream(body: any): Promise<Response> {
           model: 'llama-3.3-70b-versatile',
           ...upstreamBody
         }),
-        signal: AbortSignal.timeout(6000) // 6 seconds timeout for Groq API
+        signal: AbortSignal.timeout(25000) // 25 seconds timeout for Groq API to allow full draft generation
       });
 
       if (response.ok) {

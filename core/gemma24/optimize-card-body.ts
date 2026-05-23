@@ -32,7 +32,8 @@ const META_TAIL_RE =
   /(?:학파|환경|해석)에 따라[\s\S]*?달라질 수 있습니다\.?/g;
 
 function isVariableCard(card: Gemma24SajuCard): boolean {
-  return card.title.trim().startsWith('변수·');
+  const t = card.title.trim();
+  return t.startsWith('변수·') || t.startsWith('심층·[');
 }
 
 /** 카드 제목에서 화면용 짧은 소제목 */

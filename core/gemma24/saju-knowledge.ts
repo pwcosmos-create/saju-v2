@@ -243,10 +243,12 @@ export function extractPromptFacts(query: string): PromptFacts {
 
 export function cardKind(card: Gemma24SajuCard): string {
   const t = card.title.trim();
+  const deepSec = t.match(/^심층·\[(\d+)\]/);
+  if (deepSec) return `deep-${deepSec[1]}`;
   if (t.startsWith('변수·격 ')) return 'gyeok';
   if (t.startsWith('변수·지지관계 ')) return 'branch';
-  if (t.includes('변수·운 용신')) return 'un-yongsin';
-  if (t.includes('변수·운 기신')) return 'un-gisin';
+  if (/변수·운 용신/.test(t)) return 'un-yongsin';
+  if (/변수·운 기신/.test(t)) return 'un-gisin';
   if (t.startsWith('변수·천간 ')) return 'stem-chen';
   if (STEM_KO.some((s) => t.includes(s)) && t.includes('일주')) return 'stem-day';
   if (COMPOSE_FOUNDATION_TITLES.includes(t as (typeof COMPOSE_FOUNDATION_TITLES)[number])) {
@@ -286,12 +288,18 @@ function isPreciseMatch(card: Gemma24SajuCard, facts: PromptFacts): boolean {
 
   if (kind === 'un-yongsin') {
     if (!facts.yongsinElem) return false;
-    return body.includes(facts.yongsinElem) || body.includes(`(${facts.yongsinElem})`);
+    return (
+      title.includes(facts.yongsinElem)
+      || body.includes(facts.yongsinElem)
+      || body.includes(`(${facts.yongsinElem})`)
+    );
   }
 
   if (kind === 'un-gisin') {
     if (!facts.gisinElems.length) return false;
-    return facts.gisinElems.some((e) => body.includes(e));
+    return facts.gisinElems.some(
+      (e) => title.includes(e) || body.includes(e) || body.includes(`(${e})`),
+    );
   }
 
   return false;
@@ -356,7 +364,22 @@ function enrichCouncilStemCards(
   pushCouncilCard(out, seen, stemDay);
 }
 
-/** 화면 조합용 — 프레임(풀이 틀) 카드 제외, 일주·격국·용신 등만 */
+/** 심층·[1]~[10] 인증 카드 — 섹션별 풍부한 본문 */
+function enrichCouncilDeepCards(
+  pack: KnowledgePack,
+  out: Gemma24SajuCard[],
+  seen: Set<number>,
+): void {
+  for (let n = 1; n <= 10; n += 1) {
+    const prefix = `심층·[${n}]`;
+    const deep = pack.cards.find(
+      (c) => c.title.trim().startsWith(prefix) && c.councilCertified,
+    );
+    pushCouncilCard(out, seen, deep);
+  }
+}
+
+/** 화면 조합용 — 프레임(풀이 틀) 카드 제외, 일주·격국·용신·심층 섹션 */
 export function searchCouncilDisplayCards(query: string): Gemma24SajuCard[] {
   const pack = loadKnowledge();
   if (!pack?.cards.length) return [];
@@ -367,6 +390,7 @@ export function searchCouncilDisplayCards(query: string): Gemma24SajuCard[] {
   const out = [...matched];
 
   enrichCouncilStemCards(pack, facts, out, seen);
+  enrichCouncilDeepCards(pack, out, seen);
 
   return out;
 }

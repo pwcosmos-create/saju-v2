@@ -11,17 +11,22 @@ import {
   type CouncilFreeFortuneResult,
 } from './council-fortune-compose';
 
+/** 섹션별 커버 kind — 심층·[N] 포함 시 AI 보충 생략 */
 const SECTION_COVER: Record<string, string[]> = {
-  '[1]': ['stem-day', 'stem-chen'],
-  '[2]': ['stem-day', 'stem-chen'],
-  '[3]': ['gyeok'],
-  '[4]': ['stem-day', 'stem-chen'],
-  '[5]': ['un-yongsin', 'un-gisin'],
-  '[7]': ['branch'],
+  '[1]': ['stem-day', 'stem-chen', 'deep-1'],
+  '[2]': ['deep-2'],
+  '[3]': ['gyeok', 'deep-4'],
+  '[4]': ['deep-3'],
+  '[5]': ['un-yongsin', 'un-gisin', 'deep-5'],
+  '[6]': ['deep-9'],
+  '[7]': ['branch', 'deep-8'],
+  '[8]': ['deep-7'],
+  '[9]': ['deep-6'],
+  '[10]': ['deep-10'],
 };
 
-/** 직업·재물·월별·대운만 항상 AI 보충 (인증 카드에 없음) */
-const ALWAYS_SUPPLEMENT = ['[6]', '[8]', '[9]', '[10]'] as const;
+/** 심층 카드로 대부분 채워짐 — 한도 429 시 불필요한 LLM 호출 방지 */
+const ALWAYS_SUPPLEMENT = [] as const;
 
 const SUPPLEMENT_SYSTEM = `당신은 사주팔자 전문가입니다.
 이미 「사주위원회 인증」 지식 카드로 작성된 본문이 있습니다. 그 내용을 반복·요약하지 마세요.

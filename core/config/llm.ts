@@ -138,9 +138,9 @@ export async function fetchLlmStream(body: any): Promise<Response> {
     stream: false
   };
 
-  // Clamp max_tokens to 8192 to prevent 413 Payload Too Large error on Groq
-  if (upstreamBody.max_tokens && upstreamBody.max_tokens > 8192) {
-    upstreamBody.max_tokens = 8192;
+  // Clamp max_tokens to 3000 to prevent Groq API free-tier TPM (Tokens Per Minute) limit errors
+  if (upstreamBody.max_tokens && upstreamBody.max_tokens > 3000) {
+    upstreamBody.max_tokens = 3000;
   }
 
   if (activeGroqKey) {

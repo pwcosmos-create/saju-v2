@@ -4,7 +4,7 @@
  */
 import { useState, useRef, useCallback } from 'react';
 import { stripHanjaForTts } from '../../lib/strip-hanja-for-tts';
-import { primeBrowserTtsVoices, speakWithBrowserTts } from '../../lib/browser-tts-voice';
+import { primeBrowserTtsVoices, speakPausedBrowserReading } from '../../lib/browser-tts-voice';
 
 /** 문장 사이 쉼 (ms) */
 const PAUSE_BETWEEN_SENTENCES_MS = 650;
@@ -42,7 +42,6 @@ function splitLongClause(sentence: string): string[] {
   return out.length ? out : [sentence];
 }
 
-/** 문장·단락 단위로 나누고, 단위마다 읽은 뒤 쉬는 시간을 붙인다 */
 function splitForPausedReading(text: string): ReadUnit[] {
   const cleaned = cleanForTts(text);
   if (!cleaned) return [];
@@ -75,25 +74,6 @@ function splitForPausedReading(text: string): ReadUnit[] {
   return units;
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const timer = window.setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        window.clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
-  });
-}
-
 export function useTts(counselor: string) {
   const [playing, setPlaying] = useState(false);
   const [enabled, setEnabled] = useState(true);
@@ -121,25 +101,15 @@ export function useTts(counselor: string) {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     stop();
 
+    const units = splitForPausedReading(ttsText);
+    if (units.length === 0) return;
+
     const ac = new AbortController();
     abortRef.current = ac;
     setPlaying(true);
 
-    const units = splitForPausedReading(ttsText);
-    if (units.length === 0) {
-      setPlaying(false);
-      return;
-    }
-
     try {
-      for (let i = 0; i < units.length; i++) {
-        if (ac.signal.aborted) break;
-        const { text: line, pauseAfterMs } = units[i];
-        await speakWithBrowserTts(line, counselorRef.current, ac.signal);
-        if (pauseAfterMs > 0 && !ac.signal.aborted) {
-          await sleep(pauseAfterMs, ac.signal);
-        }
-      }
+      await speakPausedBrowserReading(units, counselorRef.current, ac.signal);
     } finally {
       if (!ac.signal.aborted) setPlaying(false);
     }

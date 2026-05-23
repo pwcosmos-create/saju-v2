@@ -442,8 +442,10 @@ export default function CounselPanel({
                             if (playing) {
                               stop();
                             } else {
-                              setSpeakingContent(msg.content);
-                              void speak(msg.content);
+                              void primeAudio().then(() => {
+                                setSpeakingContent(msg.content);
+                                void speak(msg.content);
+                              });
                             }
                           }}
                           style={{

@@ -143,6 +143,21 @@ export default function Home() {
   const [fbDone,   setFbDone]   = useState(false);
   const [comment,  setComment]  = useState('');
   const [copied,        setCopied]        = useState(false);
+  const [aiCooldownUntil, setAiCooldownUntil] = useState(0);
+
+  const aiOnCooldown = Date.now() < aiCooldownUntil;
+
+  useEffect(() => {
+    if (!aiOnCooldown) return;
+    const id = setInterval(() => {
+      if (Date.now() >= aiCooldownUntil) {
+        setAiCooldownUntil(0);
+        return;
+      }
+      setWaitTick((t) => t + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [aiCooldownUntil, aiOnCooldown]);
 
   const lastResult = useRef<SajuResult | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -210,6 +225,7 @@ export default function Home() {
 
   function askAI() {
     if (!lastResult.current) return;
+    if (Date.now() < aiCooldownUntil) return;
     setAiLoad(true);
     setAiText('');
     setAiFortuneComplete(false);
@@ -236,13 +252,18 @@ export default function Home() {
         isFinished = true;
         clearTimeout(t1);
         clearTimeout(t2);
-        
-        // 스트림 완료 후 본문 전체를 한 번에 표시
+
+        const rateLimited = fullText.includes('과부하') || fullText.includes('한도 초과');
+        if (rateLimited) {
+          setAiCooldownUntil(Date.now() + 90_000);
+          setAiFortuneComplete(false);
+        } else {
+          setAiFortuneComplete(true);
+        }
         setAiText(fullText);
         setAiLoad(false);
-        setShowFb(true);
+        setShowFb(!rateLimited);
         setLoadingStep(0);
-        setAiFortuneComplete(true);
       },
       onError: (err) => { 
         console.error("AI Stream Error:", err);
@@ -713,10 +734,10 @@ export default function Home() {
             </div>
 
             <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', position: 'relative' }}>
-              <button onClick={askAI} disabled={aiLoading} className={aiLoading ? "analyzing-btn" : ""} style={{
+              <button onClick={askAI} disabled={aiLoading || aiOnCooldown} className={aiLoading ? "analyzing-btn" : ""} style={{
                 background:'linear-gradient(135deg,#6b4fa0,#3a7bd5)', border:'none',
                 borderRadius:10, color:'#fff', fontSize:'.92rem', fontWeight:700,
-                padding:'12px 24px', cursor:aiLoading?'not-allowed':'pointer', opacity:aiLoading?.7:1,
+                padding:'12px 24px', cursor:(aiLoading || aiOnCooldown)?'not-allowed':'pointer', opacity:(aiLoading || aiOnCooldown)?.7:1,
                 position: 'relative', overflow: 'hidden'
               }}>
                 {aiLoading && <div className="btn-shine" />}
@@ -727,7 +748,7 @@ export default function Home() {
                     </svg>
                     {steps[loadingStep - 1] || '분석 중...'}
                   </span>
-                ) : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
+                ) : aiOnCooldown ? `⏳ ${Math.max(1, Math.ceil((aiCooldownUntil - Date.now()) / 1000))}초 후 재시도` : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
               </button>
             </div>
 

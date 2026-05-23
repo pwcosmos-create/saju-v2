@@ -4,25 +4,23 @@
 import type { Gemma24SajuCard } from './saju-knowledge';
 import { cardKind, searchCouncilDisplayCards } from './saju-knowledge';
 import { buildPromptEnrichedSections } from './council-fortune-enrich';
+import {
+  FORTUNE_DISPLAY_ORDER,
+  FORTUNE_SECTION_KINDS,
+  FORTUNE_SECTION_TITLES,
+  sortFortuneSectionBlocks,
+} from './fortune-display-order';
 import { mergeOptimizedCardBodies, sanitizeCardBody } from './optimize-card-body';
 
 /** 화면용 카드 1장 이상이면 조합 (프레임 카드로 수만 채우지 않음) */
 const MIN_DISPLAY_CARDS = 1;
 const MAX_CARDS_PER_SECTION = 3;
 
-/** [N] 섹션 ↔ 카드 kind (변수· + 심층·) */
-const COMPOSE_SECTIONS: { id: string; title: string; kinds: string[] }[] = [
-  { id: '1', title: '이 사주의 핵심 성향', kinds: ['stem-day', 'stem-chen', 'deep-1'] },
-  { id: '2', title: '사주 원국과 패턴', kinds: ['deep-2'] },
-  { id: '3', title: '격국(格局)과 기질', kinds: ['gyeok', 'deep-4'] },
-  { id: '4', title: '오행 균형과 보완', kinds: ['deep-3'] },
-  { id: '5', title: '용신·기신과 에너지 조언', kinds: ['un-yongsin', 'un-gisin', 'deep-5'] },
-  { id: '6', title: '직업과 적성', kinds: ['deep-9'] },
-  { id: '7', title: '지지 관계와 인연 흐름', kinds: ['branch', 'deep-8'] },
-  { id: '8', title: '돈과 재물', kinds: ['deep-7'] },
-  { id: '9', title: '대운·세운·올해 흐름', kinds: ['deep-6'] },
-  { id: '10', title: '실천 전략과 주의', kinds: ['deep-10'] },
-];
+const COMPOSE_SECTIONS = FORTUNE_DISPLAY_ORDER.map((id) => ({
+  id,
+  title: FORTUNE_SECTION_TITLES[id],
+  kinds: FORTUNE_SECTION_KINDS[id],
+}));
 
 function councilComposeEnabled(): boolean {
   return process.env.GEMMA24_COUNCIL_COMPOSE_FREE !== '0';
@@ -58,11 +56,7 @@ export function canComposeCouncilFreeFortune(cards: Gemma24SajuCard[]): boolean 
   return display.every((c) => c.councilCertified === true);
 }
 
-function sectionId(line: string): number {
-  return parseInt(line.match(/^\[(\d+)\]/)?.[1] ?? '99', 10);
-}
-
-/** 인증 카드 → [1]~[10] 섹션 + 프롬프트 확정 데이터 보강 */
+/** 인증 카드 → [1]~[10] 섹션 (표시 순서: 1,2,4,3,5,9,8,7,6,10) */
 export function composeCouncilFreeFortune(
   cards: Gemma24SajuCard[],
   query = '',
@@ -92,14 +86,14 @@ export function composeCouncilFreeFortune(
     }
   }
 
-  sectionTexts.sort((a, b) => sectionId(a) - sectionId(b));
+  const orderedSections = sortFortuneSectionBlocks(sectionTexts);
 
   const text = [
     '✦ AI 심층 풀이 — ✓ 사주위원회 인증',
     '',
     '입력하신 사주에 맞춰 인증 지식·심층 카드를 조합했습니다.',
     '',
-    ...sectionTexts,
+    ...orderedSections,
     '',
     '—',
     '참고용 풀이이며 전문 상담을 대체하지 않습니다.',

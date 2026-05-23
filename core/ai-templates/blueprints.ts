@@ -6,6 +6,7 @@ import {
 import { classifyElements, getSipsin } from '../daily-fortune/classifier';
 import { calcYear } from '../pillar-calc/korean-calendar-engine';
 import { buildMonthlyBriefs, formatMonthlyPrompt } from '../daily-fortune/monthly-brief';
+import { FORTUNE_DISPLAY_ORDER_HINT } from '../gemma24/fortune-display-order';
 
 // ── 오행 헬퍼
 function e(i: number) { return `${ELEM_NAMES[i]}(${ELEM_NAMES_H[i]})`; }
@@ -487,5 +488,7 @@ ${monthlyPrompt}
 ${daeunDetailedText}
 
 ◆ 평생 기억할 한 가지 원칙 — 위 대운 흐름을 반영한 핵심 메시지 한 문장.
-◆ 용신 ${yongsinName}을 일상에서 쓰는 법 — 내일부터 바로 실천할 수 있는 구체적 방법.`;
+◆ 용신 ${yongsinName}을 일상에서 쓰는 법 — 내일부터 바로 실천할 수 있는 구체적 방법.
+
+${FORTUNE_DISPLAY_ORDER_HINT}`;
 }

@@ -2,6 +2,7 @@
  * 인증 카드가 적을 때 프롬프트 확정 데이터로 섹션 보강 (LLM 없음)
  */
 import { extractPromptFacts } from './saju-knowledge';
+import { FORTUNE_SECTION_TITLES } from './fortune-display-order';
 
 const STEM_BLURB: Record<string, string> = {
   갑목: '큰 나무처럼 성장·개척 욕구가 강하고, 시작과 리더십에 유리한 기운입니다.',
@@ -123,32 +124,50 @@ export function buildOfflineHybridSupplement(query: string): string {
   const yTip = facts.yongsinElem ? ELEM_TIP[facts.yongsinElem] : '용신 방향으로 일·관계를 맞추면 흐름이 부드러워집니다.';
   const gyeok = ctx.gyeokLine ?? facts.gyeokguk ?? '격국';
 
+  const sections: { id: keyof typeof FORTUNE_SECTION_TITLES; lines: string[] }[] = [
+    {
+      id: '9',
+      lines: [
+        '◆ 시기별 조언',
+        '— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다. 상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다.',
+        '— 급한 결정은 피하고, 몸과 마음의 리듬을 맞추면 운의 변화를 더 잘 타실 수 있습니다.',
+      ],
+    },
+    {
+      id: '8',
+      lines: [
+        '◆ 재물 흐름',
+        `— ${ctx.dominant ? `지배 오행(${ctx.dominant})이 강한 만큼,` : ''} 익숙한 방식으로 수입을 만들 때 안정감이 큽니다.`,
+        '— 지출·투자는 기신 방향(과한 욕심·무리한 레버리지)을 피하고, 용신 에너지에 맞는 속도로 쌓는 편이 유리합니다.',
+      ],
+    },
+    {
+      id: '7',
+      lines: [
+        '◆ 인연·관계 흐름',
+        '— 지지 합·충은 특정 시기·상대와의 궁합 참고로 쓰면 좋습니다. 단정보다 「이럴 때 조심」 톤으로 읽어 주세요.',
+      ],
+    },
+    {
+      id: '6',
+      lines: [
+        `◆ ${gyeok}이 말하는 일의 방향`,
+        `— ${gyeok}은 타고난 일 처리 방식과 맞는 환경을 가리킵니다. ${ctx.strength ? `현재 ${ctx.strength}이므로,` : ''} 무리한 확장보다 강점이 드러나는 분야에 집중하면 좋습니다.`,
+        `— ${yTip}`,
+      ],
+    },
+    {
+      id: '10',
+      lines: [
+        '◆ 평생 기억할 원칙',
+        `— ${facts.stemKo ? `${facts.stemKo} 일간의 강점을 살리되,` : ''} 용신(${ctx.yongsinLine ?? '확정 용신'})을 일상 습관으로 옮기는 것이 이 사주의 핵심 전략입니다.`,
+      ],
+    },
+  ];
+
   const blocks: string[] = [];
-
-  blocks.push(
-    '[6] 직업과 적성',
-    '',
-    `◆ ${gyeok}이 말하는 일의 방향`,
-    `— ${gyeok}은 타고난 일 처리 방식과 맞는 환경을 가리킵니다. ${ctx.strength ? `현재 ${ctx.strength}이므로,` : ''} 무리한 확장보다 강점이 드러나는 분야에 집중하면 좋습니다.`,
-    `— ${yTip}`,
-    '',
-    '[8] 돈과 재물',
-    '',
-    '◆ 재물 흐름',
-    `— ${ctx.dominant ? `지배 오행(${ctx.dominant})이 강한 만큼,` : ''} 익숙한 방식으로 수입을 만들 때 안정감이 큽니다.`,
-    '— 지출·투자는 기신 방향(과한 욕심·무리한 레버리지)을 피하고, 용신 에너지에 맞는 속도로 쌓는 편이 유리합니다.',
-    '',
-    '[9] 올해·월별 흐름',
-    '',
-    '◆ 시기별 조언',
-    '— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다. 상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다.',
-    '— 급한 결정은 피하고, 몸과 마음의 리듬을 맞추면 운의 변화를 더 잘 타실 수 있습니다.',
-    '',
-    '[10] 인생 전략 한 줄',
-    '',
-    '◆ 평생 기억할 원칙',
-    `— ${facts.stemKo ? `${facts.stemKo} 일간의 강점을 살리되,` : ''} 용신(${ctx.yongsinLine ?? '확정 용신'})을 일상 습관으로 옮기는 것이 이 사주의 핵심 전략입니다.`,
-  );
-
-  return blocks.join('\n');
+  for (const sec of sections) {
+    blocks.push(`[${sec.id}] ${FORTUNE_SECTION_TITLES[sec.id]}`, '', ...sec.lines, '');
+  }
+  return blocks.join('\n').trim();
 }

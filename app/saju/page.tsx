@@ -1558,7 +1558,9 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
 }) {
   const ds = result?.pillars[2]?.s ?? 0;
   const isCouncil = fortuneMode?.startsWith('council') ?? text.includes('사주위원회 인증');
-  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['1','3','5','6','7','8','9','10']));
+  const [openSections, setOpenSections] = useState<Set<string>>(
+    () => new Set(['1', '2', '4', '3', '5', '9', '8', '7', '6', '10']),
+  );
   const monthlyBriefs: MonthlyBrief[] | null = useMemo(() => {
     if (!result) return null;
     const dayElem = STEM_ELEM[ds];

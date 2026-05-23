@@ -10,6 +10,7 @@ import {
   composeCouncilFreeFortune,
   type CouncilFreeFortuneResult,
 } from './council-fortune-compose';
+import { fortuneSectionSortIndex } from './fortune-display-order';
 
 /** 섹션별 커버 kind — 심층·[N] 포함 시 AI 보충 생략 */
 const SECTION_COVER: Record<string, string[]> = {
@@ -42,7 +43,11 @@ export function getGroqSupplementSections(cards: Gemma24SajuCard[]): string[] {
   const fromGaps = Object.entries(SECTION_COVER)
     .filter(([, cover]) => !cover.some((k) => kinds.has(k)))
     .map(([sec]) => sec);
-  return [...new Set([...fromGaps, ...ALWAYS_SUPPLEMENT])];
+  const merged = [...new Set([...fromGaps, ...ALWAYS_SUPPLEMENT])];
+  return merged.sort(
+    (a, b) => fortuneSectionSortIndex(a.replace(/^\[|\]$/g, ''))
+      - fortuneSectionSortIndex(b.replace(/^\[|\]$/g, '')),
+  );
 }
 
 function isOverloadText(text: string): boolean {

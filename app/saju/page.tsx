@@ -32,7 +32,11 @@ import type { MonthlyBrief } from '../../core/daily-fortune/monthly-brief';
 import type { OhaengResult } from '../../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
-import { fortuneSectionDisplayTitle } from '../../core/gemma24/fortune-display-order';
+import {
+  fortuneSectionDisplayNumber,
+  fortuneSectionNumberedLabel,
+  fortuneSectionSortIndex,
+} from '../../core/gemma24/fortune-display-order';
 
 // 음력 변환 (클라이언트 전용)
 type MsLib = { lunarToSolar: (y:number,m:number,d:number,leap:boolean)=>{year:number,month:number,day:number} };
@@ -1794,9 +1798,12 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
         <SectionBanner src="/saju-pillars-visual.png" alt="사주 구조" height={80} />
       )}
 
-      {/* 섹션 카드들 */}
-      {sections.map(sec => {
+      {/* 섹션 카드들 — 표시 순서 1~10 */}
+      {[...sections]
+        .sort((a, b) => fortuneSectionSortIndex(a.id) - fortuneSectionSortIndex(b.id))
+        .map(sec => {
         const isOpen = openSections.has(sec.id);
+        const displayNum = fortuneSectionDisplayNumber(sec.id);
         const meta = SECTION_LABELS[sec.id] ?? { emoji:'✦', color:'#c4a8ff' };
         return (
           <div key={sec.id} style={{
@@ -1819,10 +1826,10 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
                 color: meta.color, fontWeight:900, fontSize:'.7rem',
                 padding:'3px 9px', borderRadius:100, flexShrink:0, letterSpacing:'.04em',
               }}>
-                {meta.emoji} {sec.id}
+                {meta.emoji} {displayNum}
               </span>
               <span style={{ flex:1, fontWeight:800, fontSize:'.95rem', color:'#e0cfff' }}>
-                {fortuneSectionDisplayTitle(sec.id, sec.title)}
+                {fortuneSectionNumberedLabel(sec.id, sec.title)}
               </span>
               <span style={{ color:'var(--muted)', fontSize:'.75rem', transition:'transform .2s',
                 transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', display:'inline-block' }}>▾</span>

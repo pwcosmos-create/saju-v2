@@ -57,6 +57,33 @@ export function humanizeDeepSectionText(text: string): string {
   return text.replace(/심층\s*섹션\s*(\d+)/gi, (_, n) => DEEP_CARD_TOPICS[n] ?? `심층·[${n}]`);
 }
 
+/** 화면 나열 순서 기준 1~10 (본문 [N] id와 별개) */
+export function fortuneSectionDisplayNumber(sectionId: string): number {
+  const idx = (FORTUNE_DISPLAY_ORDER as readonly string[]).indexOf(sectionId);
+  return idx >= 0 ? idx + 1 : Number.parseInt(sectionId, 10) || 0;
+}
+
+export function fortuneSectionTopicTitle(sectionId: string, parsedTitle?: string): string {
+  const t = (parsedTitle ?? '').trim();
+  const fromNumbered = t.replace(/^섹션\s*\d+\s*·\s*/, '').trim();
+  if (fromNumbered && fromNumbered !== t) return fromNumbered;
+  const full = fortuneSectionDisplayTitle(sectionId, parsedTitle);
+  const topic = full.replace(/^심층·\[\d+\]\s*/, '').trim();
+  return topic || full;
+}
+
+/** 헤더: 섹션 3 · 오행 균형 */
+export function fortuneSectionNumberedLabel(sectionId: string, parsedTitle?: string): string {
+  const n = fortuneSectionDisplayNumber(sectionId);
+  const topic = fortuneSectionTopicTitle(sectionId, parsedTitle);
+  return n > 0 ? `섹션 ${n} · ${topic}` : topic;
+}
+
+/** 본문 첫 줄: [4] 섹션 3 · 오행 균형 */
+export function formatFortuneSectionHeader(sectionId: string, parsedTitle?: string): string {
+  return `[${sectionId}] ${fortuneSectionNumberedLabel(sectionId, parsedTitle)}`;
+}
+
 export function fortuneSectionDisplayTitle(sectionId: string, parsedTitle?: string): string {
   const canonical = FORTUNE_SECTION_TITLES[sectionId as FortuneSectionId];
   if (canonical) return canonical;
@@ -95,6 +122,6 @@ export const FORTUNE_DISPLAY_ORDER_HINT = [
   '━━━ 섹션 출력 순서 (반드시 준수) ━━━',
   '아래 번호 순서대로만 작성하세요. 번호 자체는 바꾸지 마세요:',
   '[1] → [2] → [4] → [3] → [5] → [9] → [8] → [7] → [6] → [10]',
-  '각 섹션 제목은 심층 카드 명칭을 사용하세요 (예: [1] 심층·[1] 인사·성향, [9] 심층·[6] 대운·세운).',
-  '"섹션 6", "심층 섹션 7"처럼 번호만 적지 말고 주제명을 쓰세요.',
+  '각 섹션 제목 형식: [본문id] 섹션 표시번호 · 주제 (예: [1] 섹션 1 · 인사·성향, [4] 섹션 3 · 오행 균형, [9] 섹션 6 · 대운·세운).',
+  '표시번호는 읽는 순서 1~10, [본문id]는 위 순서의 번호를 그대로 유지하세요.',
 ].join('\n');

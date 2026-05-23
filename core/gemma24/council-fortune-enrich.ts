@@ -2,7 +2,7 @@
  * 인증 카드가 적을 때 프롬프트 확정 데이터로 섹션 보강 (LLM 없음)
  */
 import { extractPromptFacts } from './saju-knowledge';
-import { FORTUNE_SECTION_TITLES } from './fortune-display-order';
+import { FORTUNE_SECTION_TITLES, formatFortuneSectionHeader } from './fortune-display-order';
 
 const STEM_BLURB: Record<string, string> = {
   갑목: '큰 나무처럼 성장·개척 욕구가 강하고, 시작과 리더십에 유리한 기운입니다.',
@@ -167,7 +167,7 @@ export function buildOfflineHybridSupplement(query: string): string {
 
   const blocks: string[] = [];
   for (const sec of sections) {
-    blocks.push(`[${sec.id}] ${FORTUNE_SECTION_TITLES[sec.id]}`, '', ...sec.lines, '');
+    blocks.push(formatFortuneSectionHeader(sec.id, FORTUNE_SECTION_TITLES[sec.id]), '', ...sec.lines, '');
   }
   return blocks.join('\n').trim();
 }

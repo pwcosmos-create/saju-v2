@@ -12,7 +12,7 @@ import {
 } from './council-fortune-compose';
 import {
   FORTUNE_DISPLAY_ORDER_HINT,
-  FORTUNE_SECTION_TITLES,
+  formatFortuneSectionHeader,
   humanizeDeepSectionText,
   sortFortuneSectionBlocks,
 } from './fortune-display-order';
@@ -21,8 +21,8 @@ const SUPPLEMENT_SYSTEM = `당신은 사주팔자 전문가입니다.
 이미 「사주위원회 인증」 지식 카드로 작성된 본문이 있습니다. 그 내용을 반복·요약하지 마세요.
 지시된 번호 섹션만 추가 작성하세요. ◆ 소제목 사용. 평어체(~해요).
 전문 용어는 쉬운 풀이 후 괄호 한자. 출처·각주 표시 금지.
-각 섹션은 반드시 [번호] 심층·[N] 주제명 형식으로 시작하세요.
-"섹션 6", "심층 섹션 7" 같은 번호만 있는 표현은 쓰지 마세요.`;
+각 섹션은 반드시 [본문id] 섹션 표시번호 · 주제명 형식으로 시작하세요.
+예: [4] 섹션 3 · 오행 균형, [9] 섹션 6 · 대운·세운`;
 
 function hybridGroqEnabled(): boolean {
   return process.env.GEMMA24_HYBRID_GROQ !== '0';
@@ -36,10 +36,9 @@ export function getGroqSupplementSections(composed: CouncilFreeFortuneResult): s
 function formatSupplementSectionBrief(composed: CouncilFreeFortuneResult): string {
   return composed.needsSupplementIds
     .map((id) => {
-      const title = FORTUNE_SECTION_TITLES[id as keyof typeof FORTUNE_SECTION_TITLES];
       const filled = composed.filledSectionIds.includes(id);
       const note = filled ? '(인증 카드만 있어 짧음 — 맞춤 확장)' : '(본문 없음 — 새로 작성)';
-      return `[${id}] ${title} ${note}`;
+      return `${formatFortuneSectionHeader(id)} ${note}`;
     })
     .join('\n');
 }

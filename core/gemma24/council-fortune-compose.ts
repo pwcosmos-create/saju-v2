@@ -8,6 +8,7 @@ import {
   FORTUNE_DISPLAY_ORDER,
   FORTUNE_SECTION_KINDS,
   FORTUNE_SECTION_TITLES,
+  formatFortuneSectionHeader,
   sortFortuneSectionBlocks,
 } from './fortune-display-order';
 import { mergeOptimizedCardBodies, sanitizeCardBody } from './optimize-card-body';
@@ -83,7 +84,7 @@ export function composeCouncilFreeFortune(
     for (const c of matched) usedIds.push(c.id);
     filledIds.add(block.id);
     sectionBodyChars[block.id] = body.length;
-    sectionTexts.push(`[${block.id}] ${block.title}\n\n${body}`);
+    sectionTexts.push(`${formatFortuneSectionHeader(block.id, block.title)}\n\n${body}`);
   }
 
   if (query.trim()) {
@@ -91,7 +92,7 @@ export function composeCouncilFreeFortune(
       if (filledIds.has(sec.id)) continue;
       filledIds.add(sec.id);
       sectionBodyChars[sec.id] = sec.body.length;
-      sectionTexts.push(`[${sec.id}] ${sec.title}\n\n${sec.body}`);
+      sectionTexts.push(`${formatFortuneSectionHeader(sec.id, sec.title)}\n\n${sec.body}`);
     }
   }
 

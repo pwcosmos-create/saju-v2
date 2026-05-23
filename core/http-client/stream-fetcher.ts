@@ -10,14 +10,28 @@ function filterLeaked(text: string): string {
   return text.replace(LEAKED, '');
 }
 
+export type SajuCouncilBadgeLevel = 'certified' | 'reviewed' | 'none';
+
+export type SajuFortuneMode =
+  | 'council-compose'
+  | 'council-hybrid'
+  | 'council-hybrid-pending'
+  | 'llm'
+  | 'none';
+
 export interface StreamCallbacks {
   onChunk: (text: string) => void;
   onDone:  () => void;
   onError: (err: Error) => void;
+  onMeta?: (meta: {
+    councilBadge: SajuCouncilBadgeLevel;
+    knowledgeCount: number;
+    fortuneMode?: SajuFortuneMode;
+  }) => void;
 }
 
 export async function fetchStream(prompt: string, callbacks: StreamCallbacks): Promise<void> {
-  const { onChunk, onDone, onError } = callbacks;
+  const { onChunk, onDone, onError, onMeta } = callbacks;
 
   try {
     const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
@@ -31,6 +45,24 @@ export async function fetchStream(prompt: string, callbacks: StreamCallbacks): P
       onError(new Error(`서버 오류: ${res.status}`));
       return;
     }
+
+    const badgeRaw = res.headers.get('X-Saju-Council-Badge');
+    const councilBadge: SajuCouncilBadgeLevel =
+      badgeRaw === 'certified' || badgeRaw === 'reviewed' ? badgeRaw : 'none';
+    const knowledgeCount = Number(res.headers.get('X-Gemma24-Knowledge-Count') ?? '0');
+    const modeRaw = res.headers.get('X-Saju-Fortune-Mode');
+    const fortuneMode: SajuFortuneMode =
+      modeRaw === 'council-compose'
+      || modeRaw === 'council-hybrid'
+      || modeRaw === 'council-hybrid-pending'
+      || modeRaw === 'llm'
+        ? modeRaw
+        : 'none';
+    onMeta?.({
+      councilBadge,
+      knowledgeCount: Number.isFinite(knowledgeCount) ? knowledgeCount : 0,
+      fortuneMode,
+    });
 
     const reader  = res.body.getReader();
     const decoder = new TextDecoder();

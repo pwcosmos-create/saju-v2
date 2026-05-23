@@ -12,9 +12,14 @@ export type Gemma24SajuCard = {
   body: string;
   tags?: string[];
   summary?: string;
+  councilCertified?: boolean;
 };
 
-type RawCard = Gemma24SajuCard & { status?: string };
+type RawCard = Gemma24SajuCard & {
+  status?: string;
+  council_pass?: boolean;
+  council_status?: string;
+};
 
 type KnowledgePack = {
   cards: Gemma24SajuCard[];
@@ -47,9 +52,20 @@ const GYEOK_NAMES = [
 const BRANCH_REL = ['충', '합', '형', '파', '해', '삼합', '방합', '육합'] as const;
 
 const MAX_STEM_CARDS = 1;
+const MAX_STEM_CHEN_CARDS = 1;
 const MAX_GYEOK_CARDS = 1;
 const MAX_BRANCH_CARDS = 1;
 const MAX_ELEM_CARDS = 1;
+const MAX_FOUNDATION_CARDS = 2;
+
+/** 인증 조합 풀이용 공통 프레임 카드 (제목 정확 일치) */
+const COMPOSE_FOUNDATION_TITLES = [
+  '무료 사주 풀이 글 구조',
+  '오행 상생·상극·균형',
+  '격국·십신 핵심 프레임',
+  '용신·기신 선정 원칙',
+  '대운·세운·월운 읽는 순서',
+] as const;
 const MAX_BODY_PER_CARD = 650;
 const MAX_BLOCK_CHARS = 2400;
 
@@ -76,11 +92,22 @@ function packPaths(): string[] {
   ].filter(Boolean) as string[];
 }
 
+function isCouncilApproved(raw: RawCard): boolean {
+  if (raw.council_pass === false) return false;
+  if (raw.council_status === 'fail') return false;
+  return true;
+}
+
+function isCouncilCertified(raw: RawCard): boolean {
+  return raw.council_pass === true || raw.council_status === 'pass';
+}
+
 function normalizeCards(raw: RawCard[], requireConfirmed: boolean): Gemma24SajuCard[] {
   return raw
     .filter((c) => {
       if (typeof c.body !== 'string' || !c.body.trim()) return false;
       if (requireConfirmed && c.status && c.status !== 'confirmed') return false;
+      if (!isCouncilApproved(c)) return false;
       return true;
     })
     .map((c) => ({
@@ -89,6 +116,7 @@ function normalizeCards(raw: RawCard[], requireConfirmed: boolean): Gemma24SajuC
       body: c.body.trim(),
       tags: c.tags,
       summary: c.summary,
+      councilCertified: isCouncilCertified(c),
     }));
 }
 
@@ -213,13 +241,17 @@ function extractPromptFacts(query: string): PromptFacts {
   };
 }
 
-function cardKind(card: Gemma24SajuCard): string {
+export function cardKind(card: Gemma24SajuCard): string {
   const t = card.title.trim();
   if (t.startsWith('변수·격 ')) return 'gyeok';
   if (t.startsWith('변수·지지관계 ')) return 'branch';
   if (t.includes('변수·운 용신')) return 'un-yongsin';
   if (t.includes('변수·운 기신')) return 'un-gisin';
+  if (t.startsWith('변수·천간 ')) return 'stem-chen';
   if (STEM_KO.some((s) => t.includes(s)) && t.includes('일주')) return 'stem-day';
+  if (COMPOSE_FOUNDATION_TITLES.includes(t as (typeof COMPOSE_FOUNDATION_TITLES)[number])) {
+    return 'foundation';
+  }
   return 'other';
 }
 
@@ -234,6 +266,11 @@ function isPreciseMatch(card: Gemma24SajuCard, facts: PromptFacts): boolean {
   if (kind === 'stem-day') {
     if (!facts.stemKo) return false;
     return title.includes(facts.stemKo) && title.includes('일주');
+  }
+
+  if (kind === 'stem-chen') {
+    if (!facts.stemKo) return false;
+    return title.startsWith('변수·천간 ') && title.includes(facts.stemKo);
   }
 
   if (kind === 'gyeok') {
@@ -267,17 +304,123 @@ export function searchGemma24SajuKnowledge(query: string): Gemma24SajuCard[] {
   const facts = extractPromptFacts(query);
   const precise = pack.cards.filter((c) => isPreciseMatch(c, facts));
 
-  const stem = precise.filter((c) => cardKind(c) === 'stem-day').slice(0, MAX_STEM_CARDS);
-  const gyeok = precise.filter((c) => cardKind(c) === 'gyeok').slice(0, MAX_GYEOK_CARDS);
-  const branch = precise.filter((c) => cardKind(c) === 'branch').slice(0, MAX_BRANCH_CARDS);
+  const stem = precise
+    .filter((c) => cardKind(c) === 'stem-day')
+    .sort((a, b) => Number(b.councilCertified) - Number(a.councilCertified))
+    .slice(0, MAX_STEM_CARDS);
+  const gyeok = precise
+    .filter((c) => cardKind(c) === 'gyeok')
+    .sort((a, b) => Number(b.councilCertified) - Number(a.councilCertified))
+    .slice(0, MAX_GYEOK_CARDS);
+  const branch = precise
+    .filter((c) => cardKind(c) === 'branch')
+    .sort((a, b) => Number(b.councilCertified) - Number(a.councilCertified))
+    .slice(0, MAX_BRANCH_CARDS);
   const elem = precise
     .filter((c) => cardKind(c) === 'un-yongsin' || cardKind(c) === 'un-gisin')
+    .sort((a, b) => Number(b.councilCertified) - Number(a.councilCertified))
     .slice(0, MAX_ELEM_CARDS);
 
-  return [...stem, ...gyeok, ...branch, ...elem];
+  const stemChen = precise
+    .filter((c) => cardKind(c) === 'stem-chen')
+    .sort((a, b) => Number(b.councilCertified) - Number(a.councilCertified))
+    .slice(0, MAX_STEM_CHEN_CARDS);
+
+  return [...stem, ...stemChen, ...gyeok, ...branch, ...elem];
 }
 
-export function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[]): string {
+function pushCouncilCard(
+  out: Gemma24SajuCard[],
+  seen: Set<number>,
+  c: Gemma24SajuCard | undefined,
+): void {
+  if (!c || seen.has(c.id) || !c.councilCertified) return;
+  seen.add(c.id);
+  out.push(c);
+}
+
+function enrichCouncilStemCards(
+  pack: KnowledgePack,
+  facts: ReturnType<typeof extractPromptFacts>,
+  out: Gemma24SajuCard[],
+  seen: Set<number>,
+): void {
+  if (!facts.stemKo) return;
+  const stemChen = pack.cards.find(
+    (c) => cardKind(c) === 'stem-chen' && c.title.includes(facts.stemKo!),
+  );
+  pushCouncilCard(out, seen, stemChen);
+  const stemDay = pack.cards.find(
+    (c) => cardKind(c) === 'stem-day' && c.title.includes(facts.stemKo!) && c.title.includes('일주'),
+  );
+  pushCouncilCard(out, seen, stemDay);
+}
+
+/** 화면 조합용 — 프레임(풀이 틀) 카드 제외, 일주·격국·용신 등만 */
+export function searchCouncilDisplayCards(query: string): Gemma24SajuCard[] {
+  const pack = loadKnowledge();
+  if (!pack?.cards.length) return [];
+
+  const facts = extractPromptFacts(query);
+  const matched = searchGemma24SajuKnowledge(query).filter((c) => cardKind(c) !== 'foundation');
+  const seen = new Set(matched.map((c) => c.id));
+  const out = [...matched];
+
+  enrichCouncilStemCards(pack, facts, out, seen);
+
+  return out;
+}
+
+/** Groq 보충 컨텍스트용 — 프레임 카드 포함 (반복 금지 참고용) */
+export function searchCouncilContextCards(query: string): Gemma24SajuCard[] {
+  const pack = loadKnowledge();
+  if (!pack?.cards.length) return [];
+
+  const facts = extractPromptFacts(query);
+  const out = searchCouncilDisplayCards(query);
+  const seen = new Set(out.map((c) => c.id));
+
+  for (const title of COMPOSE_FOUNDATION_TITLES) {
+    if (out.filter((c) => cardKind(c) === 'foundation').length >= MAX_FOUNDATION_CARDS) break;
+    const f = pack.cards.find((c) => c.title.trim() === title);
+    pushCouncilCard(out, seen, f);
+  }
+
+  if (out.length < 2) {
+    enrichCouncilStemCards(pack, facts, out, seen);
+  }
+
+  return out;
+}
+
+/** @deprecated searchCouncilDisplayCards / searchCouncilContextCards 사용 */
+export function searchCouncilComposeCards(query: string): Gemma24SajuCard[] {
+  return searchCouncilContextCards(query);
+}
+
+export type SajuCouncilBadgeLevel = 'certified' | 'reviewed' | 'none';
+
+export type Gemma24KnowledgeResult = {
+  systemAppend: string;
+  badge: SajuCouncilBadgeLevel;
+  cardCount: number;
+};
+
+export function buildGemma24KnowledgeResult(query: string): Gemma24KnowledgeResult {
+  if (!knowledgeEnabled()) {
+    return { systemAppend: '', badge: 'none', cardCount: 0 };
+  }
+  const cards = searchGemma24SajuKnowledge(query);
+  const hasCertified = cards.some((c) => c.councilCertified);
+  const systemAppend = formatGemma24KnowledgeBlock(cards, hasCertified);
+  return {
+    systemAppend,
+    badge: cards.length === 0 ? 'none' : hasCertified ? 'certified' : 'reviewed',
+    cardCount: cards.length,
+  };
+}
+
+function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[], councilCertified: boolean): string {
   if (!cards.length) return '';
 
   const sections: string[] = [];
@@ -294,9 +437,18 @@ export function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[]): string {
 
   if (!sections.length) return '';
 
+  const headerLines = councilCertified
+    ? [
+      '【젬마24 참고 지식 — ✓ 사주위원회 인증】',
+      '아래 카드는 명리 사주위원회 검증(PASS)을 받은 자료입니다. 확정 데이터와 모순되면 확정 데이터를 따르세요.',
+    ]
+    : [
+      '【젬마24 참고 지식 — 사주위원회 검수 반영】',
+      '아래 카드는 확정 데이터와 일치하는 검수 지식입니다. 위원회 FAIL 항목은 제외되었습니다.',
+    ];
+
   return [
-    '【젬마24 참고 지식 — 확정 데이터와 일치하는 항목만】',
-    '아래 카드는 이 사주의 일주·격국·관계·용신/기신과 정확히 맞는 자료입니다. 확정 데이터와 모순되면 확정 데이터를 따르세요.',
+    ...headerLines,
     '문장을 그대로 복사하지 말고 논리와 톤만 참고하세요.',
     '',
     ...sections,
@@ -304,7 +456,5 @@ export function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[]): string {
 }
 
 export function buildGemma24KnowledgeForSystem(query: string): string {
-  if (!knowledgeEnabled()) return '';
-  const cards = searchGemma24SajuKnowledge(query);
-  return formatGemma24KnowledgeBlock(cards);
+  return buildGemma24KnowledgeResult(query).systemAppend;
 }

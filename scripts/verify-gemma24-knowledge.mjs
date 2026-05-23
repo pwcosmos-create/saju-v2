@@ -1,4 +1,4 @@
-import { buildGemma24KnowledgeForSystem, searchGemma24SajuKnowledge } from '../core/gemma24/saju-knowledge.ts';
+import { buildGemma24KnowledgeResult, searchGemma24SajuKnowledge } from '../core/gemma24/saju-knowledge.ts';
 
 process.env.GEMMA24_SAJU_CARDS_PATH =
   process.env.GEMMA24_SAJU_CARDS_PATH
@@ -15,11 +15,10 @@ const sample = `
   - 역마: 이동·변화
 `.trim();
 
+const result = buildGemma24KnowledgeResult(sample);
 const cards = searchGemma24SajuKnowledge(sample);
-const block = buildGemma24KnowledgeForSystem(sample);
 
-console.log('=== Precise Gemma24 match ===');
-console.log('matched:', cards.length);
-cards.forEach((c) => console.log(' -', c.id, c.title));
-console.log('injected:', block.length > 0 ? 'YES' : 'NO (accurate match only)');
-if (block) console.log(block.slice(0, 500));
+console.log('=== Gemma24 + Council ===');
+console.log('badge:', result.badge, 'cards:', result.cardCount);
+cards.forEach((c) => console.log(' -', c.id, c.title, c.councilCertified ? '[인증]' : ''));
+console.log('injected:', result.systemAppend.length > 0 ? 'YES' : 'NO');

@@ -23,7 +23,7 @@ import {
   JOBS_BY_STEM, F2026_BY_STEM, getIljooDesc,
 } from '../../core/interpretation-db/matcher';
 import { buildPrompt } from '../../core/ai-templates/blueprints';
-import { fetchStream } from '../../core/http-client/stream-fetcher';
+import { fetchStream, type SajuCouncilBadgeLevel, type SajuFortuneMode } from '../../core/http-client/stream-fetcher';
 import { dailyFortune } from '../../core/daily-fortune';
 import type { DailyFortuneResult } from '../../core/daily-fortune';
 import { calcStrength, getSipsin, classifyElements } from '../../core/daily-fortune/classifier';
@@ -65,6 +65,28 @@ type TabName = typeof TAB_NAMES[number];
 const STEM_ICONS = ['🌳','🌿','☀️','🕯️','⛰️','🌾','🪨','💎','🌊','🌧️'];
 
 // 오행 배지 색상 — 목:초록 화:빨강 토:황금 금:은회색 수:딥네이비(검정물)
+function SajuCouncilBadge({ level, compact }: { level: SajuCouncilBadgeLevel; compact?: boolean }) {
+  if (level === 'none') return null;
+  const certified = level === 'certified';
+  return (
+    <span style={{
+      fontSize: compact ? '.68rem' : '.72rem',
+      fontWeight: 800,
+      color: certified ? '#ffe8a8' : 'rgba(255,255,255,.85)',
+      background: certified
+        ? 'linear-gradient(135deg, rgba(184,134,11,.45), rgba(139,111,198,.35))'
+        : 'rgba(255,255,255,.12)',
+      border: certified ? '1px solid rgba(255,215,120,.55)' : '1px solid rgba(255,255,255,.18)',
+      padding: compact ? '2px 8px' : '3px 10px',
+      borderRadius: 20,
+      backdropFilter: 'blur(4px)',
+      whiteSpace: 'nowrap',
+    }}>
+      {certified ? '✓ 사주위원회 인증' : '◷ 사주위원회 검수 반영'}
+    </span>
+  );
+}
+
 const ELEM_BADGE = [
   { bg:'rgba(34,160,60,.20)',   border:'rgba(34,160,60,.50)',   text:'#5dce70' }, // 목
   { bg:'rgba(220,50,50,.20)',   border:'rgba(220,50,50,.50)',   text:'#ff7070' }, // 화
@@ -144,6 +166,8 @@ export default function Home() {
   const [comment,  setComment]  = useState('');
   const [copied,        setCopied]        = useState(false);
   const [aiCooldownUntil, setAiCooldownUntil] = useState(0);
+  const [aiCouncilBadge, setAiCouncilBadge] = useState<SajuCouncilBadgeLevel>('none');
+  const [aiFortuneMode, setAiFortuneMode] = useState<SajuFortuneMode>('none');
 
   const aiOnCooldown = Date.now() < aiCooldownUntil;
 
@@ -229,6 +253,8 @@ export default function Home() {
     setAiLoad(true);
     setAiText('');
     setAiFortuneComplete(false);
+    setAiCouncilBadge('none');
+    setAiFortuneMode('none');
     setShowFb(false);
     setFbDone(false);
     setLoadingStep(1); // 기운 읽는 중
@@ -241,6 +267,10 @@ export default function Home() {
     const t2 = setTimeout(() => { if (!isFinished) setLoadingStep(3); }, 7000); // 검토 중
 
     fetchStream(buildPrompt(lastResult.current), {
+      onMeta: ({ councilBadge, fortuneMode }) => {
+        setAiCouncilBadge(councilBadge);
+        setAiFortuneMode(fortuneMode ?? 'none');
+      },
       onChunk: t => {
         fullText += t;
         // 작성 중 단계에서는 진행률만 표시하거나 아주 가끔 업데이트 (사용자 안심용)
@@ -716,9 +746,7 @@ export default function Home() {
               }}>
                 <span style={{ fontSize:'1.5rem' }}>✦</span>
                 <span style={{ fontWeight:900, fontSize:'1.1rem', color:'#fff', textShadow:'0 0 20px rgba(196,168,255,.8)' }}>AI 심층 풀이</span>
-                <span style={{ fontSize:'.72rem', color:'rgba(255,255,255,.7)', background:'rgba(255,255,255,.12)', padding:'2px 10px', borderRadius:20, backdropFilter:'blur(4px)' }}>
-                  Gemini 2.5 Flash
-                </span>
+                <SajuCouncilBadge level={aiCouncilBadge !== 'none' ? aiCouncilBadge : 'reviewed'} compact />
               </div>
             </div>
 
@@ -806,7 +834,14 @@ export default function Home() {
             {/* 프리미엄 게이트 모달 */}
 
             {(aiText||aiLoading)&&(
-              <AiRenderer text={aiText} loading={aiLoading} result={result} />
+              <>
+                {aiCouncilBadge !== 'none' && !aiLoading && (
+                  <div style={{ display:'flex', justifyContent:'center', marginTop:14 }}>
+                    <SajuCouncilBadge level={aiCouncilBadge} />
+                  </div>
+                )}
+                <AiRenderer text={aiText} loading={aiLoading} result={result} fortuneMode={aiFortuneMode} />
+              </>
             )}
 
             {showFb&&!fbDone&&(
@@ -1517,11 +1552,13 @@ function MonthlyChart({ briefs }: { briefs: MonthlyBrief[] }) {
   );
 }
 
-function AiRenderer({ text, loading, result }: {
+function AiRenderer({ text, loading, result, fortuneMode }: {
   text: string; loading: boolean; result?: SajuResult | null;
+  fortuneMode?: SajuFortuneMode;
 }) {
   const ds = result?.pillars[2]?.s ?? 0;
-  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['1','2','3']));
+  const isCouncil = fortuneMode?.startsWith('council') ?? text.includes('사주위원회 인증');
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['1','3','5','6','7','8','9','10']));
   const monthlyBriefs: MonthlyBrief[] | null = useMemo(() => {
     if (!result) return null;
     const dayElem = STEM_ELEM[ds];
@@ -1670,8 +1707,15 @@ function AiRenderer({ text, loading, result }: {
         <div style={{ padding:'16px 20px', marginBottom:12,
           background:'rgba(0,0,0,.2)', borderRadius:12,
           border:'1px solid rgba(255,255,255,.07)' }}>
+          {isCouncil && (
+            <SectionBanner src="/saju-ai-reading-banner.png" alt="AI 심층 풀이" height={72} />
+          )}
           {renderLines(headerlessPre)}
         </div>
+      )}
+
+      {isCouncil && sections.length === 0 && !loading && (
+        <SectionBanner src="/saju-pillars-visual.png" alt="사주 구조" height={80} />
       )}
 
       {/* 섹션 카드들 */}

@@ -129,8 +129,8 @@ async function auditAndRefineWithGemini(draftText: string): Promise<string> {
   return cleanLlamaLeakages(draftText);
 }
 
-// Convert audited text back to SSE stream format
-function streamTextToOpenAiSse(text: string): ReadableStream {
+/** 텍스트를 OpenAI 호환 SSE 스트림으로 변환 (인증 카드 조합 풀이 등) */
+export function streamTextToOpenAiSse(text: string): ReadableStream {
   const encoder = new TextEncoder();
   const cleanedText = cleanLlamaLeakages(text);
   const chunks: string[] = [];
@@ -165,86 +165,97 @@ function streamTextToOpenAiSse(text: string): ReadableStream {
   });
 }
 
-// Groq + Gemini 2.5 Flash with automatic fallback
-export async function fetchLlmStream(body: any): Promise<Response> {
-  let draftText = '';
-
-  const upstreamBody: Record<string, unknown> = {
-    ...body,
-    stream: false,
-  };
-
+function prepareUpstreamBody(body: Record<string, unknown>): Record<string, unknown> {
+  const upstreamBody: Record<string, unknown> = { ...body, stream: false };
   if (upstreamBody.max_tokens && (upstreamBody.max_tokens as number) > 3000) {
     upstreamBody.max_tokens = 3000;
   }
-
   if (Array.isArray(upstreamBody.messages)) {
     upstreamBody.messages = (upstreamBody.messages as { role: string; content: string }[]).map((m) => ({
       ...m,
       content: typeof m.content === 'string' ? m.content.slice(0, 12000) : m.content,
     }));
   }
+  return upstreamBody;
+}
 
-  // ── 1차: Groq — 429 시 다음 키로 순회 (키당 1회만)
-  if (GROQ_KEYS.length > 0) {
-    const startIdx = keyIndex;
-    for (let i = 0; i < GROQ_KEYS.length; i += 1) {
-      const groqKey = GROQ_KEYS[(startIdx + i) % GROQ_KEYS.length];
-      try {
-        let result = await callGroqCompletion(groqKey, upstreamBody);
-        if (!result.ok && result.status === 413) {
-          const shorter = {
-            ...upstreamBody,
-            messages: (upstreamBody.messages as { role: string; content: string }[]).map((m) => ({
-              ...m,
-              content: typeof m.content === 'string' ? m.content.slice(0, 8000) : m.content,
-            })),
-          };
-          result = await callGroqCompletion(groqKey, shorter);
-        }
-        if (result.ok && result.text) {
-          draftText = result.text;
-          keyIndex = (startIdx + i + 1) % GROQ_KEYS.length;
-          break;
-        }
-        if (result.status === 429) {
-          console.warn(`Groq 429 on key #${i + 1}, trying next key.`);
-          continue;
-        }
-        if (result.status !== 429) {
-          console.warn(`Groq API returned status ${result.status}.`);
-        }
-      } catch (e) {
-        console.warn('Groq API call failed:', e);
+async function completeWithGroq(upstreamBody: Record<string, unknown>): Promise<string> {
+  if (GROQ_KEYS.length === 0) return '';
+  const startIdx = keyIndex;
+  for (let i = 0; i < GROQ_KEYS.length; i += 1) {
+    const groqKey = GROQ_KEYS[(startIdx + i) % GROQ_KEYS.length];
+    try {
+      let result = await callGroqCompletion(groqKey, upstreamBody);
+      if (!result.ok && result.status === 413) {
+        const shorter = {
+          ...upstreamBody,
+          messages: (upstreamBody.messages as { role: string; content: string }[]).map((m) => ({
+            ...m,
+            content: typeof m.content === 'string' ? m.content.slice(0, 8000) : m.content,
+          })),
+        };
+        result = await callGroqCompletion(groqKey, shorter);
       }
+      if (result.ok && result.text) {
+        keyIndex = (startIdx + i + 1) % GROQ_KEYS.length;
+        return result.text;
+      }
+      if (result.status === 429) {
+        console.warn(`Groq 429 on key #${i + 1}, trying next key.`);
+        continue;
+      }
+      if (result.status !== 429) {
+        console.warn(`Groq API returned status ${result.status}.`);
+      }
+    } catch (e) {
+      console.warn('Groq API call failed:', e);
     }
   }
+  return '';
+}
 
-  // ── 2차: Gemini (429 시 3초 후 1회 재시도)
-  if (!draftText) {
-    const geminiKey = process.env.GOOGLE_AI_API_KEY ?? '';
-    if (geminiKey) {
-      for (const waitMs of [0, 3000]) {
-        if (waitMs > 0) await sleep(waitMs);
-        try {
-          const result = await callGeminiCompletion(geminiKey, upstreamBody);
-          if (result.ok && result.text) {
-            draftText = result.text;
-            break;
-          }
-          if (result.status === 429) {
-            console.warn(waitMs === 0 ? 'Gemini 429, retrying in 3s.' : 'Gemini 429 on retry.');
-            continue;
-          }
-          console.error(`Gemini fallback failed: ${result.status}`);
-          break;
-        } catch (e) {
-          console.error('Gemini fallback error:', e);
-        }
+async function completeWithGemini(upstreamBody: Record<string, unknown>): Promise<string> {
+  const geminiKey = process.env.GOOGLE_AI_API_KEY ?? '';
+  if (!geminiKey) return '';
+  for (const waitMs of [0, 3000]) {
+    if (waitMs > 0) await sleep(waitMs);
+    try {
+      const result = await callGeminiCompletion(geminiKey, upstreamBody);
+      if (result.ok && result.text) return result.text;
+      if (result.status === 429) {
+        console.warn(waitMs === 0 ? 'Gemini 429, retrying in 3s.' : 'Gemini 429 on retry.');
+        continue;
       }
-    } else {
-      console.error('GOOGLE_AI_API_KEY missing; cannot fall back from Groq.');
+      console.error(`Gemini fallback failed: ${result.status}`);
+      break;
+    } catch (e) {
+      console.error('Gemini fallback error:', e);
     }
+  }
+  return '';
+}
+
+/** Groq → Gemini (또는 geminiFirst) 단일 완성. 실패 시 null */
+export async function fetchLlmCompletionText(
+  body: Record<string, unknown>,
+  options?: { geminiFirst?: boolean },
+): Promise<string | null> {
+  const upstreamBody = prepareUpstreamBody(body);
+  const groq = () => completeWithGroq(upstreamBody);
+  const gemini = () => completeWithGemini(upstreamBody);
+  const text = options?.geminiFirst ? ((await gemini()) || (await groq())) : ((await groq()) || (await gemini()));
+  return text.trim() ? cleanLlamaLeakages(text) : null;
+}
+
+// Groq + Gemini 2.5 Flash with automatic fallback
+export async function fetchLlmStream(body: any): Promise<Response> {
+  let draftText = '';
+
+  const upstreamBody = prepareUpstreamBody(body as Record<string, unknown>);
+
+  draftText = (await completeWithGroq(upstreamBody)) || (await completeWithGemini(upstreamBody));
+  if (!draftText && GROQ_KEYS.length === 0 && !process.env.GOOGLE_AI_API_KEY) {
+    console.error('GOOGLE_AI_API_KEY missing; cannot fall back from Groq.');
   }
 
   // ── 둘 다 실패 시: 사용자에게 안내 메시지 반환

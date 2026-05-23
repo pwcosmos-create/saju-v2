@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const gemma24 = buildGemma24KnowledgeResult(prompt);
+  const gemma24 = buildGemma24KnowledgeResult(prompt, { certifiedOnly: true });
   const system = gemma24.systemAppend ? `${SYSTEM}\n\n${gemma24.systemAppend}` : SYSTEM;
 
   // Groq 429 시 4키 병렬은 한도만 소진 — 조합 풀이 실패 시 단일 호출만

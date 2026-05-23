@@ -278,7 +278,10 @@ function isPreciseMatch(card: Gemma24SajuCard, facts: PromptFacts): boolean {
   if (kind === 'gyeok') {
     if (!facts.gyeokguk) return false;
     const cardGyeok = title.replace(/^변수·격\s*/, '').trim();
-    return cardGyeok === facts.gyeokguk || cardGyeok.startsWith(facts.gyeokguk);
+    if (cardGyeok === facts.gyeokguk || cardGyeok.startsWith(facts.gyeokguk)) return true;
+    const alias: Record<string, string> = { 칠살격: '편관격', 편관격: '칠살격' };
+    const alt = alias[facts.gyeokguk];
+    return Boolean(alt && (cardGyeok === alt || cardGyeok.startsWith(alt)));
   }
 
   if (kind === 'branch') {
@@ -379,20 +382,27 @@ function enrichCouncilDeepCards(
   }
 }
 
-/** 화면 조합용 — 프레임(풀이 틀) 카드 제외, 일주·격국·용신·심층 섹션 */
+/** PASS(인증) 카드만 — 조합·표시용 */
+export function filterCouncilCertifiedCards(cards: Gemma24SajuCard[]): Gemma24SajuCard[] {
+  return cards.filter((c) => c.councilCertified === true);
+}
+
+/** 화면 조합용 — PASS만, 프레임 제외, 일주·격국·용신·심층 섹션 */
 export function searchCouncilDisplayCards(query: string): Gemma24SajuCard[] {
   const pack = loadKnowledge();
   if (!pack?.cards.length) return [];
 
   const facts = extractPromptFacts(query);
-  const matched = searchGemma24SajuKnowledge(query).filter((c) => cardKind(c) !== 'foundation');
+  const matched = filterCouncilCertifiedCards(searchGemma24SajuKnowledge(query)).filter(
+    (c) => cardKind(c) !== 'foundation',
+  );
   const seen = new Set(matched.map((c) => c.id));
   const out = [...matched];
 
   enrichCouncilStemCards(pack, facts, out, seen);
   enrichCouncilDeepCards(pack, out, seen);
 
-  return out;
+  return filterCouncilCertifiedCards(out);
 }
 
 /** Groq 보충 컨텍스트용 — 프레임 카드 포함 (반복 금지 참고용) */
@@ -430,11 +440,22 @@ export type Gemma24KnowledgeResult = {
   cardCount: number;
 };
 
-export function buildGemma24KnowledgeResult(query: string): Gemma24KnowledgeResult {
+export function buildGemma24KnowledgeResult(
+  query: string,
+  opts?: { certifiedOnly?: boolean },
+): Gemma24KnowledgeResult {
   if (!knowledgeEnabled()) {
     return { systemAppend: '', badge: 'none', cardCount: 0 };
   }
-  const cards = searchGemma24SajuKnowledge(query);
+  const certifiedOnly = opts?.certifiedOnly !== false
+    && process.env.GEMMA24_COUNCIL_CERTIFIED_ONLY !== '0';
+  let cards = searchGemma24SajuKnowledge(query);
+  if (certifiedOnly) {
+    cards = filterCouncilCertifiedCards(cards);
+    if (!cards.length) {
+      return { systemAppend: '', badge: 'none', cardCount: 0 };
+    }
+  }
   const hasCertified = cards.some((c) => c.councilCertified);
   const systemAppend = formatGemma24KnowledgeBlock(cards, hasCertified);
   return {

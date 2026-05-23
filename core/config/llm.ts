@@ -133,6 +133,11 @@ export async function fetchLlmStream(body: any): Promise<Response> {
     stream: false
   };
 
+  // Clamp max_tokens to 8192 to prevent 413 Payload Too Large error on Groq
+  if (upstreamBody.max_tokens && upstreamBody.max_tokens > 8192) {
+    upstreamBody.max_tokens = 8192;
+  }
+
   if (activeGroqKey) {
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {

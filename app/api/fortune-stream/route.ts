@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
   const upstream = await fetchLlmStream({
     stream: true,
-    max_tokens: 32768,
+    max_tokens: 8192,
     temperature: 0.7,
     messages: [
       { role: 'system', content: SYSTEM },

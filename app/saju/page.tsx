@@ -3,7 +3,7 @@
  * AI Saju Analytics Platform - v2.0.3
  * 
  * 주요 변경 사항:
- * - Draft-Review-Type: 분석 중 사주 요약 카드 → 완료 후 심층 풀이 본문 표시
+ * - AI 심층 풀이: 「AI 풀이 받기」 클릭 시에만 시작, 완료 후 본문 표시
  * - 단계별 로딩 상태 애니메이션 최적화
  * - 스트리밍 데이터 누락 방지 로직 강화
  */
@@ -238,7 +238,17 @@ export default function Home() {
       catch { alert('음력 날짜 변환 실패. 날짜를 다시 확인해주세요.'); return; }
     }
     save();
-    setLoading(true); setResult(null); setFortuneResult(null); setAiText(''); setAiFortuneComplete(false); setShowFb(false); setFbDone(false);
+    setLoading(true);
+    setResult(null);
+    setFortuneResult(null);
+    setAiText('');
+    setAiFortuneComplete(false);
+    setAiCouncilBadge('none');
+    setAiFortuneMode('none');
+    setAiLoad(false);
+    setLoadingStep(0);
+    setShowFb(false);
+    setFbDone(false);
     setTimeout(() => {
       const r = calculate({ year:sy, month:sm, day:sd, hourTotalMin:parseInt(hour), gender });
       lastResult.current = r;
@@ -246,9 +256,6 @@ export default function Home() {
       try { setFortuneResult(dailyFortune(r)); } catch { setFortuneResult(null); }
       setLoading(false);
       setTimeout(() => resultsRef.current?.scrollIntoView({ behavior:'smooth' }), 100);
-      setTimeout(() => {
-        if (lastResult.current && Date.now() >= aiCooldownUntil) askAI();
-      }, 500);
     }, 600);
   }
 

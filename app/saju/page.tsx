@@ -648,6 +648,25 @@ export default function Home() {
           </div>
 
           <div style={cardStyle}>
+            {/* 탭별 상단 이미지 */}
+            {tab==='성격' && (
+              <div style={{ width:'100%', height:100, borderRadius:10, overflow:'hidden', marginBottom:16, position:'relative' }}>
+                <img src="/saju-personality-visual.png" alt="성격 분석" style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.75 }} />
+                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 40%, var(--card) 100%)' }} />
+              </div>
+            )}
+            {tab==='대운' && (
+              <div style={{ width:'100%', height:100, borderRadius:10, overflow:'hidden', marginBottom:16, position:'relative' }}>
+                <img src="/saju-daeun-visual.png" alt="대운 흐름" style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.75 }} />
+                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 40%, var(--card) 100%)' }} />
+              </div>
+            )}
+            {tab==='월별' && (
+              <div style={{ width:'100%', height:100, borderRadius:10, overflow:'hidden', marginBottom:16, position:'relative' }}>
+                <img src="/saju-monthly-visual.png" alt="월별 운세" style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.75 }} />
+                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 40%, var(--card) 100%)' }} />
+              </div>
+            )}
             {tab==='성격'&&dp&&<TabSung ds={ds} dp={dp} />}
             {tab==='운세'&&<TabFortune ds={ds} />}
             {tab==='신살'&&<TabShinsal shinsal={result.shinsal} />}
@@ -660,12 +679,26 @@ export default function Home() {
           {/* AI 풀이 */}
           <div style={{ margin:'28px 0', background:'rgba(139,111,198,.1)',
             border:'1px solid rgba(139,111,198,.3)', borderRadius:16, padding:28 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
-              <span style={{ fontSize:'1.3rem' }}>✦</span>
-              <span style={{ fontWeight:800, fontSize:'1rem', color:'var(--gold)' }}>AI 심층 풀이</span>
-              <span style={{ fontSize:'.72rem', color:'var(--muted)', background:'rgba(255,255,255,.07)', padding:'2px 8px', borderRadius:20 }}>
-                Gemini 2.5 Flash
-              </span>
+            {/* AI 풀이 배너 이미지 */}
+            <div style={{
+              width:'100%', height:120, borderRadius:12, overflow:'hidden',
+              marginBottom:18, position:'relative',
+            }}>
+              <img src="/saju-ai-reading-banner.png" alt="AI 심층 풀이"
+                style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.85 }} />
+              <div style={{
+                position:'absolute', inset:0,
+                background:'linear-gradient(90deg, rgba(10,8,30,.7) 0%, transparent 40%, transparent 60%, rgba(10,8,30,.7) 100%)',
+              }} />
+              <div style={{
+                position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+              }}>
+                <span style={{ fontSize:'1.5rem' }}>✦</span>
+                <span style={{ fontWeight:900, fontSize:'1.1rem', color:'#fff', textShadow:'0 0 20px rgba(196,168,255,.8)' }}>AI 심층 풀이</span>
+                <span style={{ fontSize:'.72rem', color:'rgba(255,255,255,.7)', background:'rgba(255,255,255,.12)', padding:'2px 10px', borderRadius:20, backdropFilter:'blur(4px)' }}>
+                  Gemini 2.5 Flash
+                </span>
+              </div>
             </div>
 
             {/* 사주 도표 */}

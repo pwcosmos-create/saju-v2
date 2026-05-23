@@ -26,24 +26,28 @@ const FEATURES = [
     title: '사주팔자 정밀 계산',
     desc: '진짜만세력(고영창) 기반 60갑자 사주팔자를 정밀하게 계산합니다. 양력·음력 모두 지원.',
     color: '#f5d67a',
+    img: '/saju-pillars-visual.png',
   },
   {
     icon: '✦',
     title: 'AI 심층 풀이',
     desc: 'AI가 실시간 스트리밍으로 성격·직업·건강·운세를 깊이 있게 풀이해드립니다.',
     color: '#c4a8ff',
+    img: null,
   },
   {
     icon: '💎',
     title: '오행·신살·대운',
     desc: '오행 분포, 천을귀인 등 신살, 10년 대운 흐름까지 한눈에 분석합니다.',
     color: '#5dce70',
+    img: '/saju-ohaeng-visual.png',
   },
   {
     icon: '📅',
     title: '월별 운세',
     desc: `${new Date().getFullYear()}년 월별 운세와 연간 운세 흐름을 탭별로 상세하게 확인하세요.`,
     color: '#90b8f0',
+    img: null,
   },
 ];
 
@@ -200,6 +204,19 @@ export default function HomePageClient() {
         textAlign: 'center', padding: '100px 24px 60px',
         position: 'relative',
       }}>
+        {/* 만다라 배경 이미지 */}
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -55%)',
+          width: 700, height: 700,
+          pointerEvents: 'none', zIndex: 0,
+          opacity: 0.18,
+          backgroundImage: 'url(/saju-hero-mandala.png)',
+          backgroundSize: 'contain',
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'center',
+          filter: 'blur(1px)',
+        }} />
         <div style={{
           position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)',
           width: 600, height: 600, borderRadius: '50%',
@@ -431,9 +448,26 @@ export default function HomePageClient() {
               background: 'rgba(255,255,255,0.04)',
               border: '1px solid rgba(139,111,198,0.2)',
               borderRadius: 20, padding: 28,
-              transition: 'border-color 0.2s',
+              transition: 'all 0.25s',
+              overflow: 'hidden',
+              position: 'relative',
             }}>
-              <div style={{ fontSize: '2.2rem', marginBottom: 16 }}>{f.icon}</div>
+              {f.img && (
+                <div style={{
+                  width: '100%', height: 140,
+                  marginBottom: 18, borderRadius: 12, overflow: 'hidden',
+                  background: 'rgba(0,0,0,0.3)',
+                }}>
+                  <img
+                    src={f.img}
+                    alt={f.title}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.9 }}
+                  />
+                </div>
+              )}
+              {!f.img && (
+                <div style={{ fontSize: '2.2rem', marginBottom: 16 }}>{f.icon}</div>
+              )}
               <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: f.color, marginBottom: 10 }}>
                 {f.title}
               </h3>

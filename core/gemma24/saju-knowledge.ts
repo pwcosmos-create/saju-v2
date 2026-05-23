@@ -1,10 +1,7 @@
 /**
- * 젬마24 사주 지식 RAG — Groq/Gemini system 프롬프트 주입 (로컬 JSON, API 비용 없음)
+ * 젬마24 사주 지식 RAG — 정확히 일치하는 카드만 system 프롬프트에 주입
  *
- * 실시간: cards.json(confirmed) 우선 → export 없이 add 직후 반영 (mtime 캐시)
- * Oracle:
- *   GEMMA24_SAJU_CARDS_PATH=/home/ubuntu/coupax-homepage/board/data/saju_learning/cards.json
- *   GEMMA24_SAJU_KNOWLEDGE_PATH=.../saju_knowledge_pack.json (fallback)
+ * 실시간: cards.json(confirmed) 우선 (mtime 캐시)
  */
 import fs from 'fs';
 import path from 'path';
@@ -25,21 +22,36 @@ type KnowledgePack = {
   updatedAt: string;
 };
 
+type PromptFacts = {
+  stemKo: string | null;
+  stemHanja: string | null;
+  gyeokguk: string | null;
+  yongsinElem: string | null;
+  gisinElems: string[];
+  branchRelations: Set<string>;
+};
+
 const STEM_KO = [
   '갑목', '을목', '병화', '정화', '무토', '기토', '경금', '신금', '임수', '계수',
 ] as const;
 
 const STEM_HANJA = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'] as const;
 
-const GENERIC_TAGS = new Set([
-  '오행', '십신', '일주', '대운', '세운', '용신', '기신', '명리',
-  '재성', '관성', '비겁', '식상', '인성', '월운', '천간지지',
-]);
+const ELEM_CHARS = ['목', '화', '토', '금', '수'] as const;
 
-const MAX_STEM_CARDS = 2;
-const MAX_TOPIC_CARDS = 2;
+const GYEOK_NAMES = [
+  '건록격', '월겁격', '식신격', '상관격', '편재격', '정재격', '칠살격', '정관격',
+  '편인격', '정인격',
+] as const;
+
+const BRANCH_REL = ['충', '합', '형', '파', '해', '삼합', '방합', '육합'] as const;
+
+const MAX_STEM_CARDS = 1;
+const MAX_GYEOK_CARDS = 1;
+const MAX_BRANCH_CARDS = 1;
+const MAX_ELEM_CARDS = 1;
 const MAX_BODY_PER_CARD = 650;
-const MAX_BLOCK_CHARS = 2800;
+const MAX_BLOCK_CHARS = 2400;
 
 let cache: { filePath: string; mtimeMs: number; pack: KnowledgePack } | null = null;
 
@@ -80,10 +92,7 @@ function normalizeCards(raw: RawCard[], requireConfirmed: boolean): Gemma24SajuC
     }));
 }
 
-function loadFromFile(
-  filePath: string,
-  requireConfirmed: boolean,
-): KnowledgePack | null {
+function loadFromFile(filePath: string, requireConfirmed: boolean): KnowledgePack | null {
   if (!fs.existsSync(filePath)) return null;
   const stat = fs.statSync(filePath);
   if (cache && cache.filePath === filePath && cache.mtimeMs === stat.mtimeMs) {
@@ -105,7 +114,6 @@ function loadFromFile(
   return pack;
 }
 
-/** cards.json(실시간) → pack.json(fallback) 순으로 로드 */
 function loadKnowledge(): KnowledgePack | null {
   for (const filePath of liveCardsPaths()) {
     try {
@@ -134,86 +142,139 @@ export function getGemma24KnowledgeMeta(): { count: number; source: string; upda
   return { count: pack.cards.length, source: pack.source, updatedAt: pack.updatedAt };
 }
 
-function extractDayStemHints(query: string): string[] {
-  const hints = new Set<string>();
-  const dayMatch = query.match(/일주:\s*([^\s/|]+)/);
-  if (dayMatch) {
-    const pillar = dayMatch[1];
-    hints.add(pillar);
-    const hanjaStem = pillar.charAt(0);
-    if (hanjaStem) {
-      hints.add(hanjaStem);
-      const idx = STEM_HANJA.indexOf(hanjaStem as (typeof STEM_HANJA)[number]);
-      if (idx >= 0) hints.add(STEM_KO[idx]);
-    }
-  }
-  return [...hints];
-}
-
-function cardMatchesStem(card: Gemma24SajuCard, stemHints: string[]): boolean {
-  if (!stemHints.length) return false;
-  const blob = `${card.title}\n${card.body}`;
-  return stemHints.some((h) => h.length >= 1 && blob.includes(h));
-}
-
 function isTestCard(card: Gemma24SajuCard): boolean {
   const t = card.title.trim().toLowerCase();
   return t === 'test' || t.startsWith('test ');
 }
 
-function scoreCard(card: Gemma24SajuCard, query: string, stemHints: string[]): number {
-  if (isTestCard(card)) return 0;
+function extractPromptFacts(query: string): PromptFacts {
+  let stemHanja: string | null = null;
+  let resolvedStemKo: string | null = null;
 
-  let score = 0;
-  const blob = `${card.title}\n${card.body}\n${(card.tags ?? []).join(' ')}`;
-
-  if (cardMatchesStem(card, stemHints)) score += 25;
-
-  for (const tag of card.tags ?? []) {
-    if (!query.includes(tag)) continue;
-    score += GENERIC_TAGS.has(tag) ? 1 : 4;
-  }
-
-  for (let i = 0; i < STEM_KO.length; i += 1) {
-    const ko = STEM_KO[i];
-    const hj = STEM_HANJA[i];
-    if ((query.includes(ko) || query.includes(hj)) && blob.includes(ko)) {
-      score += 8;
+  const dayMatch = query.match(/일주:\s*([^\s/|]+)/);
+  if (dayMatch) {
+    const hanjaStem = dayMatch[1].charAt(0);
+    if (hanjaStem) {
+      stemHanja = hanjaStem;
+      const idx = STEM_HANJA.indexOf(hanjaStem as (typeof STEM_HANJA)[number]);
+      if (idx >= 0) resolvedStemKo = STEM_KO[idx];
     }
   }
 
-  const titleParts = card.title.split(/[\s·]+/).filter((w) => w.length >= 2);
-  for (const part of titleParts) {
-    if (query.includes(part)) score += 2;
+  let gyeokguk: string | null = null;
+  for (const name of GYEOK_NAMES) {
+    if (query.includes(name)) {
+      gyeokguk = name;
+      break;
+    }
   }
 
-  return score;
+  let yongsinElem: string | null = null;
+  const yongsinMatch = query.match(/용신\(用神\)\s*=\s*([^\n]+)/);
+  if (yongsinMatch) {
+    const line = yongsinMatch[1];
+    yongsinElem = ELEM_CHARS.find((e) => line.includes(e)) ?? null;
+  }
+
+  const gisinElems: string[] = [];
+  const gisinMatch = query.match(/기신\(忌神\)\s*=\s*([^\n]+)/);
+  if (gisinMatch) {
+    for (const e of ELEM_CHARS) {
+      if (gisinMatch[1].includes(e)) gisinElems.push(e);
+    }
+  }
+
+  const branchRelations = new Set<string>();
+  const shinsalBlock = query.match(/신살[^]*?(?=대운:|━━━|▶|$)/);
+  const relationHay = `${shinsalBlock?.[0] ?? ''}\n${query}`;
+  for (const rel of BRANCH_REL) {
+    if (rel === '합') {
+      if (/육합|삼합|방합|반합/.test(relationHay)) branchRelations.add(rel);
+    } else if (relationHay.includes(`${rel}(`) || relationHay.includes(`${rel}·`) || relationHay.includes(`${rel} `)) {
+      branchRelations.add(rel);
+    } else if (rel === '충' && /충|공충|자오충|묘유충|인신충/.test(relationHay)) {
+      branchRelations.add(rel);
+    } else if (rel === '형' && /형|삼형|자형/.test(relationHay)) {
+      branchRelations.add(rel);
+    } else if (rel === '파' && /파|파(破)/.test(relationHay)) {
+      branchRelations.add(rel);
+    } else if (rel === '해' && /해|해(害)/.test(relationHay)) {
+      branchRelations.add(rel);
+    }
+  }
+
+  return {
+    stemKo: resolvedStemKo,
+    stemHanja,
+    gyeokguk,
+    yongsinElem,
+    gisinElems,
+    branchRelations,
+  };
+}
+
+function cardKind(card: Gemma24SajuCard): string {
+  const t = card.title.trim();
+  if (t.startsWith('변수·격 ')) return 'gyeok';
+  if (t.startsWith('변수·지지관계 ')) return 'branch';
+  if (t.includes('변수·운 용신')) return 'un-yongsin';
+  if (t.includes('변수·운 기신')) return 'un-gisin';
+  if (STEM_KO.some((s) => t.includes(s)) && t.includes('일주')) return 'stem-day';
+  return 'other';
+}
+
+/** 프롬프트 확정 데이터와 정확히 맞는 카드만 true */
+function isPreciseMatch(card: Gemma24SajuCard, facts: PromptFacts): boolean {
+  if (isTestCard(card)) return false;
+
+  const kind = cardKind(card);
+  const title = card.title;
+  const body = card.body;
+
+  if (kind === 'stem-day') {
+    if (!facts.stemKo) return false;
+    return title.includes(facts.stemKo) && title.includes('일주');
+  }
+
+  if (kind === 'gyeok') {
+    if (!facts.gyeokguk) return false;
+    const cardGyeok = title.replace(/^변수·격\s*/, '').trim();
+    return cardGyeok === facts.gyeokguk || cardGyeok.startsWith(facts.gyeokguk);
+  }
+
+  if (kind === 'branch') {
+    const rel = title.replace(/^변수·지지관계\s*/, '').trim();
+    return facts.branchRelations.has(rel);
+  }
+
+  if (kind === 'un-yongsin') {
+    if (!facts.yongsinElem) return false;
+    return body.includes(facts.yongsinElem) || body.includes(`(${facts.yongsinElem})`);
+  }
+
+  if (kind === 'un-gisin') {
+    if (!facts.gisinElems.length) return false;
+    return facts.gisinElems.some((e) => body.includes(e));
+  }
+
+  return false;
 }
 
 export function searchGemma24SajuKnowledge(query: string): Gemma24SajuCard[] {
   const pack = loadKnowledge();
   if (!pack?.cards.length) return [];
 
-  const stemHints = extractDayStemHints(query);
-  const ranked = pack.cards
-    .map((c) => ({ c, score: scoreCard(c, query, stemHints) }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || a.c.id - b.c.id);
+  const facts = extractPromptFacts(query);
+  const precise = pack.cards.filter((c) => isPreciseMatch(c, facts));
 
-  const stemPool = (stemHints.length
-    ? ranked.filter((x) => cardMatchesStem(x.c, stemHints))
-    : ranked
-  ).slice(0, MAX_STEM_CARDS);
+  const stem = precise.filter((c) => cardKind(c) === 'stem-day').slice(0, MAX_STEM_CARDS);
+  const gyeok = precise.filter((c) => cardKind(c) === 'gyeok').slice(0, MAX_GYEOK_CARDS);
+  const branch = precise.filter((c) => cardKind(c) === 'branch').slice(0, MAX_BRANCH_CARDS);
+  const elem = precise
+    .filter((c) => cardKind(c) === 'un-yongsin' || cardKind(c) === 'un-gisin')
+    .slice(0, MAX_ELEM_CARDS);
 
-  const stemIds = new Set(stemPool.map((x) => x.c.id));
-  const topicPool = ranked
-    .filter((x) => !stemIds.has(x.c.id) && !cardMatchesStem(x.c, stemHints))
-    .slice(0, MAX_TOPIC_CARDS);
-
-  const merged = [...stemPool, ...topicPool];
-  if (merged.length) return merged.map((x) => x.c);
-
-  return ranked.slice(0, MAX_STEM_CARDS).map((x) => x.c);
+  return [...stem, ...gyeok, ...branch, ...elem];
 }
 
 export function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[]): string {
@@ -234,15 +295,14 @@ export function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[]): string {
   if (!sections.length) return '';
 
   return [
-    '【젬마24 참고 지식 — 해석 스타일·명리 원칙 참고용】',
-    '아래는 축적된 명리 해석 사례입니다. 사용자 프롬프트의 확정 데이터(용신·신강·격국 등)와 모순되면 확정 데이터를 따르세요.',
-    '참고 지식의 문장을 그대로 복사하지 말고, 톤과 논리 구조만 참고하세요.',
+    '【젬마24 참고 지식 — 확정 데이터와 일치하는 항목만】',
+    '아래 카드는 이 사주의 일주·격국·관계·용신/기신과 정확히 맞는 자료입니다. 확정 데이터와 모순되면 확정 데이터를 따르세요.',
+    '문장을 그대로 복사하지 말고 논리와 톤만 참고하세요.',
     '',
     ...sections,
   ].join('\n');
 }
 
-/** fortune-stream system 프롬프트에 붙일 참고 지식 */
 export function buildGemma24KnowledgeForSystem(query: string): string {
   if (!knowledgeEnabled()) return '';
   const cards = searchGemma24SajuKnowledge(query);

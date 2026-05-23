@@ -1428,12 +1428,21 @@ function OhaengRadar({ counts }: { counts: number[] }) {
 
 // ─── AI 풀이 렌더러 ───
 function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) =>
-    part.startsWith('**') && part.endsWith('**')
-      ? <strong key={i} style={{ color:'#ffffff', fontWeight:700 }}>{part.slice(2,-2)}</strong>
-      : part
-  );
+  // **굵게** + 👉 하이라이트 처리
+  const parts = text.split(/(\*\*[^*]+\*\*|👉[^\n]*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**'))
+      return <strong key={i} style={{ color:'#ffffff', fontWeight:800 }}>{part.slice(2,-2)}</strong>;
+    if (part.startsWith('👉'))
+      return (
+        <span key={i} style={{
+          display:'inline-block', background:'rgba(232,196,106,.15)',
+          border:'1px solid rgba(232,196,106,.35)', borderRadius:6,
+          padding:'1px 8px', color:'#f5d67a', fontWeight:700, margin:'0 2px',
+        }}>{part}</span>
+      );
+    return part;
+  });
 }
 
 // ─── 월별 운세 막대 차트 ───
@@ -1491,6 +1500,7 @@ function AiRenderer({ text, loading, result }: {
   text: string; loading: boolean; result?: SajuResult | null;
 }) {
   const ds = result?.pillars[2]?.s ?? 0;
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['1','2','3']));
   const monthlyBriefs: MonthlyBrief[] | null = useMemo(() => {
     if (!result) return null;
     const dayElem = STEM_ELEM[ds];
@@ -1499,91 +1509,195 @@ function AiRenderer({ text, loading, result }: {
     return buildMonthlyBriefs(result, cls, new Date().getFullYear());
   }, [result, ds]);
 
-  const SECTION_CHART: Record<string, React.ReactNode> = result ? {
-    '1': <div key="c1" style={{ margin:'12px 0' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div>,
-    '4': <div key="c4" style={{ margin:'12px 0', display:'flex', justifyContent:'center' }}><OhaengRadar counts={result.ohaeng.counts} /></div>,
-    '9': monthlyBriefs ? <MonthlyChart key="c9" briefs={monthlyBriefs} /> : null,
-  } : {};
-
-  const lines = text.split('\n');
-  const nodes: React.ReactNode[] = [];
-  let k = 0;
-
-  for (const line of lines) {
-    // [N] 섹션 헤더
-    const sec = line.match(/^\[(\d+)\]\s+(.+)/);
-    if (sec) {
-      nodes.push(
-        <div key={k++} style={{ display:'flex', alignItems:'baseline', gap:10, marginTop:28, marginBottom:10 }}>
-          <span style={{ background:'rgba(139,111,198,.35)', color:'#d0b8ff', fontWeight:900,
-            fontSize:'.72rem', padding:'3px 10px', borderRadius:100, flexShrink:0, lineHeight:1.7,
-            letterSpacing:'.04em' }}>
-            {sec[1]}
-          </span>
-          <span style={{ fontWeight:800, fontSize:'1rem', color:'var(--gold)', lineHeight:1.4 }}>
-            {renderInline(sec[2])}
-          </span>
-        </div>
-      );
-      if (SECTION_CHART[sec[1]]) nodes.push(SECTION_CHART[sec[1]]);
-      continue;
-    }
-    // ━━━ 구분선
-    if (/^━{3,}/.test(line)) {
-      nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.1)', margin:'16px 0' }} />);
-      continue;
-    }
-    // ◆ 소제목 (문장 중간에 있어도 분리해서 처리)
-    if (line.includes('◆')) {
-      const parts = line.split(/(◆[^◆\n]+)/g);
-      parts.forEach(part => {
-        if (part.startsWith('◆')) {
-          nodes.push(
-            <div key={k++} style={{ marginTop:24, marginBottom:12, paddingLeft:4, borderLeft:'3px solid var(--gold)' }}>
-              <h3 style={{ fontSize:'.95rem', fontWeight:800, color:'var(--gold)', margin:0, lineHeight:1.5 }}>
-                {renderInline(part.trim())}
-              </h3>
-            </div>
-          );
-        } else if (part.trim()) {
-          nodes.push(
-            <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.92)', lineHeight:1.9, marginBottom:12 }}>
-              {renderInline(part.trim())}
-            </p>
-          );
-        }
-      });
-      continue;
-    }
-    // — 불릿
-    if (/^[—•]\s/.test(line)) {
-      nodes.push(
-        <div key={k++} style={{ display:'flex', gap:8, marginBottom:5, paddingLeft:2 }}>
-          <span style={{ color:'var(--purple)', flexShrink:0, marginTop:'3px', fontSize:'.8rem' }}>▸</span>
-          <span style={{ fontSize:'.9rem', color:'rgba(248,246,255,.92)', lineHeight:1.85 }}>
-            {renderInline(line.replace(/^[—•]\s/,''))}
-          </span>
-        </div>
-      );
-      continue;
-    }
-    // 빈 줄
-    if (!line.trim()) {
-      nodes.push(<div key={k++} style={{ height:6 }} />);
-      continue;
-    }
-    // 일반 텍스트
-    nodes.push(
-      <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.92)', lineHeight:1.9, marginBottom:3 }}>
-        {renderInline(line)}
-      </p>
+  // 섹션별 이미지 배너 헬퍼
+  function SectionBanner({ src, alt, height=90 }: { src:string; alt:string; height?:number }) {
+    return (
+      <div style={{ width:'100%', height, borderRadius:10, overflow:'hidden', marginBottom:14, position:'relative' }}>
+        <img src={src} alt={alt} style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.75 }} />
+        <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 30%, rgba(0,0,0,.5) 100%)' }} />
+      </div>
     );
   }
 
+  const SECTION_CHART: Record<string, React.ReactNode> = result ? {
+    '1': <><SectionBanner key="img1" src="/saju-pillars-visual.png" alt="사주 핵심 구조" />
+          <div key="c1" style={{ margin:'8px 0 16px' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div></>,
+    '2': <SectionBanner key="img2" src="/saju-personality-visual.png" alt="실생활 패턴" />,
+    '3': <SectionBanner key="img3" src="/saju-personality-visual.png" alt="격국과 심리" />,
+    '4': <><SectionBanner key="img4" src="/saju-ohaeng-visual.png" alt="오행 분포" height={80} />
+          <div key="c4" style={{ margin:'4px 0 12px', display:'flex', justifyContent:'center' }}><OhaengRadar counts={result.ohaeng.counts} /></div></>,
+    '5': <SectionBanner key="img5" src="/saju-ohaeng-visual.png" alt="용신 희신" height={80} />,
+    '6': <SectionBanner key="img6" src="/saju-career-visual.png" alt="직업과 적성" />,
+    '7': <SectionBanner key="img7" src="/saju-relations-visual.png" alt="인간관계" />,
+    '8': <SectionBanner key="img8" src="/saju-wealth-visual.png" alt="돈과 재물" />,
+    '9': <><SectionBanner key="img9" src="/saju-monthly-visual.png" alt="월별 흐름" height={80} />
+          {monthlyBriefs ? <MonthlyChart key="c9" briefs={monthlyBriefs} /> : null}</>,
+    '10': <SectionBanner key="img10" src="/saju-strategy-visual.png" alt="인생 전략" />,
+  } : {};
+
+  // 섹션 레이블 매핑
+  const SECTION_LABELS: Record<string, {emoji: string; color: string}> = {
+    '1':  { emoji:'🔮', color:'#c4a8ff' },
+    '2':  { emoji:'💡', color:'#90b8f0' },
+    '3':  { emoji:'🌟', color:'#f5d67a' },
+    '4':  { emoji:'⚖️', color:'#5dce70' },
+    '5':  { emoji:'✨', color:'#c4a8ff' },
+    '6':  { emoji:'💼', color:'#f5d67a' },
+    '7':  { emoji:'🤝', color:'#90b8f0' },
+    '8':  { emoji:'💰', color:'#5dce70' },
+    '9':  { emoji:'📅', color:'#ff9a7a' },
+    '10': { emoji:'🗺️', color:'#c4a8ff' },
+  };
+
+  function toggleSection(id: string) {
+    setOpenSections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  // 텍스트를 섹션 단위로 파싱
+  type Section = { id: string; title: string; lines: string[] };
+  const sections: Section[] = [];
+  let current: Section | null = null;
+  let headerlessPre: string[] = [];
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    // [N] 또는 [N] 제목 형태 모두 지원
+    const sec = line.match(/^\[(\d+)\]\s*(.*)/);
+    if (sec) {
+      if (current) sections.push(current);
+      current = { id: sec[1], title: sec[2].trim(), lines: [] };
+      continue;
+    }
+    if (current) current.lines.push(line);
+    else headerlessPre.push(line);
+  }
+  if (current) sections.push(current);
+
+  function renderLines(lines: string[]) {
+    const nodes: React.ReactNode[] = [];
+    let k = 0;
+    // 연속 빈줄 압축
+    const compressed = lines.reduce<string[]>((acc, l) => {
+      if (l.trim() === '' && acc[acc.length-1]?.trim() === '') return acc;
+      return [...acc, l];
+    }, []);
+
+    for (const line of compressed) {
+      // ━━━ 구분선
+      if (/^━{3,}/.test(line)) {
+        nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.08)', margin:'14px 0' }} />);
+        continue;
+      }
+      // ◆ 소제목
+      if (line.includes('◆')) {
+        const parts = line.split(/(◆[^◆\n]+)/g);
+        parts.forEach(part => {
+          if (part.startsWith('◆')) {
+            nodes.push(
+              <div key={k++} style={{ marginTop:18, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ width:3, height:16, background:'var(--gold)', borderRadius:2, flexShrink:0, display:'inline-block' }} />
+                <h3 style={{ fontSize:'.9rem', fontWeight:800, color:'var(--gold)', margin:0 }}>
+                  {renderInline(part.replace('◆','').trim())}
+                </h3>
+              </div>
+            );
+          } else if (part.trim()) {
+            nodes.push(
+              <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.85, marginBottom:10, paddingLeft:11 }}>
+                {renderInline(part.trim())}
+              </p>
+            );
+          }
+        });
+        continue;
+      }
+      // — • 불릿
+      if (/^[—•]\s/.test(line)) {
+        nodes.push(
+          <div key={k++} style={{ display:'flex', gap:8, marginBottom:6, paddingLeft:8 }}>
+            <span style={{ color:'var(--purple)', flexShrink:0, fontSize:'.85rem', marginTop:2 }}>▸</span>
+            <span style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.85 }}>
+              {renderInline(line.replace(/^[—•]\s/,''))}
+            </span>
+          </div>
+        );
+        continue;
+      }
+      // 빈줄
+      if (!line.trim()) {
+        nodes.push(<div key={k++} style={{ height:8 }} />);
+        continue;
+      }
+      // 일반 텍스트
+      nodes.push(
+        <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.9, marginBottom:8 }}>
+          {renderInline(line)}
+        </p>
+      );
+    }
+    return nodes;
+  }
+
   return (
-    <div style={{ marginTop:20, padding:'22px 24px', background:'rgba(0,0,0,.25)',
-      borderRadius:12, border:'1px solid rgba(255,255,255,.08)' }}>
-      {nodes}
+    <div style={{ marginTop:20 }}>
+      {/* 섹션 없는 서두 텍스트 */}
+      {headerlessPre.filter(l=>l.trim()).length > 0 && (
+        <div style={{ padding:'16px 20px', marginBottom:12,
+          background:'rgba(0,0,0,.2)', borderRadius:12,
+          border:'1px solid rgba(255,255,255,.07)' }}>
+          {renderLines(headerlessPre)}
+        </div>
+      )}
+
+      {/* 섹션 카드들 */}
+      {sections.map(sec => {
+        const isOpen = openSections.has(sec.id);
+        const meta = SECTION_LABELS[sec.id] ?? { emoji:'✦', color:'#c4a8ff' };
+        return (
+          <div key={sec.id} style={{
+            marginBottom:10, borderRadius:14, overflow:'hidden',
+            border:`1px solid rgba(255,255,255,.08)`,
+            background:'rgba(0,0,0,.22)',
+          }}>
+            {/* 섹션 헤더 — 클릭으로 열고 닫기 */}
+            <button
+              onClick={() => toggleSection(sec.id)}
+              style={{
+                width:'100%', display:'flex', alignItems:'center', gap:10,
+                padding:'14px 20px', background:'rgba(255,255,255,.03)',
+                border:'none', borderBottom: isOpen ? '1px solid rgba(255,255,255,.07)' : 'none',
+                cursor:'pointer', textAlign:'left',
+              }}
+            >
+              <span style={{
+                background: `rgba(${meta.color === '#c4a8ff' ? '196,168,255' : meta.color === '#f5d67a' ? '245,214,122' : meta.color === '#5dce70' ? '93,206,112' : '144,184,240'},.2)`,
+                color: meta.color, fontWeight:900, fontSize:'.7rem',
+                padding:'3px 9px', borderRadius:100, flexShrink:0, letterSpacing:'.04em',
+              }}>
+                {meta.emoji} {sec.id}
+              </span>
+              <span style={{ flex:1, fontWeight:800, fontSize:'.95rem', color:'#e0cfff' }}>
+                {sec.title || `섹션 ${sec.id}`}
+              </span>
+              <span style={{ color:'var(--muted)', fontSize:'.75rem', transition:'transform .2s',
+                transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', display:'inline-block' }}>▾</span>
+            </button>
+
+            {/* 섹션 본문 */}
+            {isOpen && (
+              <div style={{ padding:'16px 20px' }}>
+                {SECTION_CHART[sec.id]}
+                {renderLines(sec.lines)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
       {loading && <span className="typing-cursor">▌</span>}
       <style>{`
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

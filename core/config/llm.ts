@@ -127,7 +127,7 @@ function streamTextToOpenAiSse(text: string): ReadableStream {
   });
 }
 
-// Groq gemma2-9b-it stream with automatic fallback to Gemini 2.5 Flash
+// Groq + Gemini 2.5 Flash with automatic fallback
 export async function fetchLlmStream(body: any): Promise<Response> {
   const activeGroqKey = getRotatedGroqKey();
   let draftText = '';
@@ -138,38 +138,62 @@ export async function fetchLlmStream(body: any): Promise<Response> {
     stream: false
   };
 
-  // Clamp max_tokens to 3000 to prevent Groq API free-tier TPM (Tokens Per Minute) limit errors
+  // Clamp max_tokens to 3000 to prevent free-tier TPM limit errors
   if (upstreamBody.max_tokens && upstreamBody.max_tokens > 3000) {
     upstreamBody.max_tokens = 3000;
   }
 
+  // 메시지 프롬프트 크기 제한 (413 방지) — 각 메시지를 최대 12000자로 자름
+  if (Array.isArray(upstreamBody.messages)) {
+    upstreamBody.messages = upstreamBody.messages.map((m: any) => ({
+      ...m,
+      content: typeof m.content === 'string' ? m.content.slice(0, 12000) : m.content,
+    }));
+  }
+
+  // ── 1차: Groq Llama 3.3 70B
   if (activeGroqKey) {
     try {
+      const groqBody = JSON.stringify({ model: 'llama-3.3-70b-versatile', ...upstreamBody });
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method:  'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${activeGroqKey}` 
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          ...upstreamBody
-        }),
-        signal: AbortSignal.timeout(25000) // 25 seconds timeout for Groq API to allow full draft generation
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${activeGroqKey}` },
+        body: groqBody,
+        signal: AbortSignal.timeout(25000),
       });
 
       if (response.ok) {
         const data = await response.json();
         draftText = data.choices?.[0]?.message?.content ?? '';
+      } else if (response.status === 413) {
+        // 413: 프롬프트 너무 큼 → 8000자로 더 잘라 재시도
+        console.warn('Groq 413: prompt too large, retrying with truncated prompt.');
+        const shorterMessages = upstreamBody.messages.map((m: any) => ({
+          ...m,
+          content: typeof m.content === 'string' ? m.content.slice(0, 8000) : m.content,
+        }));
+        const retryBody = JSON.stringify({ model: 'llama-3.3-70b-versatile', ...upstreamBody, messages: shorterMessages });
+        const retry = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${activeGroqKey}` },
+          body: retryBody,
+          signal: AbortSignal.timeout(25000),
+        });
+        if (retry.ok) {
+          const data = await retry.json();
+          draftText = data.choices?.[0]?.message?.content ?? '';
+        } else {
+          console.warn(`Groq retry also failed (${retry.status}). Falling back to Gemini.`);
+        }
       } else {
         console.warn(`Groq API returned status ${response.status}. Falling back to Gemini.`);
       }
     } catch (e) {
-      console.warn("Groq API call failed, falling back to Gemini:", e);
+      console.warn('Groq API call failed, falling back to Gemini:', e);
     }
   }
 
-  // Backup fallback: Gemini 2.5 Flash on Google AI Studio
+  // ── 2차 폴백: Gemini 2.5 Flash
   if (!draftText) {
     try {
       const geminiKey = requireEnv('GOOGLE_AI_API_KEY');
@@ -181,20 +205,33 @@ export async function fetchLlmStream(body: any): Promise<Response> {
       if (response.ok) {
         const data = await response.json();
         draftText = data.choices?.[0]?.message?.content ?? '';
+      } else {
+        console.error(`Gemini fallback also failed: ${response.status}`);
       }
     } catch (e) {
-      console.error("Critical: Both Groq and Gemini failed to generate draft:", e);
-      throw e;
+      console.error('Critical: Both Groq and Gemini failed:', e);
     }
   }
 
-  // Phase 2: Run Gemini 2.5 Flash Quality & Security audit on the draft text
+  // ── 둘 다 실패 시: 사용자에게 안내 메시지 반환
+  if (!draftText) {
+    const errMsg = 'AI 서버가 현재 일시적으로 과부하 상태입니다. 잠시 후 다시 시도해 주세요.\n\n(Groq 및 Gemini API 한도 초과 — 약 1~2분 후 재시도하면 정상 작동합니다.)';
+    if (body.stream) {
+      return new Response(streamTextToOpenAiSse(errMsg), {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+      });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: errMsg } }] }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // ── Phase 2: Gemini 감시자 품질 검수
   const auditedText = await auditAndRefineWithGemini(draftText);
 
-  // Return formatted stream or json response depending on body.stream
+  // ── 응답 반환
   if (body.stream) {
-    const sseStream = streamTextToOpenAiSse(auditedText);
-    return new Response(sseStream, {
+    return new Response(streamTextToOpenAiSse(auditedText), {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -202,23 +239,10 @@ export async function fetchLlmStream(body: any): Promise<Response> {
         'Access-Control-Allow-Origin': '*',
       },
     });
-  } else {
-    // Non-streaming response format
-    const jsonResponse = {
-      choices: [{
-        message: {
-          role: 'assistant',
-          content: auditedText
-        }
-      }]
-    };
-    return new Response(JSON.stringify(jsonResponse), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      }
-    });
   }
+  return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: auditedText } }] }), {
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+  });
 }
 
 // Backward compatibility for existing imports.

@@ -17,6 +17,6 @@ pm2 start "$PM2_NAME" 2>/dev/null || pm2 restart "$PM2_NAME"
 pm2 status "$PM2_NAME"
 
 echo "Smoke test..."
-sleep 3
+sleep 10
 curl -sf -o /dev/null http://127.0.0.1:3001/saju
 echo "OK: /saju"

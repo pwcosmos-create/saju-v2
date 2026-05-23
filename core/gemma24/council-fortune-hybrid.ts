@@ -13,6 +13,7 @@ import {
 import {
   FORTUNE_DISPLAY_ORDER_HINT,
   FORTUNE_SECTION_TITLES,
+  humanizeDeepSectionText,
   sortFortuneSectionBlocks,
 } from './fortune-display-order';
 
@@ -20,7 +21,8 @@ const SUPPLEMENT_SYSTEM = `당신은 사주팔자 전문가입니다.
 이미 「사주위원회 인증」 지식 카드로 작성된 본문이 있습니다. 그 내용을 반복·요약하지 마세요.
 지시된 번호 섹션만 추가 작성하세요. ◆ 소제목 사용. 평어체(~해요).
 전문 용어는 쉬운 풀이 후 괄호 한자. 출처·각주 표시 금지.
-각 섹션은 반드시 [번호] 제목 형식으로 시작하세요.`;
+각 섹션은 반드시 [번호] 심층·[N] 주제명 형식으로 시작하세요.
+"섹션 6", "심층 섹션 7" 같은 번호만 있는 표현은 쓰지 마세요.`;
 
 function hybridGroqEnabled(): boolean {
   return process.env.GEMMA24_HYBRID_GROQ !== '0';
@@ -133,7 +135,7 @@ export async function buildCouncilHybridFortune(
     return { text, mode: 'council-hybrid-pending', cardCount: composed.cardCount };
   }
 
-  const sortedSupplement = sortSupplementBlocks(supplement);
+  const sortedSupplement = humanizeDeepSectionText(sortSupplementBlocks(supplement));
 
   const text = [
     composed.text.replace(baseFooter, '').trim(),

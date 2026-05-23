@@ -2,6 +2,7 @@
  * 인증 카드 본문 → 화면용 풀이 (중복·면책·메타 제거, 변수 카드 구조 보존)
  */
 import type { Gemma24SajuCard } from './saju-knowledge';
+import { humanizeDeepSectionLabel, humanizeDeepSectionText } from './fortune-display-order';
 
 const MAX_CARD_CHARS = 520;
 const MAX_VARIABLE_CARD_CHARS = 720;
@@ -53,7 +54,7 @@ export function shortCardSubtitle(title: string): string {
 }
 
 export function sanitizeCardBody(body: string): string {
-  let t = body
+  let t = humanizeDeepSectionText(body)
     .replace(DISCLAIMER_RE, '')
     .replace(META_TAIL_RE, '')
     .replace(/【[^】]+】/g, '')
@@ -74,7 +75,7 @@ export function sanitizeCardBody(body: string): string {
 
 /** 변수·카드 【개요】【핵심】 블록 → ◆ 소제목 (내용 보존) */
 function formatVariableCardBody(body: string): string {
-  const cleaned = body
+  const cleaned = humanizeDeepSectionText(body)
     .replace(DISCLAIMER_RE, '')
     .replace(META_TAIL_RE, '')
     .replace(/「[^」]+」/g, '')
@@ -84,7 +85,7 @@ function formatVariableCardBody(body: string): string {
   const re = /【([^】]+)】\s*([^【]*)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(cleaned)) !== null) {
-    const label = m[1].trim();
+    const label = humanizeDeepSectionLabel(m[1].trim());
     let content = m[2].trim().replace(/\s+/g, ' ');
     if (!content || /^(PASS|FAIL|판정|검증)$/i.test(label)) continue;
     if (/^개요$/.test(label) && /변수는 사주 풀이에서/.test(content) && content.length > 180) {

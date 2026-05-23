@@ -156,12 +156,16 @@ export default function Home() {
   const [aiLoading, setAiLoad] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [waitTick, setWaitTick] = useState(0);
+  const [revealSecondsLeft, setRevealSecondsLeft] = useState(0);
   const [, setCooldownPulse] = useState(0);
+  const aiRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const AI_REVEAL_DELAY_MS = 5000;
   const steps = [
     '운명의 기운을 읽는 중...',
     'AI 분석 초안을 작성하는 중...',
     '내용의 정확도를 최종 검토 중...',
-    '전문적인 조언을 정성껏 작성 중...',
+    '초안 작성 완료 · 풀이를 정리하는 중...',
   ];
   const [showFb,   setShowFb]   = useState(false);
   const [fbDone,   setFbDone]   = useState(false);
@@ -188,6 +192,15 @@ export default function Home() {
   const lastResult = useRef<SajuResult | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const aiResultRef = useRef<HTMLDivElement>(null);
+
+  function clearAiRevealTimers() {
+    if (aiRevealTimerRef.current) clearTimeout(aiRevealTimerRef.current);
+    if (aiCountdownRef.current) clearInterval(aiCountdownRef.current);
+    aiRevealTimerRef.current = null;
+    aiCountdownRef.current = null;
+  }
+
+  useEffect(() => () => clearAiRevealTimers(), []);
 
   useEffect(() => {
     if (!loading) {
@@ -245,6 +258,8 @@ export default function Home() {
     setAiFortuneComplete(false);
     setAiCouncilBadge('none');
     setAiFortuneMode('none');
+    clearAiRevealTimers();
+    setRevealSecondsLeft(0);
     setAiLoad(false);
     setLoadingStep(0);
     setShowFb(false);
@@ -264,6 +279,8 @@ export default function Home() {
     if (!lastResult.current) return;
     if (aiLoading) return;
     if (Date.now() < aiCooldownUntil) return;
+    clearAiRevealTimers();
+    setRevealSecondsLeft(0);
     setAiLoad(true);
     setAiText('');
     setAiFortuneComplete(false);
@@ -295,9 +312,12 @@ export default function Home() {
         clearTimeout(t1);
         clearTimeout(t2);
         setLoadingStep(4);
+        setWaitTick(99);
 
         const rateLimited = fullText.includes('과부하') || fullText.includes('한도 초과');
         const reveal = () => {
+          clearAiRevealTimers();
+          setRevealSecondsLeft(0);
           if (rateLimited) {
             setAiCooldownUntil(Date.now() + 90_000);
             setAiFortuneComplete(false);
@@ -316,10 +336,17 @@ export default function Home() {
             aiResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }, 120);
         };
-        window.setTimeout(reveal, 350);
+
+        setRevealSecondsLeft(5);
+        aiCountdownRef.current = setInterval(() => {
+          setRevealSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+        }, 1000);
+        aiRevealTimerRef.current = setTimeout(reveal, AI_REVEAL_DELAY_MS);
       },
       onError: (err) => { 
         console.error("AI Stream Error:", err);
+        clearAiRevealTimers();
+        setRevealSecondsLeft(0);
         setAiLoad(false);
         setLoadingStep(0);
         const msg = fullText.trim()
@@ -841,7 +868,7 @@ export default function Home() {
                     </div>
                   ))}
 
-                  {waitTick < waitFacts.length && (
+                  {waitTick < waitFacts.length && revealSecondsLeft === 0 && (
                     <div className="ai-wait-skeleton" style={{
                       height: 44,
                       borderRadius: 12,
@@ -849,6 +876,22 @@ export default function Home() {
                       background: 'rgba(0,0,0,0.18)',
                       overflow: 'hidden',
                     }} />
+                  )}
+
+                  {revealSecondsLeft > 0 && (
+                    <div style={{
+                      marginTop: 4,
+                      padding: '12px 14px',
+                      borderRadius: 12,
+                      background: 'rgba(107,79,160,0.22)',
+                      border: '1px solid rgba(196,168,255,0.25)',
+                      textAlign: 'center',
+                      fontSize: '.86rem',
+                      fontWeight: 700,
+                      color: '#e0cfff',
+                    }}>
+                      초안 작성이 끝났어요 · {revealSecondsLeft}초 후 심층 풀이를 보여드릴게요
+                    </div>
                   )}
                 </div>
               </div>

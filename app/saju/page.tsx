@@ -1729,6 +1729,23 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
         nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.08)', margin:'14px 0' }} />);
         continue;
       }
+      // 1. 인사 성향 — 섹션 소제목 강조
+      if (/^\d+\.\s+\S/.test(line.trim()) && line.trim().length < 48) {
+        nodes.push(
+          <p key={k++} style={{
+            fontSize: '1.08rem',
+            fontWeight: 900,
+            color: '#fff',
+            marginTop: 16,
+            marginBottom: 10,
+            lineHeight: 1.4,
+            letterSpacing: '-0.02em',
+          }}>
+            {renderInline(line.trim())}
+          </p>
+        );
+        continue;
+      }
       // ◆ 소제목
       if (line.includes('◆')) {
         const parts = line.split(/(◆[^◆\n]+)/g);
@@ -1813,20 +1830,28 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
             <button
               onClick={() => toggleSection(sec.id)}
               style={{
-                width:'100%', display:'flex', alignItems:'center', gap:10,
-                padding:'14px 20px', background:'rgba(255,255,255,.03)',
+                width:'100%', display:'flex', alignItems:'center', gap:12,
+                padding:'16px 20px', background:'rgba(255,255,255,.03)',
                 border:'none', borderBottom: isOpen ? '1px solid rgba(255,255,255,.07)' : 'none',
                 cursor:'pointer', textAlign:'left',
               }}
             >
               <span style={{
                 background: `rgba(${meta.color === '#c4a8ff' ? '196,168,255' : meta.color === '#f5d67a' ? '245,214,122' : meta.color === '#5dce70' ? '93,206,112' : '144,184,240'},.2)`,
-                color: meta.color, fontWeight:900, fontSize:'.7rem',
-                padding:'3px 9px', borderRadius:100, flexShrink:0, letterSpacing:'.04em',
+                color: meta.color, fontWeight:900, fontSize:'.85rem',
+                padding:'4px 10px', borderRadius:100, flexShrink:0, letterSpacing:'.04em',
               }}>
                 {meta.emoji}
               </span>
-              <span style={{ flex:1, fontWeight:800, fontSize:'.95rem', color:'#e0cfff' }}>
+              <span style={{
+                flex: 1,
+                fontWeight: 900,
+                fontSize: '1.12rem',
+                lineHeight: 1.35,
+                letterSpacing: '-0.02em',
+                color: '#fff',
+                textShadow: '0 1px 12px rgba(196,168,255,.25)',
+              }}>
                 {fortuneSectionNumberedLabel(sec.id, sec.title)}
               </span>
               <span style={{ color:'var(--muted)', fontSize:'.75rem', transition:'transform .2s',

@@ -43,10 +43,16 @@ function pickSectionCards(cards: Gemma24SajuCard[], kinds: string[]): Gemma24Saj
 
 export { sanitizeCardBody };
 
+const MIN_SECTION_BODY_CHARS = Number(process.env.GEMMA24_SECTION_MIN_CHARS ?? 220);
+
 export type CouncilFreeFortuneResult = {
   text: string;
   cardCount: number;
   cardIds: number[];
+  /** 조합 본문에 포함된 섹션 id */
+  filledSectionIds: string[];
+  /** 비었거나 본문이 짧아 Groq 보충 대상 */
+  needsSupplementIds: string[];
 };
 
 export function canComposeCouncilFreeFortune(cards: Gemma24SajuCard[]): boolean {
@@ -65,6 +71,7 @@ export function composeCouncilFreeFortune(
   const usedIds: number[] = [];
   const sectionTexts: string[] = [];
   const filledIds = new Set<string>();
+  const sectionBodyChars: Record<string, number> = {};
 
   for (const block of COMPOSE_SECTIONS) {
     const matched = pickSectionCards(displayCards, block.kinds);
@@ -75,6 +82,7 @@ export function composeCouncilFreeFortune(
 
     for (const c of matched) usedIds.push(c.id);
     filledIds.add(block.id);
+    sectionBodyChars[block.id] = body.length;
     sectionTexts.push(`[${block.id}] ${block.title}\n\n${body}`);
   }
 
@@ -82,9 +90,15 @@ export function composeCouncilFreeFortune(
     for (const sec of buildPromptEnrichedSections(query, filledIds)) {
       if (filledIds.has(sec.id)) continue;
       filledIds.add(sec.id);
+      sectionBodyChars[sec.id] = sec.body.length;
       sectionTexts.push(`[${sec.id}] ${sec.title}\n\n${sec.body}`);
     }
   }
+
+  const needsSupplementIds = FORTUNE_DISPLAY_ORDER.filter((id) => {
+    if (!filledIds.has(id)) return true;
+    return (sectionBodyChars[id] ?? 0) < MIN_SECTION_BODY_CHARS;
+  });
 
   const orderedSections = sortFortuneSectionBlocks(sectionTexts);
 
@@ -103,6 +117,8 @@ export function composeCouncilFreeFortune(
     text,
     cardCount: [...new Set(usedIds)].length,
     cardIds: [...new Set(usedIds)],
+    filledSectionIds: [...filledIds],
+    needsSupplementIds: [...needsSupplementIds],
   };
 }
 

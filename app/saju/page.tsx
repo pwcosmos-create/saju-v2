@@ -32,6 +32,7 @@ import type { MonthlyBrief } from '../../core/daily-fortune/monthly-brief';
 import type { OhaengResult } from '../../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
+import { fortuneSectionDisplayTitle } from '../../core/gemma24/fortune-display-order';
 
 // 음력 변환 (클라이언트 전용)
 type MsLib = { lunarToSolar: (y:number,m:number,d:number,leap:boolean)=>{year:number,month:number,day:number} };
@@ -1754,7 +1755,7 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
                 {meta.emoji} {sec.id}
               </span>
               <span style={{ flex:1, fontWeight:800, fontSize:'.95rem', color:'#e0cfff' }}>
-                {sec.title || `섹션 ${sec.id}`}
+                {fortuneSectionDisplayTitle(sec.id, sec.title)}
               </span>
               <span style={{ color:'var(--muted)', fontSize:'.75rem', transition:'transform .2s',
                 transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', display:'inline-block' }}>▾</span>

@@ -67,7 +67,7 @@ export function buildPromptEnrichedSections(
     const hanja = facts.stemHanja ? `(${facts.stemHanja})` : '';
     out.push({
       id: '1',
-      title: '이 사주의 핵심 성향',
+      title: FORTUNE_SECTION_TITLES['1'],
       body: [
         `◆ 일간 ${facts.stemKo}${hanja}`,
         `— ${blurb}`,
@@ -80,7 +80,7 @@ export function buildPromptEnrichedSections(
   if (!filledSectionIds.has('2') && ctx.pillars) {
     out.push({
       id: '2',
-      title: '사주 원국 한눈에',
+      title: FORTUNE_SECTION_TITLES['2'],
       body: `◆ 사주 구성\n— ${ctx.pillars}\n— 아래 격국·오행·용신 해석은 이 원국을 기준으로 읽으시면 됩니다.`,
     });
   }
@@ -88,7 +88,7 @@ export function buildPromptEnrichedSections(
   if (!filledSectionIds.has('4') && (ctx.dominant || ctx.lacking)) {
     out.push({
       id: '4',
-      title: '오행 균형과 보완',
+      title: FORTUNE_SECTION_TITLES['4'],
       body: [
         '◆ 오행 분포',
         ctx.dominant ? `— 넘치는 기운: ${ctx.dominant}` : '',
@@ -103,7 +103,7 @@ export function buildPromptEnrichedSections(
     const tip = yElem ? ELEM_TIP[yElem] : '';
     out.push({
       id: '5',
-      title: '용신·기신과 에너지 조언',
+      title: FORTUNE_SECTION_TITLES['5'],
       body: [
         '◆ 확정 오행 분류',
         ctx.yongsinLine ? `— 용신: ${ctx.yongsinLine}` : '',

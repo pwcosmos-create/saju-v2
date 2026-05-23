@@ -1,5 +1,5 @@
 /**
- * 인증 카드 조합 + Groq/Gemini 보충 (빈 섹션만, 토큰 절약)
+ * 인증 카드 조합 + Groq/Gemini 보충 (빈·짧은 섹션만)
  */
 import { fetchLlmCompletionText } from '../config/llm';
 import type { Gemma24SajuCard } from './saju-knowledge';
@@ -10,63 +10,63 @@ import {
   composeCouncilFreeFortune,
   type CouncilFreeFortuneResult,
 } from './council-fortune-compose';
-import { fortuneSectionSortIndex } from './fortune-display-order';
-
-/** 섹션별 커버 kind — 심층·[N] 포함 시 AI 보충 생략 */
-const SECTION_COVER: Record<string, string[]> = {
-  '[1]': ['stem-day', 'stem-chen', 'deep-1'],
-  '[2]': ['deep-2'],
-  '[3]': ['gyeok', 'deep-4'],
-  '[4]': ['deep-3'],
-  '[5]': ['un-yongsin', 'un-gisin', 'deep-5'],
-  '[6]': ['deep-9'],
-  '[7]': ['branch', 'deep-8'],
-  '[8]': ['deep-7'],
-  '[9]': ['deep-6'],
-  '[10]': ['deep-10'],
-};
-
-/** 심층 카드로 대부분 채워짐 — 한도 429 시 불필요한 LLM 호출 방지 */
-const ALWAYS_SUPPLEMENT = [] as const;
+import {
+  FORTUNE_DISPLAY_ORDER_HINT,
+  FORTUNE_SECTION_TITLES,
+  sortFortuneSectionBlocks,
+} from './fortune-display-order';
 
 const SUPPLEMENT_SYSTEM = `당신은 사주팔자 전문가입니다.
 이미 「사주위원회 인증」 지식 카드로 작성된 본문이 있습니다. 그 내용을 반복·요약하지 마세요.
 지시된 번호 섹션만 추가 작성하세요. ◆ 소제목 사용. 평어체(~해요).
-전문 용어는 쉬운 풀이 후 괄호 한자. [1][2] 같은 각주·출처 표시 금지.`;
+전문 용어는 쉬운 풀이 후 괄호 한자. 출처·각주 표시 금지.
+각 섹션은 반드시 [번호] 제목 형식으로 시작하세요.`;
 
 function hybridGroqEnabled(): boolean {
   return process.env.GEMMA24_HYBRID_GROQ !== '0';
 }
 
-export function getGroqSupplementSections(cards: Gemma24SajuCard[]): string[] {
-  const kinds = new Set(cards.map((c) => cardKind(c)));
-  const fromGaps = Object.entries(SECTION_COVER)
-    .filter(([, cover]) => !cover.some((k) => kinds.has(k)))
-    .map(([sec]) => sec);
-  const merged = [...new Set([...fromGaps, ...ALWAYS_SUPPLEMENT])];
-  return merged.sort(
-    (a, b) => fortuneSectionSortIndex(a.replace(/^\[|\]$/g, ''))
-      - fortuneSectionSortIndex(b.replace(/^\[|\]$/g, '')),
-  );
+/** 조합 결과 기준 — 카드 풀에 심층 카드가 있어도 본문이 비거나 짧으면 보충 */
+export function getGroqSupplementSections(composed: CouncilFreeFortuneResult): string[] {
+  return composed.needsSupplementIds.map((id) => `[${id}]`);
+}
+
+function formatSupplementSectionBrief(composed: CouncilFreeFortuneResult): string {
+  return composed.needsSupplementIds
+    .map((id) => {
+      const title = FORTUNE_SECTION_TITLES[id as keyof typeof FORTUNE_SECTION_TITLES];
+      const filled = composed.filledSectionIds.includes(id);
+      const note = filled ? '(인증 카드만 있어 짧음 — 맞춤 확장)' : '(본문 없음 — 새로 작성)';
+      return `[${id}] ${title} ${note}`;
+    })
+    .join('\n');
 }
 
 function isOverloadText(text: string): boolean {
   return text.includes('과부하') || text.includes('한도 초과');
 }
 
+/** 보충 블록을 표시 순서로 정렬 */
+function sortSupplementBlocks(text: string): string {
+  const blocks = text
+    .split(/(?=^\[\d+\])/m)
+    .map((b) => b.trim())
+    .filter(Boolean);
+  if (blocks.length <= 1) return text.trim();
+  return sortFortuneSectionBlocks(blocks).join('\n\n');
+}
+
 export type CouncilHybridResult = {
   composed: CouncilFreeFortuneResult;
   missingSections: string[];
-  contextCards?: import('./saju-knowledge').Gemma24SajuCard[];
+  contextCards?: Gemma24SajuCard[];
 };
 
 export function tryCouncilHybridBase(query: string): CouncilHybridResult | null {
   const displayCards = searchCouncilDisplayCards(query);
   if (!canComposeCouncilFreeFortune(displayCards)) return null;
   const composed = composeCouncilFreeFortune(displayCards, query);
-  const missingSections = hybridGroqEnabled()
-    ? getGroqSupplementSections(displayCards)
-    : [];
+  const missingSections = hybridGroqEnabled() ? getGroqSupplementSections(composed) : [];
   return { composed, missingSections, contextCards: searchCouncilContextCards(query) };
 }
 
@@ -81,44 +81,49 @@ export async function buildCouncilHybridFortune(
     return { text: composed.text, mode: 'council-compose', cardCount: composed.cardCount };
   }
 
-  const sectionList = missingSections.join(', ');
+  const sectionBrief = formatSupplementSectionBrief(composed);
   const frameHint = (contextCards ?? [])
     .filter((c) => cardKind(c) === 'foundation')
     .map((c) => c.title)
     .join(', ');
 
   const userBlock = [
-    '【이미 제공된 인증 지식 — 반복 금지】',
+    '【이미 제공된 인증 지식 — 반복·요약 금지】',
     composed.text.slice(0, 5000),
     frameHint ? `(참고 프레임만: ${frameHint})` : '',
     '',
     '【원본 사주 데이터 — 아래만 근거로 보충 작성】',
     query.slice(0, 10000),
     '',
-    `【작성할 섹션만】 ${sectionList}`,
-    '각 섹션 제목([6] 등)을 넣고, 월별·대운 데이터가 있으면 그대로 반영하세요. 약 1200~2000자.',
+    '【작성할 섹션】',
+    sectionBrief,
+    '',
+    FORTUNE_DISPLAY_ORDER_HINT,
+    '',
+    '각 섹션 300~500자. 월별·대운 데이터가 프롬프트에 있으면 반드시 반영.',
   ].join('\n');
 
   const supplement = await fetchLlmCompletionText(
     {
-      max_tokens: 2000,
+      max_tokens: 2800,
       temperature: 0.65,
       messages: [
         { role: 'system', content: SUPPLEMENT_SYSTEM },
         { role: 'user', content: userBlock },
       ],
     },
-    { geminiFirst: true },
+    { geminiFirst: false },
   );
 
   if (!supplement || isOverloadText(supplement)) {
     const offline = buildOfflineHybridSupplement(query);
+    const offlineFiltered = filterOfflineToNeeded(offline, composed.needsSupplementIds);
     const text = [
       composed.text.replace(baseFooter, '').trim(),
       '',
       '━━━ 맞춤 풀이 (사주 데이터 기반) ━━━',
       '',
-      offline,
+      offlineFiltered || offline,
       '',
       '※ AI 서버 한도로 위는 확정 사주 데이터 기반 초안입니다. 2~3분 후 「다시 분석하기」로 AI 맞춤 보충을 시도할 수 있습니다.',
       '',
@@ -128,18 +133,34 @@ export async function buildCouncilHybridFortune(
     return { text, mode: 'council-hybrid-pending', cardCount: composed.cardCount };
   }
 
+  const sortedSupplement = sortSupplementBlocks(supplement);
+
   const text = [
     composed.text.replace(baseFooter, '').trim(),
     '',
-    '━━━ 맞춤 보충 풀이 (인증 지식 + AI) ━━━',
+    '━━━ 맞춤 보충 풀이 (인증 지식 + Groq) ━━━',
     '',
-    supplement,
+    sortedSupplement,
     '',
     '—',
     '인증 카드와 사주 데이터를 바탕으로 작성되었습니다. 추가 질문은 AI 심층 상담을 이용해 주세요.',
   ].join('\n');
 
   return { text, mode: 'council-hybrid', cardCount: composed.cardCount };
+}
+
+function filterOfflineToNeeded(offline: string, neededIds: string[]): string {
+  if (!neededIds.length) return offline;
+  const blocks = offline
+    .split(/(?=^\[\d+\])/m)
+    .map((b) => b.trim())
+    .filter(Boolean);
+  const need = new Set(neededIds);
+  const picked = blocks.filter((b) => {
+    const id = b.match(/^\[(\d+)\]/)?.[1];
+    return id && need.has(id);
+  });
+  return picked.length ? sortFortuneSectionBlocks(picked).join('\n\n') : '';
 }
 
 export async function tryCouncilHybridFortune(

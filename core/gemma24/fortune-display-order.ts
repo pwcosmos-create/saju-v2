@@ -17,18 +17,27 @@ export const FORTUNE_DISPLAY_ORDER = [
 
 export type FortuneSectionId = (typeof FORTUNE_DISPLAY_ORDER)[number];
 
+/** 화면 [N] ↔ 인증 심층 카드 제목 (주제 기준, deep-N kind와 동일) */
 export const FORTUNE_SECTION_TITLES: Record<FortuneSectionId, string> = {
-  '1': '이 사주의 핵심 성향',
-  '2': '사주 원국과 패턴',
-  '4': '오행 균형과 보완',
-  '3': '격국(格局)과 기질',
-  '5': '용신·기신과 에너지 조언',
-  '9': '대운·세운·올해 흐름',
-  '8': '돈과 재물',
-  '7': '지지 관계와 인연 흐름',
-  '6': '직업과 적성',
-  '10': '실천 전략과 주의',
+  '1': '심층·[1] 인사·성향',
+  '2': '심층·[2] 사주팔자',
+  '4': '심층·[3] 오행 균형',
+  '3': '심층·[4] 십신·격국',
+  '5': '심층·[5] 용신·기신',
+  '9': '심층·[6] 대운·세운',
+  '8': '심층·[7] 재물',
+  '7': '심층·[8] 연애·관계',
+  '6': '심층·[9] 직업',
+  '10': '심층·[10] 실천·주의',
 };
+
+export function fortuneSectionDisplayTitle(sectionId: string, parsedTitle?: string): string {
+  const canonical = FORTUNE_SECTION_TITLES[sectionId as FortuneSectionId];
+  if (canonical) return canonical;
+  const t = (parsedTitle ?? '').trim();
+  if (t.startsWith('심층·[')) return t;
+  return t || `심층·[${sectionId}]`;
+}
 
 /** 조합 시 카드 kind 매핑 */
 export const FORTUNE_SECTION_KINDS: Record<FortuneSectionId, string[]> = {
@@ -60,4 +69,5 @@ export const FORTUNE_DISPLAY_ORDER_HINT = [
   '━━━ 섹션 출력 순서 (반드시 준수) ━━━',
   '아래 번호 순서대로만 작성하세요. 번호 자체는 바꾸지 마세요:',
   '[1] → [2] → [4] → [3] → [5] → [9] → [8] → [7] → [6] → [10]',
+  '각 섹션 제목은 심층 카드 명칭을 사용하세요 (예: [1] 심층·[1] 인사·성향, [4] 심층·[3] 오행 균형).',
 ].join('\n');

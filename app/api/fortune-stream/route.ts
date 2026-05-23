@@ -6,6 +6,7 @@
  */
 import { NextRequest } from 'next/server';
 import { fetchFortuneParallelStream, fetchLlmStream } from '../../../core/config/llm';
+import { buildGemma24KnowledgeForSystem } from '../../../core/gemma24/saju-knowledge';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 
 const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문가입니다.
@@ -38,13 +39,16 @@ export async function POST(req: NextRequest) {
   const prompt = typeof body.prompt === 'string' ? body.prompt.slice(0, 20000) : '';
   if (!prompt) return new Response(JSON.stringify({ error: 'prompt 없음' }), { status: 400 });
 
-  const parallel = await fetchFortuneParallelStream(SYSTEM, prompt, true);
+  const gemma24Ref = buildGemma24KnowledgeForSystem(prompt);
+  const system = gemma24Ref ? `${SYSTEM}\n\n${gemma24Ref}` : SYSTEM;
+
+  const parallel = await fetchFortuneParallelStream(system, prompt, true);
   const upstream = parallel ?? await fetchLlmStream({
     stream: true,
     max_tokens: 3000,
     temperature: 0.7,
     messages: [
-      { role: 'system', content: SYSTEM },
+      { role: 'system', content: system },
       { role: 'user', content: prompt },
     ],
   });

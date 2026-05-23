@@ -24,6 +24,11 @@ const STEM_KO = [
 
 const STEM_HANJA = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'] as const;
 
+const GENERIC_TAGS = new Set([
+  '오행', '십신', '일주', '대운', '세운', '용신', '기신', '명리',
+  '재성', '관성', '비겁', '식상', '인성', '월운', '천간지지',
+]);
+
 const MAX_CARDS = 3;
 const MAX_BODY_PER_CARD = 650;
 const MAX_BLOCK_CHARS = 2000;
@@ -62,29 +67,57 @@ function loadPack(): KnowledgePack | null {
   return null;
 }
 
-function scoreCard(card: Gemma24SajuCard, query: string): number {
+function extractDayStemHints(query: string): string[] {
+  const hints = new Set<string>();
+  const dayMatch = query.match(/일주:\s*([^\s/|]+)/);
+  if (dayMatch) {
+    const pillar = dayMatch[1];
+    hints.add(pillar);
+    const hanjaStem = pillar.charAt(0);
+    if (hanjaStem) {
+      hints.add(hanjaStem);
+      const idx = STEM_HANJA.indexOf(hanjaStem as (typeof STEM_HANJA)[number]);
+      if (idx >= 0) hints.add(STEM_KO[idx]);
+    }
+  }
+  return [...hints];
+}
+
+function cardMatchesStem(card: Gemma24SajuCard, stemHints: string[]): boolean {
+  if (!stemHints.length) return false;
+  const blob = `${card.title}\n${card.body}`;
+  return stemHints.some((h) => h.length >= 1 && blob.includes(h));
+}
+
+function isTestCard(card: Gemma24SajuCard): boolean {
+  const t = card.title.trim().toLowerCase();
+  return t === 'test' || t.startsWith('test ');
+}
+
+function scoreCard(card: Gemma24SajuCard, query: string, stemHints: string[]): number {
+  if (isTestCard(card)) return 0;
+
   let score = 0;
   const blob = `${card.title}\n${card.body}\n${(card.tags ?? []).join(' ')}`;
 
+  if (cardMatchesStem(card, stemHints)) score += 25;
+
   for (const tag of card.tags ?? []) {
-    if (query.includes(tag)) score += 3;
+    if (!query.includes(tag)) continue;
+    score += GENERIC_TAGS.has(tag) ? 1 : 4;
   }
 
   for (let i = 0; i < STEM_KO.length; i += 1) {
     const ko = STEM_KO[i];
     const hj = STEM_HANJA[i];
     if ((query.includes(ko) || query.includes(hj)) && blob.includes(ko)) {
-      score += 10;
+      score += 8;
     }
   }
 
   const titleParts = card.title.split(/[\s·]+/).filter((w) => w.length >= 2);
   for (const part of titleParts) {
     if (query.includes(part)) score += 2;
-  }
-
-  if (card.title.toLowerCase().includes('test') && score < 2) {
-    score = 0;
   }
 
   return score;
@@ -94,12 +127,18 @@ export function searchGemma24SajuKnowledge(query: string, topK = MAX_CARDS): Gem
   const pack = loadPack();
   if (!pack?.cards.length) return [];
 
-  return pack.cards
-    .map((c) => ({ c, score: scoreCard(c, query) }))
+  const stemHints = extractDayStemHints(query);
+  const ranked = pack.cards
+    .map((c) => ({ c, score: scoreCard(c, query, stemHints) }))
     .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || a.c.id - b.c.id)
-    .slice(0, topK)
-    .map((x) => x.c);
+    .sort((a, b) => b.score - a.score || a.c.id - b.c.id);
+
+  const stemMatched = stemHints.length
+    ? ranked.filter((x) => cardMatchesStem(x.c, stemHints))
+    : ranked;
+
+  const pool = stemMatched.length ? stemMatched : ranked;
+  return pool.slice(0, topK).map((x) => x.c);
 }
 
 export function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[]): string {

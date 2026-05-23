@@ -1,7 +1,10 @@
 /**
- * 젬마24 사주 지식팩 RAG — Groq/Gemini 프롬프트 주입용 (로컬 JSON, API 비용 없음)
+ * 젬마24 사주 지식 RAG — Groq/Gemini system 프롬프트 주입 (로컬 JSON, API 비용 없음)
  *
- * Oracle: GEMMA24_SAJU_KNOWLEDGE_PATH=/home/ubuntu/coupax-homepage/board/data/saju_learning/saju_knowledge_pack.json
+ * 실시간: cards.json(confirmed) 우선 → export 없이 add 직후 반영 (mtime 캐시)
+ * Oracle:
+ *   GEMMA24_SAJU_CARDS_PATH=/home/ubuntu/coupax-homepage/board/data/saju_learning/cards.json
+ *   GEMMA24_SAJU_KNOWLEDGE_PATH=.../saju_knowledge_pack.json (fallback)
  */
 import fs from 'fs';
 import path from 'path';
@@ -14,8 +17,12 @@ export type Gemma24SajuCard = {
   summary?: string;
 };
 
+type RawCard = Gemma24SajuCard & { status?: string };
+
 type KnowledgePack = {
   cards: Gemma24SajuCard[];
+  source: string;
+  updatedAt: string;
 };
 
 const STEM_KO = [
@@ -29,9 +36,10 @@ const GENERIC_TAGS = new Set([
   '재성', '관성', '비겁', '식상', '인성', '월운', '천간지지',
 ]);
 
-const MAX_CARDS = 3;
+const MAX_STEM_CARDS = 2;
+const MAX_TOPIC_CARDS = 2;
 const MAX_BODY_PER_CARD = 650;
-const MAX_BLOCK_CHARS = 2000;
+const MAX_BLOCK_CHARS = 2800;
 
 let cache: { filePath: string; mtimeMs: number; pack: KnowledgePack } | null = null;
 
@@ -39,7 +47,15 @@ function knowledgeEnabled(): boolean {
   return process.env.GEMMA24_SAJU_KNOWLEDGE_ENABLED !== '0';
 }
 
-function candidatePaths(): string[] {
+function liveCardsPaths(): string[] {
+  const fromEnv = process.env.GEMMA24_SAJU_CARDS_PATH?.trim();
+  return [
+    fromEnv,
+    '/home/ubuntu/coupax-homepage/board/data/saju_learning/cards.json',
+  ].filter(Boolean) as string[];
+}
+
+function packPaths(): string[] {
   const fromEnv = process.env.GEMMA24_SAJU_KNOWLEDGE_PATH?.trim();
   return [
     fromEnv,
@@ -48,23 +64,74 @@ function candidatePaths(): string[] {
   ].filter(Boolean) as string[];
 }
 
-function loadPack(): KnowledgePack | null {
-  for (const filePath of candidatePaths()) {
+function normalizeCards(raw: RawCard[], requireConfirmed: boolean): Gemma24SajuCard[] {
+  return raw
+    .filter((c) => {
+      if (typeof c.body !== 'string' || !c.body.trim()) return false;
+      if (requireConfirmed && c.status && c.status !== 'confirmed') return false;
+      return true;
+    })
+    .map((c) => ({
+      id: c.id,
+      title: c.title,
+      body: c.body.trim(),
+      tags: c.tags,
+      summary: c.summary,
+    }));
+}
+
+function loadFromFile(
+  filePath: string,
+  requireConfirmed: boolean,
+): KnowledgePack | null {
+  if (!fs.existsSync(filePath)) return null;
+  const stat = fs.statSync(filePath);
+  if (cache && cache.filePath === filePath && cache.mtimeMs === stat.mtimeMs) {
+    return cache.pack;
+  }
+  const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as {
+    cards?: RawCard[];
+    updated_at?: string;
+    exported_at?: string;
+  };
+  const cards = normalizeCards(raw.cards ?? [], requireConfirmed);
+  if (!cards.length) return null;
+  const pack: KnowledgePack = {
+    cards,
+    source: filePath,
+    updatedAt: raw.updated_at ?? raw.exported_at ?? stat.mtime.toISOString(),
+  };
+  cache = { filePath, mtimeMs: stat.mtimeMs, pack };
+  return pack;
+}
+
+/** cards.json(실시간) → pack.json(fallback) 순으로 로드 */
+function loadKnowledge(): KnowledgePack | null {
+  for (const filePath of liveCardsPaths()) {
     try {
-      if (!fs.existsSync(filePath)) continue;
-      const stat = fs.statSync(filePath);
-      if (cache && cache.filePath === filePath && cache.mtimeMs === stat.mtimeMs) {
-        return cache.pack;
-      }
-      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { cards?: Gemma24SajuCard[] };
-      const cards = (raw.cards ?? []).filter((c) => typeof c.body === 'string' && c.body.trim());
-      cache = { filePath, mtimeMs: stat.mtimeMs, pack: { cards } };
-      return cache.pack;
+      const pack = loadFromFile(filePath, true);
+      if (pack) return pack;
     } catch (e) {
-      console.warn('Gemma24 saju knowledge load failed:', filePath, e);
+      console.warn('Gemma24 live cards load failed:', filePath, e);
+      cache = null;
+    }
+  }
+  for (const filePath of packPaths()) {
+    try {
+      const pack = loadFromFile(filePath, false);
+      if (pack) return pack;
+    } catch (e) {
+      console.warn('Gemma24 knowledge pack load failed:', filePath, e);
+      cache = null;
     }
   }
   return null;
+}
+
+export function getGemma24KnowledgeMeta(): { count: number; source: string; updatedAt: string } | null {
+  const pack = loadKnowledge();
+  if (!pack) return null;
+  return { count: pack.cards.length, source: pack.source, updatedAt: pack.updatedAt };
 }
 
 function extractDayStemHints(query: string): string[] {
@@ -123,8 +190,8 @@ function scoreCard(card: Gemma24SajuCard, query: string, stemHints: string[]): n
   return score;
 }
 
-export function searchGemma24SajuKnowledge(query: string, topK = MAX_CARDS): Gemma24SajuCard[] {
-  const pack = loadPack();
+export function searchGemma24SajuKnowledge(query: string): Gemma24SajuCard[] {
+  const pack = loadKnowledge();
   if (!pack?.cards.length) return [];
 
   const stemHints = extractDayStemHints(query);
@@ -133,12 +200,20 @@ export function searchGemma24SajuKnowledge(query: string, topK = MAX_CARDS): Gem
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || a.c.id - b.c.id);
 
-  const stemMatched = stemHints.length
+  const stemPool = (stemHints.length
     ? ranked.filter((x) => cardMatchesStem(x.c, stemHints))
-    : ranked;
+    : ranked
+  ).slice(0, MAX_STEM_CARDS);
 
-  const pool = stemMatched.length ? stemMatched : ranked;
-  return pool.slice(0, topK).map((x) => x.c);
+  const stemIds = new Set(stemPool.map((x) => x.c.id));
+  const topicPool = ranked
+    .filter((x) => !stemIds.has(x.c.id) && !cardMatchesStem(x.c, stemHints))
+    .slice(0, MAX_TOPIC_CARDS);
+
+  const merged = [...stemPool, ...topicPool];
+  if (merged.length) return merged.map((x) => x.c);
+
+  return ranked.slice(0, MAX_STEM_CARDS).map((x) => x.c);
 }
 
 export function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[]): string {
@@ -167,7 +242,7 @@ export function formatGemma24KnowledgeBlock(cards: Gemma24SajuCard[]): string {
   ].join('\n');
 }
 
-/** fortune-stream system 프롬프트에 붙일 참고 지식 (병렬 섹션마다 중복되지 않음) */
+/** fortune-stream system 프롬프트에 붙일 참고 지식 */
 export function buildGemma24KnowledgeForSystem(query: string): string {
   if (!knowledgeEnabled()) return '';
   const cards = searchGemma24SajuKnowledge(query);

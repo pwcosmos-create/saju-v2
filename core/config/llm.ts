@@ -6,6 +6,8 @@
  */
 // 외부 API 설정 단일 진실 모듈 — 값은 환경변수에서만 읽음 (서버 전용)
 
+import { splitFortunePromptIntoSections } from '../ai-templates/fortune-sections';
+
 function requireEnv(name: string): string {
   const val = process.env[name];
   if (!val) throw new Error(`환경변수 누락: ${name}`);
@@ -274,6 +276,124 @@ export async function fetchLlmStream(body: any): Promise<Response> {
       },
     });
   }
+  return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: finalText } }] }), {
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+  });
+}
+
+const FORTUNE_SECTION_MAX_TOKENS = 900;
+
+async function completeFortuneSectionWithGroq(
+  startKeyIdx: number,
+  system: string,
+  userContent: string,
+): Promise<{ text: string | null; nextKeyIdx: number }> {
+  const body: Record<string, unknown> = {
+    stream: false,
+    max_tokens: FORTUNE_SECTION_MAX_TOKENS,
+    temperature: 0.7,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: userContent.slice(0, 14000) },
+    ],
+  };
+
+  if (GROQ_KEYS.length === 0) {
+    return { text: null, nextKeyIdx: startKeyIdx };
+  }
+
+  for (let i = 0; i < GROQ_KEYS.length; i += 1) {
+    const keyIdx = (startKeyIdx + i) % GROQ_KEYS.length;
+    const groqKey = GROQ_KEYS[keyIdx];
+    try {
+      let result = await callGroqCompletion(groqKey, body);
+      if (!result.ok && result.status === 413) {
+        const shorter = {
+          ...body,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: userContent.slice(0, 8000) },
+          ],
+        };
+        result = await callGroqCompletion(groqKey, shorter);
+      }
+      if (result.ok && result.text.trim()) {
+        return { text: result.text.trim(), nextKeyIdx: (keyIdx + 1) % GROQ_KEYS.length };
+      }
+      if (result.status === 429) {
+        console.warn(`Fortune section Groq 429 on key #${keyIdx + 1}, trying next.`);
+        continue;
+      }
+    } catch (e) {
+      console.warn('Fortune section Groq error:', e);
+    }
+  }
+
+  const geminiKey = process.env.GOOGLE_AI_API_KEY ?? '';
+  if (geminiKey) {
+    for (const waitMs of [0, 2000]) {
+      if (waitMs > 0) await sleep(waitMs);
+      try {
+        const result = await callGeminiCompletion(geminiKey, body);
+        if (result.ok && result.text.trim()) {
+          return { text: result.text.trim(), nextKeyIdx: startKeyIdx };
+        }
+      } catch (e) {
+        console.warn('Fortune section Gemini fallback error:', e);
+      }
+    }
+  }
+
+  return { text: null, nextKeyIdx: startKeyIdx };
+}
+
+/** 4 Groq 키에 섹션 1개씩 병렬 할당. 실패 시 null → 단일 호출 fallback */
+export async function fetchFortuneParallelStream(
+  system: string,
+  fullPrompt: string,
+  streamOut: boolean,
+): Promise<Response | null> {
+  const sections = splitFortunePromptIntoSections(fullPrompt);
+  if (!sections || sections.length < 2 || GROQ_KEYS.length < 2) {
+    return null;
+  }
+
+  const startIdx = keyIndex;
+  const settled = await Promise.all(
+    sections.map((sectionUser, i) => {
+      const preferredKey = (startIdx + i) % GROQ_KEYS.length;
+      return completeFortuneSectionWithGroq(preferredKey, system, sectionUser);
+    }),
+  );
+
+  const texts = settled.map((r) => r.text);
+  const failed = texts.findIndex((t) => !t);
+  if (failed >= 0) {
+    console.warn(`Fortune parallel: section ${failed + 1} failed, falling back to single call.`);
+    return null;
+  }
+
+  keyIndex = (startIdx + sections.length) % GROQ_KEYS.length;
+
+  const combined = cleanLlamaLeakages(texts.join('\n\n'));
+  if (!combined.trim()) return null;
+
+  const finalText = isLlmAuditEnabled()
+    ? await auditAndRefineWithGemini(combined)
+    : combined;
+
+  if (streamOut) {
+    return new Response(streamTextToOpenAiSse(finalText), {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
+
   return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: finalText } }] }), {
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
   });

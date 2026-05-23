@@ -5,7 +5,7 @@
  * counsel 분기 제거 — 상담은 /api/saju-chat 단일 경로 사용.
  */
 import { NextRequest } from 'next/server';
-import { fetchLlmStream } from '../../../core/config/llm';
+import { fetchFortuneParallelStream, fetchLlmStream } from '../../../core/config/llm';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 
 const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문가입니다.
@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
   const prompt = typeof body.prompt === 'string' ? body.prompt.slice(0, 20000) : '';
   if (!prompt) return new Response(JSON.stringify({ error: 'prompt 없음' }), { status: 400 });
 
-  const upstream = await fetchLlmStream({
+  const parallel = await fetchFortuneParallelStream(SYSTEM, prompt, true);
+  const upstream = parallel ?? await fetchLlmStream({
     stream: true,
     max_tokens: 3000,
     temperature: 0.7,

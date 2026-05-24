@@ -9,6 +9,7 @@
  */
 import { useState, useRef, useCallback } from 'react';
 import type { SajuResult } from '../../core/pillar-calc/main-calculator';
+import { SAJU_THINKING_LABEL } from '../../core/user-messages';
 import { buildChatContext } from './build-saju-context';
 
 export type Msg = { role: 'user' | 'assistant'; content: string };
@@ -99,9 +100,7 @@ export function useCounselChat(
       return content;
     } catch (e) {
       const isAbort = e instanceof DOMException && e.name === 'AbortError';
-      const errContent = isAbort
-        ? '응답 시간이 초과됐습니다. 다시 질문해 주세요.'
-        : '답변을 불러오지 못했습니다. 다시 질문해 주세요.';
+      const errContent = SAJU_THINKING_LABEL;
 
       const errored: Msg[] = [...msgsRef.current];
       const last = errored[errored.length - 1];

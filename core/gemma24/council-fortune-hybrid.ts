@@ -126,8 +126,6 @@ export async function buildCouncilHybridFortune(
       '',
       offlineFiltered || offline,
       '',
-      '※ 지금은 맞춤 보충이 잠시 어렵습니다. 위는 사주 데이터 기반 풀이이며, 1~2분 뒤 「다시 분석하기」를 눌러 주세요.',
-      '',
       '—',
       baseFooter,
     ].join('\n');

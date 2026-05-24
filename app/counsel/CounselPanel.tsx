@@ -377,7 +377,7 @@ export default function CounselPanel({
                         <span style={{ animation: 'dot-blink 1.2s .0s infinite', display: 'inline-block' }}>●</span>
                         <span style={{ animation: 'dot-blink 1.2s .2s infinite', display: 'inline-block' }}>●</span>
                         <span style={{ animation: 'dot-blink 1.2s .4s infinite', display: 'inline-block' }}>●</span>
-                        <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>답변 준비 중…</span>
+                        <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>생각중입니다…</span>
                       </span>
                       {/* 후원 안내 배너 — 로딩 중 노출 */}
                       <div style={{

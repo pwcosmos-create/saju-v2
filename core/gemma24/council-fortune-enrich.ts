@@ -27,6 +27,38 @@ const ELEM_TIP: Record<string, string> = {
 
 export type EnrichedSection = { id: string; title: string; body: string };
 
+const PILLAR_BOILERPLATE_RE = /년주는\s*유년|월주는\s*사회|일주는\s*본인·배우자궁/;
+const ENCYCLOPEDIC_RE =
+  /십신\(十神\)은\s*일간을\s*중심으로|사주팔자\(四柱八字\)는\s*태어난|대운\(大運\)은\s*약\s*10년/;
+
+/** 프롬프트 명식(일간·일주·용신)이 본문에 반영됐는지 */
+export function lacksChartPersonalization(body: string, query: string): boolean {
+  const q = query.trim();
+  if (!q) return false;
+
+  const { facts } = parsePromptContext(q);
+  if (facts.stemKo && body.includes(facts.stemKo)) return false;
+  if (facts.stemHanja && body.includes(facts.stemHanja)) return false;
+  if (facts.gyeokguk && body.includes(facts.gyeokguk)) return false;
+
+  const dayPillar = q.match(/일주:\s*([^\s|/·]+)/)?.[1]?.trim();
+  if (dayPillar && dayPillar.length >= 2 && body.includes(dayPillar)) return false;
+
+  const yongsin = q.match(/용신\(用神\)\s*=\s*([^\n]+)/)?.[1]?.trim();
+  if (yongsin && body.includes(yongsin.slice(0, 1))) return false;
+
+  if (PILLAR_BOILERPLATE_RE.test(body) && !/일간|일주|용신|기신/.test(body)) return true;
+  if (ENCYCLOPEDIC_RE.test(body) && lacksPersonalizationForEncyclopedia(body, facts.stemKo)) return true;
+  if (facts.stemKo || dayPillar) return true;
+
+  return false;
+}
+
+function lacksPersonalizationForEncyclopedia(body: string, stemKo: string | null): boolean {
+  if (!stemKo) return true;
+  return !body.includes(stemKo);
+}
+
 function parsePromptContext(query: string) {
   const facts = extractPromptFacts(query);
   const strength = query.match(/최종 판정:\s*★\s*([^★\n]+)/)?.[1]?.trim() ?? null;
@@ -115,6 +147,112 @@ export function buildPromptEnrichedSections(
   }
 
   return out;
+}
+
+/** 절 id별 규칙 기반 초안 (LLM·카드 실패 시) */
+export function buildOfflineFortuneSection(query: string, sectionId: string): string | null {
+  const ctx = parsePromptContext(query);
+  const { facts } = ctx;
+  const yTip = facts.yongsinElem ? ELEM_TIP[facts.yongsinElem] : '용신 방향으로 일·관계를 맞추면 흐름이 부드러워집니다.';
+  const gyeok = ctx.gyeokLine ?? facts.gyeokguk ?? '격국';
+
+  const header = (id: keyof typeof FORTUNE_SECTION_TITLES) =>
+    formatFortuneSectionHeader(id, FORTUNE_SECTION_TITLES[id]);
+
+  switch (sectionId) {
+    case '1': {
+      if (!facts.stemKo) return null;
+      const blurb = STEM_BLURB[facts.stemKo] ?? '일간 기운이 사주 전체 해석의 중심이 됩니다.';
+      const hanja = facts.stemHanja ? `(${facts.stemHanja})` : '';
+      return [
+        header('1'),
+        '',
+        `◆ 일간 ${facts.stemKo}${hanja}`,
+        `— ${blurb}`,
+        ctx.strength ? `— 신강·신약: ${ctx.strength}` : '',
+        ctx.pillars ? `— 사주: ${ctx.pillars}` : '',
+      ].filter(Boolean).join('\n');
+    }
+    case '2':
+      return ctx.pillars
+        ? [header('2'), '', `◆ 사주 구성\n— ${ctx.pillars}\n— 격국·용신·운세는 이 네 기둥을 기준으로 읽습니다.`].join('\n')
+        : null;
+    case '4':
+      return (ctx.dominant || ctx.lacking)
+        ? [
+            header('4'),
+            '',
+            '◆ 오행 분포',
+            ctx.dominant ? `— 넘치는 기운: ${ctx.dominant}` : '',
+            ctx.lacking ? `— 보완하면 좋은 기운: ${ctx.lacking}` : '',
+            facts.stemKo ? `— ${facts.stemKo} 일간 기준으로 부족한 오행을 생활 습관으로 채우면 균형에 가깝습니다.` : '',
+          ].filter(Boolean).join('\n')
+        : null;
+    case '3':
+      return [
+        header('3'),
+        '',
+        `◆ 십신·격국`,
+        `— ${gyeok}은(는) ${facts.stemKo ? `${facts.stemKo} 일간` : '일간'}과 맞물릴 때 직업·재물의 큰 틀을 보여 줍니다.`,
+        '— 십신은 비겁·식상·재성·관성·인성 조합으로 읽으며, 한 가지만으로 길흉을 단정하지 않습니다.',
+      ].join('\n');
+    case '5':
+      return (ctx.yongsinLine || ctx.gisinLine)
+        ? [
+            header('5'),
+            '',
+            '◆ 용신·기신',
+            ctx.yongsinLine ? `— 용신: ${ctx.yongsinLine}` : '',
+            ctx.huisinLine ? `— 희신: ${ctx.huisinLine}` : '',
+            ctx.gisinLine ? `— 기신: ${ctx.gisinLine}` : '',
+            `— ${yTip}`,
+          ].filter(Boolean).join('\n')
+        : null;
+    case '9':
+      return [
+        header('9'),
+        '',
+        '◆ 대운·세운',
+        '— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다. 상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다.',
+        '— 급한 결정은 피하고, 몸과 마음의 리듬을 맞추면 운의 변화를 더 잘 타실 수 있습니다.',
+      ].join('\n');
+    case '8':
+      return [
+        header('8'),
+        '',
+        '◆ 재물',
+        ctx.dominant ? `— 지배 오행(${ctx.dominant})이 강한 만큼 익숙한 방식으로 수입을 만들 때 안정감이 큽니다.` : '— 수입·지출을 한 달 단위로 기록하면 흐름이 보입니다.',
+        '— 무리한 투자보다 용신 방향에 맞는 속도로 쌓는 편이 유리합니다.',
+      ].join('\n');
+    case '7':
+      return [
+        header('7'),
+        '',
+        '◆ 연애·관계',
+        '— 일지(日支)와의 합·충을 참고로 쓰되, 특정 인연·이별 시기는 단정하지 않습니다.',
+        facts.stemKo ? `— ${facts.stemKo} 일간은 관계에서도 본인의 리듬을 지키는 편이 안정에 가깝습니다.` : '',
+      ].filter(Boolean).join('\n');
+    case '6':
+      return [
+        header('6'),
+        '',
+        `◆ ${gyeok}과 직업`,
+        `— ${gyeok}은 맞는 환경에서 강점이 드러나는 편입니다. ${ctx.strength ? `현재 ${ctx.strength}입니다.` : ''}`,
+        `— ${yTip}`,
+      ].join('\n');
+    case '10':
+      return [
+        header('10'),
+        '',
+        '◆ 실천·마무리',
+        facts.stemKo
+          ? `— ${facts.stemKo} 일간의 강점을 살리되, 용신(${ctx.yongsinLine ?? '확정 용신'})을 일상 습관으로 옮기는 것이 핵심입니다.`
+          : '— 용신 방향을 작은 습관으로 옮기는 것이 핵심입니다.',
+        '— 중요한 결정은 하루 이상 숙성한 뒤 판단해 주세요.',
+      ].join('\n');
+    default:
+      return null;
+  }
 }
 
 /** LLM 보충 실패 시 [6][8][9][10] 규칙 기반 초안 */

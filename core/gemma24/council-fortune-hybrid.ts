@@ -4,7 +4,7 @@
 import { fetchLlmCompletionText } from '../config/llm';
 import type { Gemma24SajuCard } from './saju-knowledge';
 import { cardKind, searchCouncilContextCards, searchCouncilDisplayCards } from './saju-knowledge';
-import { buildOfflineHybridSupplement } from './council-fortune-enrich';
+import { buildOfflineFortuneSection, buildOfflineHybridSupplement } from './council-fortune-enrich';
 import {
   canComposeCouncilFreeFortune,
   composeCouncilFreeFortune,
@@ -19,11 +19,15 @@ import {
   sortFortuneSectionBlocks,
 } from './fortune-display-order';
 import {
+  extractSectionBody,
+  fortuneOutputHasDefects,
   isLowQualityFortuneBody,
   pruneFortuneSectionBody,
+  promptHasHourPillar,
+  sanitizeMixedScript,
 } from './fortune-text-quality';
 
-function parseFortuneSectionBlocks(text: string): Map<string, string> {
+function parseFortuneSectionBlocks(text: string, query = ''): Map<string, string> {
   const blocks = new Map<string, string>();
   const parts = text
     .split(/(?=^(?:\[\d+\]|\d{1,2}\.)\s)/m)
@@ -48,8 +52,8 @@ function parseFortuneSectionBlocks(text: string): Map<string, string> {
       .replace(/^\[\d+\][^\n]*\n?/, '')
       .replace(/^\d{1,2}\.\s*[^\n]*\n?/, '')
       .trim();
-    const pruned = pruneFortuneSectionBody(body);
-    if (!pruned || isLowQualityFortuneBody(pruned)) continue;
+    const pruned = pruneFortuneSectionBody(body, { hasHourPillar: promptHasHourPillar(query) });
+    if (!pruned || isLowQualityFortuneBody(pruned, query)) continue;
 
     blocks.set(
       id,
@@ -85,6 +89,56 @@ function mergeFortuneWithSupplement(
     '',
     footer,
   ].join('\n');
+}
+
+/** 병합 후 절별 품질 검사 → 부족분은 규칙 기반 초안으로 교체 */
+function finalizeCouncilFortuneText(query: string, text: string): string {
+  const introMatch = text.match(/^[\s\S]*?(?=^\[1\])/m);
+  const intro = introMatch?.[0]?.trim() ?? '';
+  const baseBody = introMatch ? text.slice(introMatch[0].length) : text;
+
+  const blocks = parseFortuneSectionBlocks(baseBody, query);
+  const merged = new Map<string, string>();
+
+  for (const id of FORTUNE_DISPLAY_ORDER) {
+    const block = blocks.get(id);
+    const bodyOnly = block ? extractSectionBody(block) : '';
+    const weak =
+      !block
+      || isLowQualityFortuneBody(bodyOnly, query)
+      || fortuneOutputHasDefects(bodyOnly);
+
+    if (weak) {
+      const offline = buildOfflineFortuneSection(query, id);
+      if (offline) merged.set(id, offline);
+      continue;
+    }
+    if (block) merged.set(id, block);
+  }
+
+  const footer = '—\n참고용 풀이이며 전문 상담을 대체하지 않습니다.';
+  const ordered = FORTUNE_DISPLAY_ORDER.map((id) => merged.get(id)).filter(Boolean);
+
+  return sanitizeMixedScript(
+    [
+      intro || '✦ AI 심층 풀이 — ✓ 사주위원회 인증\n\n입력하신 사주에 맞춰 인증 지식·심층 카드를 조합했습니다.',
+      '',
+      ...ordered,
+      '',
+      footer,
+    ].join('\n'),
+  );
+}
+
+function pickSupplementText(query: string, llmText: string, neededIds: string[]): string {
+  if (!llmText || fortuneOutputHasDefects(llmText)) {
+    const parts = neededIds
+      .map((id) => buildOfflineFortuneSection(query, id))
+      .filter(Boolean) as string[];
+    if (parts.length) return parts.join('\n\n');
+    return filterOfflineToNeeded(buildOfflineHybridSupplement(query), neededIds);
+  }
+  return llmText;
 }
 
 const SUPPLEMENT_SYSTEM = `당신은 사주팔자 전문가입니다.
@@ -151,7 +205,11 @@ export async function buildCouncilHybridFortune(
   const baseFooter = '참고용 풀이이며 전문 상담을 대체하지 않습니다.';
 
   if (!missingSections.length) {
-    return { text: composed.text, mode: 'council-compose', cardCount: composed.cardCount };
+    return {
+      text: finalizeCouncilFortuneText(query, composed.text),
+      mode: 'council-compose',
+      cardCount: composed.cardCount,
+    };
   }
 
   const sectionBrief = formatSupplementSectionBrief(composed);
@@ -188,30 +246,25 @@ export async function buildCouncilHybridFortune(
     { geminiFirst: true },
   );
 
-  if (!supplement || isOverloadText(supplement)) {
-    const offline = buildOfflineHybridSupplement(query);
-    const offlineFiltered = filterOfflineToNeeded(offline, composed.needsSupplementIds);
-    const text = pruneFortuneSectionBody(
-      mergeFortuneWithSupplement(
-        composed.text.replace(baseFooter, '').trim(),
-        offlineFiltered || offline,
-        composed.needsSupplementIds,
-      ),
-    );
-    return { text, mode: 'council-hybrid-pending', cardCount: composed.cardCount };
-  }
+  const supplementRaw = !supplement || isOverloadText(supplement)
+    ? ''
+    : humanizeDeepSectionText(sortSupplementBlocks(supplement));
 
-  const sortedSupplement = humanizeDeepSectionText(sortSupplementBlocks(supplement));
+  const supplementMerged = pickSupplementText(query, supplementRaw, composed.needsSupplementIds);
 
-  const text = pruneFortuneSectionBody(
-    mergeFortuneWithSupplement(
-      composed.text.replace(baseFooter, '').trim(),
-      sortedSupplement,
-      composed.needsSupplementIds,
-    ),
+  const merged = mergeFortuneWithSupplement(
+    composed.text.replace(baseFooter, '').trim(),
+    supplementMerged,
+    composed.needsSupplementIds,
   );
 
-  return { text, mode: 'council-hybrid', cardCount: composed.cardCount };
+  const text = finalizeCouncilFortuneText(query, merged);
+  const mode =
+    !supplement || isOverloadText(supplement) || fortuneOutputHasDefects(supplementRaw)
+      ? 'council-hybrid-pending'
+      : 'council-hybrid';
+
+  return { text, mode, cardCount: composed.cardCount };
 }
 
 function filterOfflineToNeeded(offline: string, neededIds: string[]): string {

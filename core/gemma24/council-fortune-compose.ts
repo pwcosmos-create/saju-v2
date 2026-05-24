@@ -88,7 +88,7 @@ export function composeCouncilFreeFortune(
 
     const rawBody = mergeOptimizedCardBodies(matched);
     const body = pruneFortuneSectionBody(rawBody, { hasHourPillar });
-    if (!body || isLowQualityFortuneBody(body)) continue;
+    if (!body || isLowQualityFortuneBody(body, query)) continue;
 
     for (const c of matched) usedIds.push(c.id);
     filledIds.add(block.id);
@@ -109,7 +109,10 @@ export function composeCouncilFreeFortune(
     if (!filledIds.has(id)) return true;
     if ((sectionBodyChars[id] ?? 0) < MIN_SECTION_BODY_CHARS) return true;
     const block = sectionTexts.find((s) => s.startsWith(`[${id}]`));
-    if (block && sectionBlockHasBrokenFragments(block)) return true;
+    if (!block) return true;
+    const bodyOnly = block.replace(/^\[\d+\][^\n]*\n?/, '').trim();
+    if (sectionBlockHasBrokenFragments(block)) return true;
+    if (isLowQualityFortuneBody(bodyOnly, query)) return true;
     return false;
   });
 

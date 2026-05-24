@@ -247,6 +247,10 @@ export function polishFortuneText(text: string): string {
     seen.add(key);
     return block;
   });
+  out = out.replace(
+    /— (\S+) 일간의 강점을 살리되, 용신 ([목화토금수]\([^)\n]+)\)?\s*$/gm,
+    '— $1 일간의 강점을 살리되, 용신 $2을(를) 일상 습관으로 옮기는 것이 핵심입니다.',
+  );
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 

@@ -69,24 +69,42 @@ export async function fetchStream(prompt: string, callbacks: StreamCallbacks): P
     const reader  = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let finished = false;
+
+    const processSseLine = (line: string): boolean => {
+      if (!line.startsWith('data: ')) return false;
+      const raw = line.slice(6).trim();
+      if (raw === '[DONE]') {
+        finished = true;
+        return true;
+      }
+      try {
+        const json = JSON.parse(raw);
+        const raw2 = json.choices?.[0]?.delta?.content;
+        if (raw2) onChunk(filterLeaked(raw2));
+      } catch { /* skip malformed/partial line */ }
+      return false;
+    };
+
+    const drainBuffer = (final = false) => {
+      const lines = buffer.split('\n');
+      buffer = final ? '' : (lines.pop() ?? '');
+      for (const line of lines) {
+        if (processSseLine(line)) return;
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const raw = line.slice(6).trim();
-        if (raw === '[DONE]') { onDone(); return; }
-        try {
-          const json = JSON.parse(raw);
-          const raw2 = json.choices?.[0]?.delta?.content;
-          if (raw2) onChunk(filterLeaked(raw2));
-        } catch { /* skip */ }
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        drainBuffer(false);
+      }
+      if (finished) return;
+      if (done) {
+        drainBuffer(true);
+        if (buffer.trim()) processSseLine(buffer.trim());
+        break;
       }
     }
     onDone();

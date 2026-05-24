@@ -14,6 +14,11 @@ import {
   searchConsultCouncilCards,
 } from './saju-knowledge';
 import { optimizeCardBodyForDisplay, shortCardSubtitle } from './optimize-card-body';
+import { isTodayFortuneQuestion } from './is-today-fortune-question';
+import {
+  buildTodayFortuneCounselReply,
+  type DailyFortuneCounselPayload,
+} from '../daily-fortune/counsel-format';
 
 const MAX_CARDS_IN_REPLY = 4;
 
@@ -50,12 +55,13 @@ function isLikelyOffTopic(message: string): boolean {
 }
 
 function topicLabelFromMessage(message: string): string {
+  if (isTodayFortuneQuestion(message)) return '오늘의 운세';
   for (const [re, id] of [
     [/연애|애인|결혼|짝|궁합|관계|배우자/, 8],
     [/재물|돈|금전|투자|수입/, 7],
     [/직업|커리어|사업|취업|이직/, 9],
     [/건강|몸|질병/, 10],
-    [/대운|세운|올해|월운|시기|흐름|오늘/, 6],
+    [/대운|세운|올해|월운|시기|흐름/, 6],
     [/용신|기신|희신/, 5],
     [/오행|균형/, 4],
     [/격국|십신/, 3],
@@ -66,10 +72,17 @@ function topicLabelFromMessage(message: string): string {
   return '사주';
 }
 
-function rankCounselCards(cards: Gemma24SajuCard[]): Gemma24SajuCard[] {
+function rankCounselCards(cards: Gemma24SajuCard[], userMessage: string): Gemma24SajuCard[] {
+  const todayQ = isTodayFortuneQuestion(userMessage);
   const score = (c: Gemma24SajuCard): number => {
     if (c.councilCertified === false) return 5;
     const k = cardKind(c);
+    const title = c.title.trim();
+    if (todayQ) {
+      if (/일운|오늘|일진|해석·세운/.test(title)) return 0;
+      if (k.startsWith('deep-6') || title.startsWith('심층·[6]')) return 8;
+      if (k.startsWith('deep-')) return 6;
+    }
     if (k.startsWith('deep-')) return 0;
     if (k === 'gyeok' || k === 'un-yongsin' || k === 'un-gisin') return 1;
     if (k === 'stem-day' || k === 'stem-chen') return 2;
@@ -91,10 +104,10 @@ function mergeCardsByTitle(pass: Gemma24SajuCard[], extra: Gemma24SajuCard[]): G
   return out;
 }
 
-function pickCardsForReply(cards: Gemma24SajuCard[]): Gemma24SajuCard[] {
+function pickCardsForReply(cards: Gemma24SajuCard[], userMessage: string): Gemma24SajuCard[] {
   const seen = new Set<number>();
   const out: Gemma24SajuCard[] = [];
-  for (const c of rankCounselCards(cards)) {
+  for (const c of rankCounselCards(cards, userMessage)) {
     const key = c.id;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -126,11 +139,10 @@ function buildOffTopicReply(): string {
 }
 
 function buildCompatibilityReply(cards: Gemma24SajuCard[], counselorName: string): string {
-  const picked = pickCardsForReply(
-    cards.filter((c) => /궁합|관계|연애|비교/.test(c.title)).length
-      ? cards.filter((c) => /궁합|관계|연애|비교/.test(c.title))
-      : cards,
-  );
+  const pool = cards.filter((c) => /궁합|관계|연애|비교/.test(c.title)).length
+    ? cards.filter((c) => /궁합|관계|연애|비교/.test(c.title))
+    : cards;
+  const picked = pickCardsForReply(pool, '');
   const sections = picked.map(formatCardSection);
   const who = counselorName ? `『${counselorName}』 기준으로 ` : '';
   return [
@@ -154,7 +166,7 @@ function buildCardReply(
   userMessage: string,
   counselorName: string,
 ): string {
-  const picked = pickCardsForReply(cards);
+  const picked = pickCardsForReply(cards, userMessage);
   if (!picked.length) return '';
 
   const topic = topicLabelFromMessage(userMessage);
@@ -185,6 +197,7 @@ export async function tryCouncilCounselReply(
     compareSajuContext?: string;
     counselorName?: string;
     chatMode?: 'single' | 'compatibility';
+    dailyFortune?: DailyFortuneCounselPayload | null;
   },
 ): Promise<CouncilCounselReply | null> {
   if (!counselCardOnlyEnabled()) return null;
@@ -202,6 +215,15 @@ export async function tryCouncilCounselReply(
 
   if (isLikelyOffTopic(trimmed)) {
     return { content: buildOffTopicReply(), cardCount: 0, draftCardCount: 0, mode: 'council-counsel' };
+  }
+
+  if (isTodayFortuneQuestion(trimmed) && options?.dailyFortune) {
+    return {
+      content: buildTodayFortuneCounselReply(options.dailyFortune, counselorName),
+      cardCount: 0,
+      draftCardCount: 0,
+      mode: 'council-counsel',
+    };
   }
 
   const query = buildConsultCardSearchQuery(sajuContext, trimmed, compareSajuContext);
@@ -227,7 +249,7 @@ export async function tryCouncilCounselReply(
 
   if (!content.trim()) return null;
 
-  const picked = pickCardsForReply(allCards);
+  const picked = pickCardsForReply(allCards, trimmed);
   const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
 
   return {

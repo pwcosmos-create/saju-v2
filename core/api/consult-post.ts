@@ -1,5 +1,6 @@
 import { fetchLlmStream } from '../config/llm';
 import { tryCouncilCounselReply } from '../gemma24/council-counsel-reply';
+import type { DailyFortuneCounselPayload } from '../daily-fortune/counsel-format';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
 import { SAJU_WAITING_LABEL } from '../user-messages';
 import { makeRateLimiter } from '../http-client/rate-limit';
@@ -36,6 +37,7 @@ export type ConsultRequestBody = {
   chatMode?: 'single' | 'compatibility';
   counselorName?: string;
   stream?: boolean;
+  dailyFortune?: DailyFortuneCounselPayload | null;
 };
 
 export async function postConsult(
@@ -89,10 +91,16 @@ ${compareSajuContext}
 
   const compareCtx = chatMode === 'compatibility' ? compareSajuContext : '';
 
+  const dailyFortune =
+    body.dailyFortune && typeof body.dailyFortune === 'object' && body.dailyFortune.date
+      ? body.dailyFortune
+      : null;
+
   const cardReply = await tryCouncilCounselReply(sajuContext, lastUserMessage, {
     compareSajuContext: compareCtx,
     counselorName,
     chatMode,
+    dailyFortune,
   });
 
   if (cardReply) {

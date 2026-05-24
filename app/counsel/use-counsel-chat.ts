@@ -11,6 +11,8 @@ import { useState, useRef, useCallback } from 'react';
 import type { SajuResult } from '../../core/pillar-calc/main-calculator';
 import { SAJU_WAITING_LABEL } from '../../core/user-messages';
 import { buildChatContext } from './build-saju-context';
+import { dailyFortune } from '../../core/daily-fortune';
+import { dailyFortuneToCounselPayload } from '../../core/daily-fortune/counsel-format';
 
 export type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -78,6 +80,13 @@ export function useCounselChat(
           sajuContext: buildChatContext(result),
           chatMode: 'single',
           counselorName: counselorRef.current,
+          dailyFortune: (() => {
+            try {
+              return dailyFortuneToCounselPayload(dailyFortune(result));
+            } catch {
+              return null;
+            }
+          })(),
         }),
       });
 

@@ -47,7 +47,7 @@ const DEEP_SECTION_LABEL: Record<number, string> = {
 
 const INTERPRET_BY_TOPIC: [RegExp, string][] = [
   [/궁합|연애|애인|결혼|짝|관계|배우자/, '해석·궁합·연인 비교'],
-  [/올해|세운|월운|시기|흐름|오늘|요즘/, '해석·세운·올해 흐름'],
+  [/올해|세운|월운|시기|흐름|요즘/, '해석·세운·올해 흐름'],
   [/대운|전환/, '해석·대운 전환기'],
   [/용신|기신|희신/, '해석·용신·기신 실전'],
 ];
@@ -589,7 +589,8 @@ export function inferCounselFallbackNeeds(userMessage: string): CouncilCardNeed[
   if (!t) return [];
 
   const rules: [RegExp, string, string][] = [
-    [/오늘|운세|요즘|지금|이번\s*달|올해|세운|월운|시기|흐름/, '해석·세운·올해 흐름', 'interpret'],
+    [/오늘의?\s*운세|오늘\s*운|일운|금일\s*운/, '해석·오늘 일운', 'interpret'],
+    [/운세|요즘|지금|이번\s*달|올해|세운|월운|시기|흐름/, '해석·세운·올해 흐름', 'interpret'],
     [/연애|애인|결혼|짝|궁합|관계|배우자/, '해석·궁합·연인 비교', 'interpret'],
     [/재물|돈|금전|투자|수입/, '심층·[7] 재물', 'deep-7'],
     [/직업|커리어|사업|취업|이직/, '심층·[9] 직업', 'deep-9'],

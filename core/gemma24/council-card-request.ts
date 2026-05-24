@@ -421,7 +421,10 @@ export async function prepareCounselSupplementalCards(params: {
     inferCounselTopicDeepGaps(params.userMessage, params.matchedCards),
   );
 
-  const gaps = allNeeds.filter((n) => !cardsCoverNeed(params.matchedCards, n));
+  let gaps = allNeeds.filter((n) => !cardsCoverNeed(params.matchedCards, n));
+  if (!gaps.length && params.matchedCards.length < 2) {
+    gaps = inferCounselFallbackNeeds(params.userMessage);
+  }
   if (!gaps.length) return { cards: [], queuedCount: 0 };
 
   const fromLog = await loadRecentDraftCards(gaps.map((g) => g.title));
@@ -578,6 +581,40 @@ export function parseCardRequestsHeader(raw: string | null): CouncilCardNeed[] {
 export function formatCardRequestsHeader(needs: CouncilCardNeed[]): string | undefined {
   if (!needs.length) return undefined;
   return encodeURIComponent(JSON.stringify(needs.slice(0, 8)));
+}
+
+/** 검색·갭 추론으로도 카드가 없을 때 — 질문 주제 맞춤 최소 1장 */
+export function inferCounselFallbackNeeds(userMessage: string): CouncilCardNeed[] {
+  const t = userMessage.trim();
+  if (!t) return [];
+
+  const rules: [RegExp, string, string][] = [
+    [/오늘|운세|요즘|지금|이번\s*달|올해|세운|월운|시기|흐름/, '해석·세운·올해 흐름', 'interpret'],
+    [/연애|애인|결혼|짝|궁합|관계|배우자/, '해석·궁합·연인 비교', 'interpret'],
+    [/재물|돈|금전|투자|수입/, '심층·[7] 재물', 'deep-7'],
+    [/직업|커리어|사업|취업|이직/, '심층·[9] 직업', 'deep-9'],
+    [/건강|몸|질병/, '심층·[10] 실천·주의', 'deep-10'],
+    [/대운|전환/, '해석·대운 전환기', 'interpret'],
+    [/용신|기신|희신/, '해석·용신·기신 실전', 'interpret'],
+  ];
+
+  for (const [re, title, kind] of rules) {
+    if (re.test(t)) {
+      return [{
+        title,
+        kind,
+        priority: 'P0',
+        reason: `질문 주제(${title}) 맞춤 카드를 즉석 제작합니다.`,
+      }];
+    }
+  }
+
+  return [{
+    title: '심층·[1] 인사·성향',
+    kind: 'deep-1',
+    priority: 'P0',
+    reason: '상담 맞춤 카드를 즉석 제작합니다.',
+  }];
 }
 
 /** 매칭 카드가 약할 때 보강 제안 (심층·주제 해석 위주) */

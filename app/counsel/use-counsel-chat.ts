@@ -9,7 +9,7 @@
  */
 import { useState, useRef, useCallback } from 'react';
 import type { SajuResult } from '../../core/pillar-calc/main-calculator';
-import { SAJU_THINKING_LABEL } from '../../core/user-messages';
+import { SAJU_WAITING_LABEL } from '../../core/user-messages';
 import { buildChatContext } from './build-saju-context';
 
 export type Msg = { role: 'user' | 'assistant'; content: string };
@@ -100,7 +100,7 @@ export function useCounselChat(
       return content;
     } catch (e) {
       const isAbort = e instanceof DOMException && e.name === 'AbortError';
-      const errContent = SAJU_THINKING_LABEL;
+      const errContent = SAJU_WAITING_LABEL;
 
       const errored: Msg[] = [...msgsRef.current];
       const last = errored[errored.length - 1];

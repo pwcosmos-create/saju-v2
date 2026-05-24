@@ -1,7 +1,12 @@
 /**
  * AI 심층 상담 — 서버 인증 카드 + 즉석 초안 카드 조합 (Groq/Gemini 미사용)
  */
-import { prepareCounselSupplementalCards } from './council-card-request';
+import {
+  buildCouncilCardDrafts,
+  draftsToSajuCards,
+  inferCounselFallbackNeeds,
+  prepareCounselSupplementalCards,
+} from './council-card-request';
 import type { Gemma24SajuCard } from './saju-knowledge';
 import {
   buildConsultCardSearchQuery,
@@ -212,7 +217,10 @@ export async function tryCouncilCounselReply(
     matchedCards: passCards,
   });
 
-  const allCards = mergeCardsByTitle(passCards, supplemental);
+  let allCards = mergeCardsByTitle(passCards, supplemental);
+  if (!allCards.length) {
+    allCards = draftsToSajuCards(buildCouncilCardDrafts(inferCounselFallbackNeeds(trimmed)));
+  }
   if (!allCards.length) return null;
 
   const draftCardCount = supplemental.length;

@@ -11,6 +11,7 @@ import type { SajuResult } from '../../core/pillar-calc/main-calculator';
 import { COUNSELOR_NAMES } from '../../core/counselor-config';
 import { useTts } from './use-tts';
 import { useStt } from './use-stt';
+import { isSajuWaitingMessage } from '../../core/user-messages';
 import { useCounselChat } from './use-counsel-chat';
 
 /** TTS 자동 재생용: 첫 n문장만 추출 (마크다운 제거) */
@@ -341,7 +342,8 @@ export default function CounselPanel({
         }}>
           {msgs.map((msg, i) => {
             const isUser = msg.role === 'user';
-            const isError = !isUser && (
+            const isWaiting = !isUser && isSajuWaitingMessage(msg.content);
+            const isError = !isUser && !isWaiting && (
               msg.content.startsWith('답변을 불러오지') ||
               msg.content.startsWith('응답 시간이')
             );
@@ -355,9 +357,11 @@ export default function CounselPanel({
                   borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                   background: isUser
                     ? `linear-gradient(135deg, ${PURPLE}, #3a7bd5)`
-                    : isError ? 'rgba(220,80,80,.15)' : isReading ? 'rgba(139,111,198,.18)' : 'rgba(255,255,255,.07)',
+                    : isError ? 'rgba(220,80,80,.15)' : isWaiting ? 'rgba(139,111,198,.12)' : isReading ? 'rgba(139,111,198,.18)' : 'rgba(255,255,255,.07)',
                   border: isError
                     ? '1px solid rgba(220,80,80,.3)'
+                    : isWaiting
+                      ? '1px solid rgba(139,111,198,.35)'
                     : isReading
                       ? '1px solid rgba(139,111,198,.6)'
                       : '1px solid rgba(255,255,255,.08)',
@@ -377,7 +381,7 @@ export default function CounselPanel({
                         <span style={{ animation: 'dot-blink 1.2s .0s infinite', display: 'inline-block' }}>●</span>
                         <span style={{ animation: 'dot-blink 1.2s .2s infinite', display: 'inline-block' }}>●</span>
                         <span style={{ animation: 'dot-blink 1.2s .4s infinite', display: 'inline-block' }}>●</span>
-                        <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>생각중입니다…</span>
+                        <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>잠시만 기다리세요.. 확인중입니다</span>
                       </span>
                       {/* 후원 안내 배너 — 로딩 중 노출 */}
                       <div style={{

@@ -1,6 +1,7 @@
 import { fetchLlmStream } from '../config/llm';
 import { tryCouncilCounselReply } from '../gemma24/council-counsel-reply';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
+import { SAJU_WAITING_LABEL } from '../user-messages';
 import { makeRateLimiter } from '../http-client/rate-limit';
 import { COUNSELOR_ALLOWLIST } from '../counselor-config';
 
@@ -113,15 +114,12 @@ ${compareSajuContext}
 
   if (!llmCounselFallbackEnabled()) {
     return Response.json(
-      {
-        content:
-          '질문에 맞는 인증 카드를 찾지 못했습니다. 연애, 재물, 직업, 올해·시기 운세처럼 구체적으로 물어봐 주세요.',
-      },
+      { content: SAJU_WAITING_LABEL },
       {
         headers: {
           'X-Gemma24-Knowledge-Count': '0',
-          'X-Saju-Council-Badge': 'certified',
-          'X-Saju-Counsel-Mode': 'council-counsel-empty',
+          'X-Saju-Council-Badge': 'reviewed',
+          'X-Saju-Counsel-Mode': 'council-counsel-pending',
         },
       },
     );

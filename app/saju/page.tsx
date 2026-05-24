@@ -24,7 +24,7 @@ import {
 } from '../../core/interpretation-db/matcher';
 import { buildPrompt } from '../../core/ai-templates/blueprints';
 import { fetchStream, type SajuCouncilBadgeLevel, type SajuFortuneMode } from '../../core/http-client/stream-fetcher';
-import { isLlmUserOverloadText, SAJU_THINKING_LABEL } from '../../core/user-messages';
+import { isLlmUserOverloadText, SAJU_WAITING_LABEL } from '../../core/user-messages';
 import { dailyFortune } from '../../core/daily-fortune';
 import type { DailyFortuneResult } from '../../core/daily-fortune';
 import { calcStrength, getSipsin, classifyElements } from '../../core/daily-fortune/classifier';
@@ -166,10 +166,10 @@ export default function Home() {
   const aiCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const AI_REVEAL_DELAY_MS = 5000;
   const steps = [
-    SAJU_THINKING_LABEL,
-    SAJU_THINKING_LABEL,
-    SAJU_THINKING_LABEL,
-    SAJU_THINKING_LABEL,
+    SAJU_WAITING_LABEL,
+    SAJU_WAITING_LABEL,
+    SAJU_WAITING_LABEL,
+    SAJU_WAITING_LABEL,
   ];
   const [showFb,   setShowFb]   = useState(false);
   const [fbDone,   setFbDone]   = useState(false);
@@ -329,8 +329,8 @@ export default function Home() {
           }
           setAiText(
             rateLimited
-              ? SAJU_THINKING_LABEL
-              : fullText.trim() || SAJU_THINKING_LABEL,
+              ? SAJU_WAITING_LABEL
+              : fullText.trim() || SAJU_WAITING_LABEL,
           );
           setAiLoad(false);
           setShowFb(!rateLimited && Boolean(fullText.trim()));
@@ -352,7 +352,7 @@ export default function Home() {
         setRevealSecondsLeft(0);
         setAiLoad(false);
         setLoadingStep(0);
-        setAiText(fullText.trim() || SAJU_THINKING_LABEL);
+        setAiText(fullText.trim() || SAJU_WAITING_LABEL);
         setShowFb(true);
         setAiFortuneComplete(true);
       },
@@ -824,7 +824,7 @@ export default function Home() {
                     <svg className="rotating-star" width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="white"/>
                     </svg>
-                    {steps[loadingStep - 1] || SAJU_THINKING_LABEL}
+                    {steps[loadingStep - 1] || SAJU_WAITING_LABEL}
                   </span>
                 ) : aiOnCooldown ? `⏳ ${Math.max(1, Math.ceil((aiCooldownUntil - Date.now()) / 1000))}초 후 재시도` : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
               </button>
@@ -844,7 +844,7 @@ export default function Home() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
                   <div style={{ fontWeight: 800, fontSize: '.88rem' }}>지금 AI가 사주를 풀이하는 중이에요</div>
                   <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>
-                    {steps[loadingStep - 1] || SAJU_THINKING_LABEL}
+                    {steps[loadingStep - 1] || SAJU_WAITING_LABEL}
                   </div>
                 </div>
 

@@ -116,6 +116,15 @@ export function composeCouncilFreeFortune(
     return false;
   });
 
+  if (!filledIds.has('1')) {
+    const introSecs = buildPromptEnrichedSections(query, filledIds);
+    for (const sec of introSecs.filter((s) => s.id === '1')) {
+      filledIds.add('1');
+      sectionBodyChars['1'] = sec.body.length;
+      sectionTexts.push(`${formatFortuneSectionHeader('1', sec.title)}\n\n${sec.body}`);
+    }
+  }
+
   const orderedSections = sortFortuneSectionBlocks(sectionTexts);
 
   const text = [

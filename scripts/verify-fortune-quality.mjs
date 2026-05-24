@@ -7,8 +7,10 @@ import {
   pruneFortuneSectionBody,
   promptHasHourPillar,
   removeFortuneSectionBlocks,
+  polishFortuneText,
   stripFortuneFooters,
 } from '../core/gemma24/fortune-text-quality.ts';
+import { extractPromptFacts } from '../core/gemma24/saju-knowledge.ts';
 
 const broken = [
   '오늘은 귀하의 사주에서 에 해당하는 기운을 중심으로',
@@ -81,6 +83,18 @@ if (/참고용/.test(dupFooter)) {
 const jobEncy = '◆ 직업\n— 관성이 강하면 조직·공무·규율·책임, 식상이면 기술·교육·창업·콘텐츠, 인성이면 연구';
 if (!isLowQualityFortuneBody(jobEncy, '일주: 기미')) {
   console.error('FAIL encyclopedic job');
+  fail++;
+}
+
+const polished = polishFortuneText('— 용신: 화(火) ← 이 일간에게\n— 칠살격()은(는)');
+if (/←|칠살격\(\)/.test(polished)) {
+  console.error('FAIL polish:', polished);
+  fail++;
+}
+
+const facts = extractPromptFacts('일주: 기미(己未) / 시주: 무진');
+if (facts.stemKo !== '기토') {
+  console.error('FAIL stemKo from 기미(己未):', facts.stemKo);
   fail++;
 }
 

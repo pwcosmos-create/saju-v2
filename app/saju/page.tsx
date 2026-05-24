@@ -34,6 +34,7 @@ import type { OhaengResult } from '../../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
 import {
+  FORTUNE_DISPLAY_ORDER,
   fortuneSectionNumberedLabel,
   fortuneSectionSortIndex,
 } from '../../core/gemma24/fortune-display-order';
@@ -1699,12 +1700,24 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
 
   for (const raw of text.split('\n')) {
     const line = raw.trimEnd();
+    const trimmed = line.trim();
     // [N] 또는 [N] 제목 형태 모두 지원
-    const sec = line.match(/^\[(\d+)\]\s*(.*)/);
+    const sec = trimmed.match(/^\[(\d+)\]\s*(.*)/);
     if (sec) {
       if (current) sections.push(current);
       current = { id: sec[1], title: sec[2].trim(), lines: [] };
       continue;
+    }
+    // [N] 없이 "3. 오행 균형" 만 있는 경우 (표시 번호 → 본문 id)
+    const dotted = trimmed.match(/^(\d{1,2})\.\s+(.+)/);
+    if (dotted) {
+      const displayNum = Number.parseInt(dotted[1]!, 10);
+      const id = FORTUNE_DISPLAY_ORDER[displayNum - 1];
+      if (id) {
+        if (current) sections.push(current);
+        current = { id, title: dotted[2]!.trim(), lines: [] };
+        continue;
+      }
     }
     if (current) current.lines.push(line);
     else headerlessPre.push(line);

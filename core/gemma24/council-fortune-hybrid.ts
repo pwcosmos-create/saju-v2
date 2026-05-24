@@ -22,6 +22,7 @@ import {
   extractSectionBody,
   fortuneOutputHasDefects,
   isLowQualityFortuneBody,
+  polishFortuneText,
   pruneFortuneSectionBody,
   promptHasHourPillar,
   sanitizeMixedScript,
@@ -130,14 +131,16 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
   const footer = '—\n참고용 풀이이며 전문 상담을 대체하지 않습니다.';
   const ordered = FORTUNE_DISPLAY_ORDER.map((id) => merged.get(id)).filter(Boolean);
 
-  return sanitizeMixedScript(
-    [
-      intro || '✦ AI 심층 풀이 — ✓ 사주위원회 인증\n\n입력하신 사주에 맞춰 인증 지식·심층 카드를 조합했습니다.',
-      '',
-      ...ordered,
-      '',
-      footer,
-    ].join('\n'),
+  return polishFortuneText(
+    sanitizeMixedScript(
+      [
+        intro || '✦ AI 심층 풀이 — ✓ 사주위원회 인증\n\n입력하신 사주에 맞춰 인증 지식·심층 카드를 조합했습니다.',
+        '',
+        ...ordered,
+        '',
+        footer,
+      ].join('\n'),
+    ),
   );
 }
 

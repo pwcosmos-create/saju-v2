@@ -168,13 +168,25 @@ export function extractPromptFacts(query: string): PromptFacts {
   let stemHanja: string | null = null;
   let resolvedStemKo: string | null = null;
 
-  const dayMatch = query.match(/일주:\s*([^\s/|]+)/);
+  const dayMatch = query.match(/일주:\s*([^\s/|·]+)/);
   if (dayMatch) {
-    const hanjaStem = dayMatch[1].charAt(0);
+    const token = dayMatch[1].trim();
+    const hanjaFromParen = token.match(/\(([甲乙丙丁戊己庚辛壬癸])/)?.[1];
+    const hanjaStem = hanjaFromParen ?? token.charAt(0);
     if (hanjaStem) {
-      stemHanja = hanjaStem;
       const idx = STEM_HANJA.indexOf(hanjaStem as (typeof STEM_HANJA)[number]);
-      if (idx >= 0) resolvedStemKo = STEM_KO[idx];
+      if (idx >= 0) {
+        stemHanja = STEM_HANJA[idx];
+        resolvedStemKo = STEM_KO[idx];
+      }
+    }
+    if (!resolvedStemKo && token.length >= 1) {
+      const koFirst = token.charAt(0);
+      const idxKo = STEM_KO.findIndex((s) => s.startsWith(koFirst));
+      if (idxKo >= 0) {
+        resolvedStemKo = STEM_KO[idxKo];
+        stemHanja = STEM_HANJA[idxKo];
+      }
     }
   }
 

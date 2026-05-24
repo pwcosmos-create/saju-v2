@@ -22,8 +22,8 @@ const BROKEN_PLACEHOLDER_RE = [
   /^이\s*강할\s*때는/,
   /^이\s*약할\s*때는/,
   /사주팔자에서\s*이\s*년/,
-  /[가-힣]{2,}\(\s*\)/,
-  /\(\s*\)/,
+  /[가-힣]{2,}[（(]\s*[）)]/,
+  /[（(]\s*[）)]/,
 ];
 
 const ANNOTATION_LINE_RE = /←|이 일간에게|용신·희신과 겹치면|표시번호|본문id/;
@@ -97,7 +97,9 @@ export function pruneFortuneSectionBody(
       const lines = trimmed.split('\n');
       const header = lines[0]?.trim() ?? '';
       const rest = lines.slice(1).map((l) => l.trim()).filter(Boolean);
-      const goodLines = rest.filter((l) => !isBrokenDisplayLine(l));
+      const goodLines = rest
+        .map((l) => normalizeFortuneLine(l))
+        .filter((l) => l.trim() && !isBrokenDisplayLine(l));
       if (!goodLines.length) continue;
       if (GENERIC_INTRO_RE.test(goodLines.join(' ')) && sawIntro) continue;
       if (GENERIC_INTRO_RE.test(goodLines.join(' '))) sawIntro = true;
@@ -106,7 +108,9 @@ export function pruneFortuneSectionBody(
     }
 
     const lines = trimmed.split('\n').filter((l) => l.trim());
-    const goodLines = lines.filter((l) => !isBrokenDisplayLine(l));
+    const goodLines = lines
+      .map((l) => normalizeFortuneLine(l))
+      .filter((l) => l.trim() && !isBrokenDisplayLine(l));
     if (!goodLines.length) continue;
     const joined = goodLines.join('\n');
     if (GENERIC_INTRO_RE.test(joined) && sawIntro) continue;
@@ -171,6 +175,37 @@ export function fortuneOutputHasDefects(text: string): boolean {
 }
 
 const FOOTER_RE = /\n*—\n*참고용\s*풀이[^\n]*(?=\n|$)/gi;
+const EMPTY_PARENS_AFTER_KO_RE = /([가-힣]{2,})[（(]\s*[）)]/g;
+const ANNOTATION_SUFFIX_RE = /\s*←[^\n]*/g;
+const DUPLICATE_DISCLAIMER_RE =
+  /◆\s*주의[^\n]*\n[\s\S]*?명리학적\s*경향[\s\S]*?(?=\n\n◆\s*주의|\n\n—|$)/g;
+
+/** 한 줄 — 카드 주석(←)·빈 괄호 제거 */
+export function normalizeFortuneLine(line: string): string {
+  return line
+    .replace(ANNOTATION_SUFFIX_RE, '')
+    .replace(EMPTY_PARENS_AFTER_KO_RE, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trimEnd();
+}
+
+/** 본문 전역 정리 (면책 중복·빈 격국 괄호·←) */
+export function polishFortuneText(text: string): string {
+  let out = stripFortuneFooters(text);
+  out = out
+    .split('\n')
+    .map((line) => (line.trimStart().startsWith('[') ? line : normalizeFortuneLine(line)))
+    .join('\n');
+  out = out.replace(EMPTY_PARENS_AFTER_KO_RE, '$1');
+  const seen = new Set<string>();
+  out = out.replace(DUPLICATE_DISCLAIMER_RE, (block) => {
+    const key = block.slice(0, 80);
+    if (seen.has(key)) return '';
+    seen.add(key);
+    return block;
+  });
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
 
 /** 중복 면책·푸터 제거 */
 export function stripFortuneFooters(text: string): string {

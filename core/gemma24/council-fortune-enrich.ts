@@ -99,7 +99,11 @@ function parsePromptContext(query: string) {
 }
 
 function cleanGyeokLabel(gyeok: string | null | undefined): string {
-  const g = (gyeok ?? '격국').replace(/\(\s*\)/g, '').replace(/\s+/g, ' ').trim();
+  const g = (gyeok ?? '격국')
+    .replace(/[（(]\s*[）)]/g, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return g || '격국';
 }
 

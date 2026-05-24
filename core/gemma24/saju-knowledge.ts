@@ -78,15 +78,6 @@ function knowledgeEnabled(): boolean {
   return process.env.GEMMA24_SAJU_KNOWLEDGE_ENABLED !== '0';
 }
 
-function packPaths(): string[] {
-  const fromEnv = process.env.GEMMA24_SAJU_KNOWLEDGE_PATH?.trim();
-  return [
-    fromEnv,
-    '/home/ubuntu/coupax-homepage/board/data/saju_learning/saju_knowledge_pack.json',
-    path.join(process.cwd(), 'core/data/gemma24-saju-knowledge-pack.sample.json'),
-  ].filter(Boolean) as string[];
-}
-
 function isCouncilApproved(raw: RawCard): boolean {
   if (raw.council_pass === false) return false;
   if (raw.council_status === 'fail') return false;
@@ -156,22 +147,8 @@ function loadKnowledge(): KnowledgePack | null {
       cache = null;
     }
   }
-  if (process.env.GEMMA24_ALLOW_PACK_FALLBACK === '1') {
-    for (const filePath of packPaths()) {
-      try {
-        const pack = loadFromFile(filePath, false);
-        if (pack) {
-          console.warn('[gemma24] Using pack fallback (not server cards):', filePath);
-          return pack;
-        }
-      } catch (e) {
-        console.warn('Gemma24 knowledge pack load failed:', filePath, e);
-        cache = null;
-      }
-    }
-  }
   console.warn(
-    '[gemma24] Server cards.json not found. Run npm run sync:cards or set GEMMA24_SAJU_CARDS_PATH.',
+    '[gemma24] Server cards.json not found. Set GEMMA24_SAJU_CARDS_PATH to Oracle live path.',
   );
   return null;
 }

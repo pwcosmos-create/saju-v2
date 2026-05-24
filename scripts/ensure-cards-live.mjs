@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * dev/build 전 — 서버 cards.json 최신화 (로컬·CI)
- * Oracle VM에서는 coupax live 경로가 있으면 sync 생략
+ * dev/build 전 — 로컬 개발용 cards.json 동기화 (선택)
+ * 런타임은 Oracle live cards.json 만 읽음 (core/data/cards.live.json 자동 사용 안 함)
+ * Oracle VM: coupax live 경로가 있으면 sync 생략
  */
 import { spawnSync } from 'child_process';
 import fs from 'fs';

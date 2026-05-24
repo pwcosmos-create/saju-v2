@@ -48,7 +48,7 @@ type RawCard = {
 };
 
 function liveCardsPath(): string {
-  return resolveExistingLiveCardsPath();
+  return resolveExistingLiveCardsPath() ?? '(server cards.json not found)';
 }
 
 function isPass(c: RawCard): boolean {

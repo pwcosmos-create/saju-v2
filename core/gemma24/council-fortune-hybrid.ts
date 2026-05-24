@@ -21,6 +21,7 @@ import {
 import {
   extractSectionBody,
   fortuneOutputHasDefects,
+  isCardScaffoldBody,
   isLowQualityFortuneBody,
   polishFortuneText,
   pruneFortuneSectionBody,
@@ -109,6 +110,7 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
     const bodyOnly = block ? extractSectionBody(block) : '';
     const weak =
       !block
+      || (id === '1' && isCardScaffoldBody(bodyOnly))
       || isLowQualityFortuneBody(bodyOnly, query)
       || fortuneOutputHasDefects(bodyOnly);
 

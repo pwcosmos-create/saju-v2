@@ -35,7 +35,31 @@ const ENCYCLOPEDIC_JOB_RE =
 
 const GENERIC_INTRO_RE = /오늘은\s*귀하의\s*사주에서/;
 
+const CARD_SCAFFOLD_RE =
+  /【[^】]+】|◆\s*테마\s*풀이|골라\s*말씀드립니다|일간\s*=\s*겉\s*성향|◆\s*해석·/;
+
 const UNKNOWN_HOUR_RE = /시주\s*\(?時柱\)?\s*를\s*모르|시주를\s*모르/i;
+
+/** 인증 카드 제작 초안·메타 블록이 그대로 노출된 본문 */
+export function isCardScaffoldBody(body: string): boolean {
+  const t = body.trim();
+  if (!t) return false;
+  if (CARD_SCAFFOLD_RE.test(t)) return true;
+  if (GENERIC_INTRO_RE.test(t)) return true;
+  const heads = t.match(/^◆\s*.+$/gm) ?? [];
+  if (heads.length >= 3) return true;
+  if (/…\s*(\n|$)/.test(t) && t.length < 900) return true;
+  return false;
+}
+
+function lineHasUnclosedParen(line: string): boolean {
+  let depth = 0;
+  for (const ch of line) {
+    if (ch === '(' || ch === '（') depth += 1;
+    if (ch === ')' || ch === '）') depth -= 1;
+  }
+  return depth > 0;
+}
 
 export function promptHasHourPillar(query: string): boolean {
   const q = query.trim();
@@ -59,6 +83,7 @@ export function isBrokenPlaceholderText(text: string): boolean {
   const t = text.trim();
   if (!t) return true;
   if (t.length <= 2 && /^[으로와과]$/.test(t)) return true;
+  if (lineHasUnclosedParen(t)) return true;
   return BROKEN_PLACEHOLDER_RE.some((re) => re.test(t));
 }
 
@@ -67,6 +92,8 @@ export function isBrokenDisplayLine(line: string): boolean {
   if (!t) return true;
   if (isBrokenPlaceholderText(t)) return true;
   if (isAuthoringMetaText(t)) return true;
+  if (lineHasUnclosedParen(t)) return true;
+  if (/【[^】]+】/.test(t)) return true;
   return false;
 }
 
@@ -96,6 +123,7 @@ export function pruneFortuneSectionBody(
     if (trimmed.startsWith('◆')) {
       const lines = trimmed.split('\n');
       const header = lines[0]?.trim() ?? '';
+      if (/◆\s*(테마\s*풀이|해석·)/.test(header) || /【/.test(header)) continue;
       const rest = lines.slice(1).map((l) => l.trim()).filter(Boolean);
       const goodLines = rest
         .map((l) => normalizeFortuneLine(l))
@@ -152,6 +180,7 @@ export function isLowQualityFortuneBody(body: string, query?: string): boolean {
   );
   if (substantive.length < 2) return true;
   if (isGenericTemplateOnlyBody(t)) return true;
+  if (isCardScaffoldBody(t)) return true;
   if (query && lacksChartPersonalization(t, query)) return true;
   if (ENCYCLOPEDIC_JOB_RE.test(t)) return true;
   if (GENERIC_OHAENG_RE.test(t) && !/목\s*\d+\s*개|지배 오행|넘치는 기운/.test(t)) return true;
@@ -171,6 +200,8 @@ export function fortuneOutputHasDefects(text: string): boolean {
   if (/表現|活動|正官|偏印|本元|劫財/.test(t)) return true;
   if (/←/.test(t)) return true;
   if (/[가-힣]{2,}\(\s*\)/.test(t)) return true;
+  if (t.split('\n').some((line) => lineHasUnclosedParen(line.trim()))) return true;
+  if (isCardScaffoldBody(t)) return true;
   return false;
 }
 
@@ -216,7 +247,7 @@ export function stripFortuneFooters(text: string): string {
 export function sanitizeMixedScript(text: string): string {
   return text
     .replace(/([^（(]*?)[\u4e00-\u9fff]{3,}([^）)]*?)/g, (full, before, after) => {
-      if (/용신|기신|십신|대운|세운|편재|정재|비견|식신/.test(full)) return full;
+      if (/용신|기신|십신|대운|세운|편재|정재|비견|식신|\([^\)]{0,8}\)/.test(full)) return full;
       return `${before}${after}`;
     })
     .replace(/表現力|活動/g, '')

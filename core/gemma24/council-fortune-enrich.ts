@@ -37,7 +37,11 @@ export function lacksChartPersonalization(body: string, query: string): boolean 
   if (!q) return false;
 
   const { facts } = parsePromptContext(q);
-  if (facts.stemKo && body.includes(facts.stemKo)) return false;
+  if (facts.stemKo && body.includes(facts.stemKo)) {
+    if (/【[^】]+】|◆\s*테마\s*풀이|골라\s*말씀드립니다|오늘은\s*귀하의\s*사주에서/.test(body)) return true;
+    if ((body.match(/^◆\s*/gm) ?? []).length >= 3) return true;
+    return false;
+  }
   if (facts.stemHanja && body.includes(facts.stemHanja)) return false;
   if (facts.gyeokguk && body.includes(facts.gyeokguk)) return false;
 
@@ -96,6 +100,13 @@ function parsePromptContext(query: string) {
     gyeokClean,
     ohaengSummary,
   };
+}
+
+function formatYongsinHint(ctx: ReturnType<typeof parsePromptContext>): string {
+  const raw = ctx.yongsinLine?.split(/[/·]/)[0]?.trim();
+  if (raw) return raw;
+  const elem = ctx.facts.yongsinElem;
+  return elem ? `${elem}(${({ 목: '木', 화: '火', 토: '土', 금: '金', 수: '水' } as const)[elem]})` : '확정 용신';
 }
 
 function cleanGyeokLabel(gyeok: string | null | undefined): string {
@@ -268,16 +279,18 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         '— 일지(日支)와의 합·충을 참고로 쓰되, 특정 인연·이별 시기는 단정하지 않습니다.',
         facts.stemKo ? `— ${facts.stemKo} 일간은 관계에서도 본인의 리듬을 지키는 편이 안정에 가깝습니다.` : '',
       ].filter(Boolean).join('\n');
-    case '10':
+    case '10': {
+      const yHint = formatYongsinHint(ctx);
       return [
         header('10'),
         '',
         '◆ 실천·마무리',
         facts.stemKo
-          ? `— ${facts.stemKo} 일간의 강점을 살리되, 용신(${ctx.yongsinLine ?? '확정 용신'})을 일상 습관으로 옮기는 것이 핵심입니다.`
-          : '— 용신 방향을 작은 습관으로 옮기는 것이 핵심입니다.',
+          ? `— ${facts.stemKo} 일간의 강점을 살리되, 용신 ${yHint}을(를) 일상 습관으로 옮기는 것이 핵심입니다.`
+          : `— 용신 ${yHint}을(를) 작은 습관으로 옮기는 것이 핵심입니다.`,
         '— 중요한 결정은 하루 이상 숙성한 뒤 판단해 주세요.',
       ].join('\n');
+    }
     default:
       return null;
   }

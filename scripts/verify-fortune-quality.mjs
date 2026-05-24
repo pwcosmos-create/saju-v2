@@ -7,6 +7,7 @@ import {
   pruneFortuneSectionBody,
   promptHasHourPillar,
   removeFortuneSectionBlocks,
+  isCardScaffoldBody,
   polishFortuneText,
   stripFortuneFooters,
 } from '../core/gemma24/fortune-text-quality.ts';
@@ -95,6 +96,17 @@ if (/←|칠살격\(\)/.test(polished)) {
 const facts = extractPromptFacts('일주: 기미(己未) / 시주: 무진');
 if (facts.stemKo !== '기토') {
   console.error('FAIL stemKo from 기미(己未):', facts.stemKo);
+  fail++;
+}
+
+const scaffold = '◆ 해석·기토\n【일주】\n◆ 테마 풀이\n골라 말씀드립니다';
+if (!isCardScaffoldBody(scaffold)) {
+  console.error('FAIL scaffold detect');
+  fail++;
+}
+
+if (!isBrokenPlaceholderText('용신(화(火)')) {
+  console.error('FAIL unclosed paren');
   fail++;
 }
 

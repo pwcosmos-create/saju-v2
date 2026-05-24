@@ -27,6 +27,7 @@ export interface StreamCallbacks {
     councilBadge: SajuCouncilBadgeLevel;
     knowledgeCount: number;
     fortuneMode?: SajuFortuneMode;
+    cardRequestQueued?: boolean;
   }) => void;
 }
 
@@ -62,6 +63,7 @@ export async function fetchStream(prompt: string, callbacks: StreamCallbacks): P
       councilBadge,
       knowledgeCount: Number.isFinite(knowledgeCount) ? knowledgeCount : 0,
       fortuneMode,
+      cardRequestQueued: res.headers.get('X-Saju-Card-Request-Queued') === '1',
     });
 
     const reader  = res.body.getReader();

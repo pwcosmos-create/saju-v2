@@ -2,17 +2,14 @@ import { optimizeCardBodyForDisplay, mergeOptimizedCardBodies } from '../core/ge
 
 const noisy = {
   id: 99,
-  title: '정재격(正財格) · 격국 지식 카드',
+  title: '변수·격 정재격',
   summary: '',
   councilCertified: true,
-  body: `【격국】
-정재격은 월지 본기 정재로 잡는 격입니다.
-
+  body: `「변수·격 정재격」
+【개요】정재격은 월지 본기 정재로 잡는 격입니다. 안정·가정·현실 경영과 연결됩니다.
+【핵심】재물은 꾸준한 관리와 성실한 수입 구조에서 강해집니다. 일간 강약은 별도로 봅니다.
 키워드: 안정, 가정, 현실, 성실한 경영
-
-월지 본기로 격을 정합니다. 일간 강약·종격 여부는 별도 검토가 필요합니다.
-
-본 내용은 명리 참고용이며 확정 예언이 아닙니다. 학파·환경에 따라 해석이 달라질 수 있습니다.`,
+본 내용은 명리 참고용이며 학파·환경에 따라 달라질 수 있습니다.`,
 };
 
 const opt = optimizeCardBodyForDisplay(noisy);

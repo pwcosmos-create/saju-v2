@@ -7,6 +7,7 @@
 // 외부 API 설정 단일 진실 모듈 — 값은 환경변수에서만 읽음 (서버 전용)
 
 import { splitFortunePromptIntoSections } from '../ai-templates/fortune-sections';
+import { LLM_USER_OVERLOAD_MESSAGE } from '../user-messages';
 
 function requireEnv(name: string): string {
   const val = process.env[name];
@@ -260,7 +261,7 @@ export async function fetchLlmStream(body: any): Promise<Response> {
 
   // ── 둘 다 실패 시: 사용자에게 안내 메시지 반환
   if (!draftText) {
-    const errMsg = 'AI 서버가 현재 일시적으로 과부하 상태입니다. 잠시 후 다시 시도해 주세요.\n\n(Groq 및 Gemini API 한도 초과 — 약 1~2분 후 재시도하면 정상 작동합니다.)';
+    const errMsg = LLM_USER_OVERLOAD_MESSAGE;
     if (body.stream) {
       return new Response(streamTextToOpenAiSse(errMsg), {
         headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },

@@ -5,6 +5,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { liveCardsPaths } from './cards-path';
 
 export type Gemma24SajuCard = {
   id: number;
@@ -32,6 +33,7 @@ type PromptFacts = {
   stemHanja: string | null;
   gyeokguk: string | null;
   yongsinElem: string | null;
+  huisinElem: string | null;
   gisinElems: string[];
   branchRelations: Set<string>;
 };
@@ -73,14 +75,6 @@ let cache: { filePath: string; mtimeMs: number; pack: KnowledgePack } | null = n
 
 function knowledgeEnabled(): boolean {
   return process.env.GEMMA24_SAJU_KNOWLEDGE_ENABLED !== '0';
-}
-
-function liveCardsPaths(): string[] {
-  const fromEnv = process.env.GEMMA24_SAJU_CARDS_PATH?.trim();
-  return [
-    fromEnv,
-    '/home/ubuntu/coupax-homepage/board/data/saju_learning/cards.json',
-  ].filter(Boolean) as string[];
 }
 
 function packPaths(): string[] {
@@ -139,7 +133,16 @@ function loadFromFile(filePath: string, requireConfirmed: boolean): KnowledgePac
     updatedAt: raw.updated_at ?? raw.exported_at ?? stat.mtime.toISOString(),
   };
   cache = { filePath, mtimeMs: stat.mtimeMs, pack };
+  if (process.env.NODE_ENV !== 'production') {
+    const pass = pack.cards.filter((c) => c.councilCertified).length;
+    console.info(`[gemma24] cards loaded: ${pack.cards.length} (${pass} PASS) ← ${filePath}`);
+  }
   return pack;
+}
+
+/** 현재 로드된 cards.json 경로 (없으면 null) */
+export function getLoadedLiveCardsSource(): string | null {
+  return cache?.filePath ?? null;
 }
 
 function loadKnowledge(): KnowledgePack | null {
@@ -152,15 +155,23 @@ function loadKnowledge(): KnowledgePack | null {
       cache = null;
     }
   }
-  for (const filePath of packPaths()) {
-    try {
-      const pack = loadFromFile(filePath, false);
-      if (pack) return pack;
-    } catch (e) {
-      console.warn('Gemma24 knowledge pack load failed:', filePath, e);
-      cache = null;
+  if (process.env.GEMMA24_ALLOW_PACK_FALLBACK === '1') {
+    for (const filePath of packPaths()) {
+      try {
+        const pack = loadFromFile(filePath, false);
+        if (pack) {
+          console.warn('[gemma24] Using pack fallback (not server cards):', filePath);
+          return pack;
+        }
+      } catch (e) {
+        console.warn('Gemma24 knowledge pack load failed:', filePath, e);
+        cache = null;
+      }
     }
   }
+  console.warn(
+    '[gemma24] Server cards.json not found. Run npm run sync:cards or set GEMMA24_SAJU_CARDS_PATH.',
+  );
   return null;
 }
 
@@ -238,6 +249,18 @@ export function extractPromptFacts(query: string): PromptFacts {
     }
   }
 
+  let huisinElem: string | null = null;
+  const huisinMatch = query.match(/희신\(喜神\)\s*=\s*([^\n]+)/);
+  if (huisinMatch) {
+    huisinElem = ELEM_CHARS.find((e) => huisinMatch[1].includes(e)) ?? null;
+  }
+  if (!huisinElem) {
+    const chatHui = query.match(/희신\(喜神\):\s*(\S+)/);
+    if (chatHui) {
+      huisinElem = ELEM_CHARS.find((e) => chatHui[1].includes(e)) ?? null;
+    }
+  }
+
   const branchRelations = new Set<string>();
   const shinsalBlock = query.match(/신살[^]*?(?=대운:|━━━|▶|$)/);
   const relationHay = `${shinsalBlock?.[0] ?? ''}\n${query}`;
@@ -262,6 +285,7 @@ export function extractPromptFacts(query: string): PromptFacts {
     stemHanja,
     gyeokguk,
     yongsinElem,
+    huisinElem,
     gisinElems,
     branchRelations,
   };
@@ -275,6 +299,7 @@ export function cardKind(card: Gemma24SajuCard): string {
   if (t.startsWith('변수·지지관계 ')) return 'branch';
   if (/변수·운 용신/.test(t)) return 'un-yongsin';
   if (/변수·운 기신/.test(t)) return 'un-gisin';
+  if (t.startsWith('변수·희신 ') || /변수·운 희신/.test(t)) return 'un-huisin';
   if (t.startsWith('변수·천간 ')) return 'stem-chen';
   if (STEM_KO.some((s) => t.includes(s)) && t.includes('일주')) return 'stem-day';
   if (COMPOSE_FOUNDATION_TITLES.includes(t as (typeof COMPOSE_FOUNDATION_TITLES)[number])) {
@@ -331,6 +356,12 @@ function isPreciseMatch(card: Gemma24SajuCard, facts: PromptFacts): boolean {
     );
   }
 
+  if (kind === 'un-huisin') {
+    const elem = facts.huisinElem ?? facts.yongsinElem;
+    if (!elem) return false;
+    return title.includes(elem) || body.includes(elem) || body.includes(`(${elem})`);
+  }
+
   return false;
 }
 
@@ -354,7 +385,10 @@ export function searchGemma24SajuKnowledge(query: string): Gemma24SajuCard[] {
     .sort((a, b) => Number(b.councilCertified) - Number(a.councilCertified))
     .slice(0, MAX_BRANCH_CARDS);
   const elem = precise
-    .filter((c) => cardKind(c) === 'un-yongsin' || cardKind(c) === 'un-gisin')
+    .filter((c) => {
+      const k = cardKind(c);
+      return k === 'un-yongsin' || k === 'un-gisin' || k === 'un-huisin';
+    })
     .sort((a, b) => Number(b.councilCertified) - Number(a.councilCertified))
     .slice(0, MAX_ELEM_CARDS);
 
@@ -376,6 +410,15 @@ function pushCouncilCard(
   out.push(c);
 }
 
+function bestCouncilCard(
+  pack: KnowledgePack,
+  pred: (c: Gemma24SajuCard) => boolean,
+): Gemma24SajuCard | undefined {
+  return pack.cards
+    .filter((c) => pred(c) && c.councilCertified)
+    .sort((a, b) => b.body.length - a.body.length)[0];
+}
+
 function enrichCouncilStemCards(
   pack: KnowledgePack,
   facts: ReturnType<typeof extractPromptFacts>,
@@ -383,14 +426,82 @@ function enrichCouncilStemCards(
   seen: Set<number>,
 ): void {
   if (!facts.stemKo) return;
-  const stemChen = pack.cards.find(
-    (c) => cardKind(c) === 'stem-chen' && c.title.includes(facts.stemKo!),
+  pushCouncilCard(
+    out,
+    seen,
+    bestCouncilCard(
+      pack,
+      (c) => cardKind(c) === 'stem-chen' && c.title.includes(facts.stemKo!),
+    ),
   );
-  pushCouncilCard(out, seen, stemChen);
-  const stemDay = pack.cards.find(
-    (c) => cardKind(c) === 'stem-day' && c.title.includes(facts.stemKo!) && c.title.includes('일주'),
+  pushCouncilCard(
+    out,
+    seen,
+    bestCouncilCard(
+      pack,
+      (c) =>
+        cardKind(c) === 'stem-day'
+        && c.title.includes(facts.stemKo!)
+        && c.title.includes('일주'),
+    ),
   );
-  pushCouncilCard(out, seen, stemDay);
+}
+
+/** 서버 cards.json에서 사주 팩트(격·용신·기신·지지) 카드 보강 */
+function enrichCouncilFactCards(
+  pack: KnowledgePack,
+  facts: ReturnType<typeof extractPromptFacts>,
+  out: Gemma24SajuCard[],
+  seen: Set<number>,
+): void {
+  if (facts.gyeokguk) {
+    const alias: Record<string, string> = { 칠살격: '편관격', 편관격: '칠살격' };
+    const names = [facts.gyeokguk, alias[facts.gyeokguk]].filter(Boolean) as string[];
+    const gyeok = bestCouncilCard(pack, (c) => {
+      if (cardKind(c) !== 'gyeok') return false;
+      const cardGyeok = c.title.replace(/^변수·격\s*/, '').trim();
+      return names.some((g) => cardGyeok === g || cardGyeok.startsWith(g));
+    });
+    pushCouncilCard(out, seen, gyeok);
+  }
+
+  if (facts.yongsinElem) {
+    pushCouncilCard(
+      out,
+      seen,
+      bestCouncilCard(
+        pack,
+        (c) => cardKind(c) === 'un-yongsin' && c.title.includes(facts.yongsinElem!),
+      ),
+    );
+  }
+
+  if (facts.huisinElem) {
+    pushCouncilCard(
+      out,
+      seen,
+      bestCouncilCard(
+        pack,
+        (c) => cardKind(c) === 'un-huisin' && c.title.includes(facts.huisinElem!),
+      ),
+    );
+  }
+
+  for (const e of facts.gisinElems) {
+    pushCouncilCard(
+      out,
+      seen,
+      bestCouncilCard(pack, (c) => cardKind(c) === 'un-gisin' && c.title.includes(e)),
+    );
+  }
+
+  for (const rel of facts.branchRelations) {
+    pushCouncilCard(
+      out,
+      seen,
+      bestCouncilCard(pack, (c) => cardKind(c) === 'branch' && c.title.includes(rel)),
+    );
+  }
 }
 
 /** 심층·[1]~[10] 인증 카드 — 섹션별 풍부한 본문 */
@@ -426,6 +537,7 @@ export function searchCouncilDisplayCards(query: string): Gemma24SajuCard[] {
   const out = [...matched];
 
   enrichCouncilStemCards(pack, facts, out, seen);
+  enrichCouncilFactCards(pack, facts, out, seen);
   enrichCouncilDeepCards(pack, out, seen);
 
   return filterCouncilCertifiedCards(out);
@@ -543,7 +655,7 @@ const CONSULT_TOPIC_DEEP: [RegExp, number][] = [
   [/사주팔자|팔자|명식/, 2],
 ];
 
-function pickConsultDeepIds(userMessage: string): number[] {
+export function pickConsultDeepIds(userMessage: string): number[] {
   const ids: number[] = [];
   for (const [re, id] of CONSULT_TOPIC_DEEP) {
     if (re.test(userMessage) && !ids.includes(id)) ids.push(id);
@@ -560,23 +672,17 @@ export function buildConsultCardSearchQuery(
   return [sajuContext.trim(), compareSajuContext.trim(), userMessage.trim()].filter(Boolean).join('\n\n');
 }
 
-/** 음성·텍스트 상담 — PASS 카드 RAG (질문 주제 + 사주 매칭) */
-export function buildConsultCouncilKnowledgeResult(
-  sajuContext: string,
+/** 음성·텍스트 상담 — 매칭 PASS 카드 목록 (AI 없이 조합용) */
+export function searchConsultCouncilCards(
+  query: string,
   userMessage: string,
-  compareSajuContext = '',
-): Gemma24KnowledgeResult {
-  if (!knowledgeEnabled()) {
-    return { systemAppend: '', badge: 'none', cardCount: 0 };
-  }
+): Gemma24SajuCard[] {
+  if (!knowledgeEnabled()) return [];
 
-  const query = buildConsultCardSearchQuery(sajuContext, userMessage, compareSajuContext);
-  const certifiedOnly = process.env.GEMMA24_COUNCIL_CERTIFIED_ONLY !== '0';
   const pack = loadKnowledge();
-  if (!pack?.cards.length) {
-    return { systemAppend: '', badge: 'none', cardCount: 0 };
-  }
+  if (!pack?.cards.length) return [];
 
+  const certifiedOnly = process.env.GEMMA24_COUNCIL_CERTIFIED_ONLY !== '0';
   const facts = extractPromptFacts(query);
   const seen = new Set<number>();
   const out: Gemma24SajuCard[] = [];
@@ -585,6 +691,7 @@ export function buildConsultCouncilKnowledgeResult(
     pushCouncilCard(out, seen, c);
   }
   enrichCouncilStemCards(pack, facts, out, seen);
+  enrichCouncilFactCards(pack, facts, out, seen);
 
   for (const n of pickConsultDeepIds(userMessage)) {
     const prefix = `심층·[${n}]`;
@@ -601,15 +708,33 @@ export function buildConsultCouncilKnowledgeResult(
     pushCouncilCard(out, seen, fallback);
   }
 
-  if (certifiedOnly && !out.length) {
+  const cards = filterCouncilCertifiedCards(out);
+  if (certifiedOnly && !cards.length) return [];
+  return cards;
+}
+
+/** 음성·텍스트 상담 — PASS 카드 RAG (LLM 보조용) */
+export function buildConsultCouncilKnowledgeResult(
+  sajuContext: string,
+  userMessage: string,
+  compareSajuContext = '',
+): Gemma24KnowledgeResult {
+  if (!knowledgeEnabled()) {
     return { systemAppend: '', badge: 'none', cardCount: 0 };
   }
 
-  const hasCertified = out.some((c) => c.councilCertified);
-  const systemAppend = formatGemma24KnowledgeBlock(out, hasCertified);
+  const query = buildConsultCardSearchQuery(sajuContext, userMessage, compareSajuContext);
+  const cards = searchConsultCouncilCards(query, userMessage);
+
+  if (!cards.length) {
+    return { systemAppend: '', badge: 'none', cardCount: 0 };
+  }
+
+  const hasCertified = cards.some((c) => c.councilCertified);
+  const systemAppend = formatGemma24KnowledgeBlock(cards, hasCertified);
   return {
     systemAppend,
-    badge: out.length === 0 ? 'none' : hasCertified ? 'certified' : 'reviewed',
-    cardCount: out.length,
+    badge: hasCertified ? 'certified' : 'reviewed',
+    cardCount: cards.length,
   };
 }

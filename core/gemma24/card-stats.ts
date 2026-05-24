@@ -2,7 +2,7 @@
  * live cards.json 실시간 집계 (mtime 캐시 없음 — Agent Office add 직후 반영)
  */
 import fs from 'fs';
-import path from 'path';
+import { resolveExistingLiveCardsPath } from './cards-path';
 
 export type Gemma24CardKind =
   | 'stem-day'
@@ -48,8 +48,7 @@ type RawCard = {
 };
 
 function liveCardsPath(): string {
-  const fromEnv = process.env.GEMMA24_SAJU_CARDS_PATH?.trim();
-  return fromEnv || '/home/ubuntu/coupax-homepage/board/data/saju_learning/cards.json';
+  return resolveExistingLiveCardsPath();
 }
 
 function isPass(c: RawCard): boolean {
@@ -147,7 +146,15 @@ export function collectGemma24CardStats(options?: { includeLists?: boolean }): G
   const certifiedRaw = usableRaw.filter(isPass);
   const reviewedRaw = usableRaw.filter((c) => !isPass(c));
 
-  const byKind = { ...EMPTY_BY_KIND };
+  const byKind: Gemma24CardStats['byKind'] = {
+    'stem-day': { total: 0, certified: 0 },
+    'stem-chen': { total: 0, certified: 0 },
+    gyeok: { total: 0, certified: 0 },
+    branch: { total: 0, certified: 0 },
+    yongsin: { total: 0, certified: 0 },
+    gisin: { total: 0, certified: 0 },
+    other: { total: 0, certified: 0 },
+  };
   for (const c of usableRaw) {
     const k = getGemma24CardKind((c.title || '').trim());
     byKind[k].total += 1;

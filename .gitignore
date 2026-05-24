@@ -20,12 +20,16 @@
 # production
 /build
 
+# 서버에서 sync:cards 로 받은 live cards (커밋하지 않음)
+/core/data/cards.live.json
+
 # misc
 .DS_Store
 *.pem
 
 # 로컬 피드백 덤프 (커밋하지 않음)
 feedback.jsonl
+council-card-requests.jsonl
 
 # debug
 npm-debug.log*

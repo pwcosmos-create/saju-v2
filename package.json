@@ -3,8 +3,11 @@
   "version": "2.0.3",
   "private": true,
   "scripts": {
+    "predev": "node scripts/ensure-cards-live.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/ensure-cards-live.mjs",
     "build": "next build",
+    "prestart": "node scripts/ensure-cards-live.mjs",
     "start": "next start",
     "lint": "tsc --noEmit --pretty false",
     "typecheck": "tsc --noEmit",
@@ -14,7 +17,8 @@
     "release:patch": "standard-version --release-as patch",
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",
-    "prepare": "husky"
+    "prepare": "husky",
+    "sync:cards": "node scripts/sync-cards-from-server.mjs"
   },
   "dependencies": {
     "@orrery/core": "^0.4.2",

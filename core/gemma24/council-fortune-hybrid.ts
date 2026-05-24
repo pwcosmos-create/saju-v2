@@ -126,7 +126,7 @@ export async function buildCouncilHybridFortune(
       '',
       offlineFiltered || offline,
       '',
-      '※ AI 서버 한도로 위는 확정 사주 데이터 기반 초안입니다. 2~3분 후 「다시 분석하기」로 AI 맞춤 보충을 시도할 수 있습니다.',
+      '※ 지금은 맞춤 보충이 잠시 어렵습니다. 위는 사주 데이터 기반 풀이이며, 1~2분 뒤 「다시 분석하기」를 눌러 주세요.',
       '',
       '—',
       baseFooter,
@@ -139,7 +139,7 @@ export async function buildCouncilHybridFortune(
   const text = [
     composed.text.replace(baseFooter, '').trim(),
     '',
-    '━━━ 맞춤 보충 풀이 (인증 지식 + Groq) ━━━',
+    '━━━ 맞춤 보충 풀이 ━━━',
     '',
     sortedSupplement,
     '',

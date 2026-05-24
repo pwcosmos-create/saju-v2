@@ -1,7 +1,12 @@
 import { fetchLlmStream } from '../config/llm';
+import { tryCouncilCounselReply } from '../gemma24/council-counsel-reply';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
 import { makeRateLimiter } from '../http-client/rate-limit';
 import { COUNSELOR_ALLOWLIST } from '../counselor-config';
+
+function llmCounselFallbackEnabled(): boolean {
+  return process.env.GEMMA24_COUNSEL_LLM_FALLBACK === '1';
+}
 
 const checkConsultRateLimit = makeRateLimiter(20, 60_000);
 
@@ -80,6 +85,48 @@ ${compareSajuContext}
   const todayStr = kstFormatter.format(now); // 예: 2026년 5월 17일 일요일 21:52
 
   const lastUserMessage = [...chatMessages].reverse().find((m) => m.role === 'user')?.content?.trim() ?? '';
+
+  const compareCtx = chatMode === 'compatibility' ? compareSajuContext : '';
+
+  const cardReply = await tryCouncilCounselReply(sajuContext, lastUserMessage, {
+    compareSajuContext: compareCtx,
+    counselorName,
+    chatMode,
+  });
+
+  if (cardReply) {
+    return Response.json(
+      { content: cardReply.content },
+      {
+        headers: {
+          'X-Gemma24-Knowledge-Count': String(cardReply.cardCount),
+          'X-Saju-Council-Badge': cardReply.draftCardCount > 0 ? 'reviewed' : 'certified',
+          'X-Saju-Counsel-Mode': cardReply.mode,
+          ...(cardReply.draftCardCount > 0 ? {
+            'X-Saju-Card-Draft-Count': String(cardReply.draftCardCount),
+            'X-Saju-Card-Request-Queued': '1',
+          } : {}),
+        },
+      },
+    );
+  }
+
+  if (!llmCounselFallbackEnabled()) {
+    return Response.json(
+      {
+        content:
+          '질문에 맞는 인증 카드를 찾지 못했습니다. 연애, 재물, 직업, 올해·시기 운세처럼 구체적으로 물어봐 주세요.',
+      },
+      {
+        headers: {
+          'X-Gemma24-Knowledge-Count': '0',
+          'X-Saju-Council-Badge': 'certified',
+          'X-Saju-Counsel-Mode': 'council-counsel-empty',
+        },
+      },
+    );
+  }
+
   const cardKnowledge = buildConsultCouncilKnowledgeResult(
     sajuContext,
     lastUserMessage,
@@ -144,6 +191,7 @@ ${sajuContext}`;
         headers: {
           'X-Gemma24-Knowledge-Count': String(cardKnowledge.cardCount),
           'X-Saju-Council-Badge': cardKnowledge.badge,
+          'X-Saju-Counsel-Mode': 'llm',
         },
       });
     } catch {

@@ -105,7 +105,7 @@ export const FORTUNE_SECTION_KINDS: Record<FortuneSectionId, string[]> = {
   '2': ['deep-2'],
   '4': ['deep-3'],
   '3': ['gyeok', 'deep-4'],
-  '5': ['un-yongsin', 'un-gisin', 'deep-5'],
+  '5': ['un-yongsin', 'un-gisin', 'un-huisin', 'deep-5'],
   '9': ['deep-6'],
   '8': ['deep-7'],
   '7': ['branch', 'deep-8'],

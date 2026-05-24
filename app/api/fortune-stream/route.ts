@@ -6,8 +6,13 @@
  */
 import { NextRequest } from 'next/server';
 import { fetchLlmStream, streamTextToOpenAiSse } from '../../../core/config/llm';
-import { tryCouncilHybridFortune } from '../../../core/gemma24/council-fortune-hybrid';
-import { buildGemma24KnowledgeResult } from '../../../core/gemma24/saju-knowledge';
+import { buildCouncilHybridFortune, tryCouncilHybridBase } from '../../../core/gemma24/council-fortune-hybrid';
+import {
+  autoEnqueueCouncilCardProductionBackground,
+  inferCouncilCardNeeds,
+  inferCouncilCardNeedsForFortune,
+} from '../../../core/gemma24/council-card-request';
+import { buildGemma24KnowledgeResult, getLoadedLiveCardsSource } from '../../../core/gemma24/saju-knowledge';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 
 const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문가입니다.
@@ -22,6 +27,39 @@ const SYSTEM = `당신은 대한민국 최고의 사주팔자 명리학 전문�
 6. 약 2700~3600자 수준의 풍부한 분량으로 상세하게 풀이해 주세요. 중간에 끊기지 않도록 문장 마무리를 확실히 하세요.`;
 
 const checkFortuneStreamRateLimit = makeRateLimiter(5, 600_000);
+
+const FORTUNE_EXPOSE_HEADERS =
+  'X-Saju-Council-Badge, X-Gemma24-Knowledge-Count, X-Saju-Fortune-Mode, X-Saju-Card-Request-Queued';
+
+function fortuneStreamHeaders(
+  extra: Record<string, string>,
+  cardRequestQueued: boolean,
+): Record<string, string> {
+  return {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': FORTUNE_EXPOSE_HEADERS,
+    ...(cardRequestQueued ? { 'X-Saju-Card-Request-Queued': '1' } : {}),
+    ...extra,
+  };
+}
+
+function queueFortuneCardProduction(
+  needs: ReturnType<typeof inferCouncilCardNeedsForFortune>,
+  prompt: string,
+): boolean {
+  if (!needs.length) return false;
+  autoEnqueueCouncilCardProductionBackground({
+    needs,
+    source: 'fortune',
+    userMessage: 'AI 심층 풀이 (누락·보강 섹션)',
+    sajuContextSnippet: prompt,
+  });
+  return true;
+}
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
@@ -40,20 +78,27 @@ export async function POST(req: NextRequest) {
   const prompt = typeof body.prompt === 'string' ? body.prompt.slice(0, 20000) : '';
   if (!prompt) return new Response(JSON.stringify({ error: 'prompt 없음' }), { status: 400 });
 
-  const councilHybrid = await tryCouncilHybridFortune(prompt);
+  const hybridBase = tryCouncilHybridBase(prompt);
+  const cardNeeds = hybridBase
+    ? inferCouncilCardNeedsForFortune(prompt, hybridBase.composed.needsSupplementIds)
+    : inferCouncilCardNeeds(prompt, '');
+  const cardRequestQueued = queueFortuneCardProduction(cardNeeds, prompt);
+
+  const councilHybrid = hybridBase
+    ? await buildCouncilHybridFortune(prompt, hybridBase)
+    : null;
+
   if (councilHybrid) {
+    const cardsSource = getLoadedLiveCardsSource();
+    if (cardsSource && process.env.NODE_ENV !== 'production') {
+      console.info(`[fortune-stream] council ${councilHybrid.mode} ← ${cardsSource}`);
+    }
     return new Response(streamTextToOpenAiSse(councilHybrid.text), {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Expose-Headers': 'X-Saju-Council-Badge, X-Gemma24-Knowledge-Count, X-Saju-Fortune-Mode',
+      headers: fortuneStreamHeaders({
         'X-Saju-Council-Badge': 'certified',
         'X-Gemma24-Knowledge-Count': String(councilHybrid.cardCount),
         'X-Saju-Fortune-Mode': councilHybrid.mode,
-      },
+      }, cardRequestQueued),
     });
   }
 
@@ -77,17 +122,11 @@ export async function POST(req: NextRequest) {
   }
 
   return new Response(upstream.body, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Expose-Headers': 'X-Saju-Council-Badge, X-Gemma24-Knowledge-Count, X-Saju-Fortune-Mode',
+    headers: fortuneStreamHeaders({
       'X-Saju-Council-Badge': gemma24.badge,
       'X-Gemma24-Knowledge-Count': String(gemma24.cardCount),
       'X-Saju-Fortune-Mode': 'llm',
-    },
+    }, cardRequestQueued),
   });
 }
 

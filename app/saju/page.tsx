@@ -24,6 +24,7 @@ import {
 } from '../../core/interpretation-db/matcher';
 import { buildPrompt } from '../../core/ai-templates/blueprints';
 import { fetchStream, type SajuCouncilBadgeLevel, type SajuFortuneMode } from '../../core/http-client/stream-fetcher';
+import { isLlmUserOverloadText } from '../../core/user-messages';
 import { dailyFortune } from '../../core/daily-fortune';
 import type { DailyFortuneResult } from '../../core/daily-fortune';
 import { calcStrength, getSipsin, classifyElements } from '../../core/daily-fortune/classifier';
@@ -177,7 +178,6 @@ export default function Home() {
   const [aiCooldownUntil, setAiCooldownUntil] = useState(0);
   const [aiCouncilBadge, setAiCouncilBadge] = useState<SajuCouncilBadgeLevel>('none');
   const [aiFortuneMode, setAiFortuneMode] = useState<SajuFortuneMode>('none');
-
   const aiOnCooldown = Date.now() < aiCooldownUntil;
 
   useEffect(() => {
@@ -317,7 +317,7 @@ export default function Home() {
         setLoadingStep(4);
         setWaitTick(99);
 
-        const rateLimited = fullText.includes('과부하') || fullText.includes('한도 초과');
+        const rateLimited = isLlmUserOverloadText(fullText);
         const reveal = () => {
           clearAiRevealTimers();
           setRevealSecondsLeft(0);

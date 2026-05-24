@@ -12,6 +12,11 @@ import {
   sortFortuneSectionBlocks,
 } from './fortune-display-order';
 import { mergeOptimizedCardBodies, sanitizeCardBody } from './optimize-card-body';
+import {
+  isLowQualityFortuneBody,
+  promptHasHourPillar,
+  pruneFortuneSectionBody,
+} from './fortune-text-quality';
 
 /** 화면용 카드 1장 이상이면 조합 (프레임 카드로 수만 채우지 않음) */
 const MIN_DISPLAY_CARDS = 1;
@@ -74,12 +79,15 @@ export function composeCouncilFreeFortune(
   const filledIds = new Set<string>();
   const sectionBodyChars: Record<string, number> = {};
 
+  const hasHourPillar = promptHasHourPillar(query);
+
   for (const block of COMPOSE_SECTIONS) {
     const matched = pickSectionCards(displayCards, block.kinds);
     if (!matched.length) continue;
 
-    const body = mergeOptimizedCardBodies(matched);
-    if (!body) continue;
+    const rawBody = mergeOptimizedCardBodies(matched);
+    const body = pruneFortuneSectionBody(rawBody, { hasHourPillar });
+    if (!body || isLowQualityFortuneBody(body)) continue;
 
     for (const c of matched) usedIds.push(c.id);
     filledIds.add(block.id);

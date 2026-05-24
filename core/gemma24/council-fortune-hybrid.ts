@@ -16,13 +16,15 @@ import {
   humanizeDeepSectionText,
   sortFortuneSectionBlocks,
 } from './fortune-display-order';
+import { removeFortuneSectionBlocks } from './fortune-text-quality';
 
 const SUPPLEMENT_SYSTEM = `당신은 사주팔자 전문가입니다.
 이미 「사주위원회 인증」 지식 카드로 작성된 본문이 있습니다. 그 내용을 반복·요약하지 마세요.
 지시된 번호 섹션만 추가 작성하세요. ◆ 소제목 사용. 평어체(~해요).
 전문 용어는 쉬운 풀이 후 괄호 한자. 출처·각주 표시 금지.
 각 섹션은 반드시 [본문id] 표시번호. 주제 형식으로 시작하세요.
-예: [1] 1. 인사 성향, [4] 3. 오행 균형, [9] 6. 대운 세운`;
+예: [1] 1. 인사 성향, [4] 3. 오행 균형, [9] 6. 대운 세운
+금지: "에 해당하는 기운", 빈 칸, "으로만 서술", 카드 제작 지시문, 시주 미입력 가정(프롬프트에 시주가 있으면).`;
 
 function hybridGroqEnabled(): boolean {
   return process.env.GEMMA24_HYBRID_GROQ !== '0';
@@ -113,14 +115,18 @@ export async function buildCouncilHybridFortune(
         { role: 'user', content: userBlock },
       ],
     },
-    { geminiFirst: false },
+    { geminiFirst: true },
   );
 
   if (!supplement || isOverloadText(supplement)) {
     const offline = buildOfflineHybridSupplement(query);
     const offlineFiltered = filterOfflineToNeeded(offline, composed.needsSupplementIds);
-    const text = [
+    const baseWithoutBadSections = removeFortuneSectionBlocks(
       composed.text.replace(baseFooter, '').trim(),
+      composed.needsSupplementIds,
+    );
+    const text = [
+      baseWithoutBadSections,
       '',
       '━━━ 맞춤 풀이 (사주 데이터 기반) ━━━',
       '',
@@ -134,8 +140,13 @@ export async function buildCouncilHybridFortune(
 
   const sortedSupplement = humanizeDeepSectionText(sortSupplementBlocks(supplement));
 
-  const text = [
+  const baseWithoutBadSections = removeFortuneSectionBlocks(
     composed.text.replace(baseFooter, '').trim(),
+    composed.needsSupplementIds,
+  );
+
+  const text = [
+    baseWithoutBadSections,
     '',
     '━━━ 맞춤 보충 풀이 ━━━',
     '',

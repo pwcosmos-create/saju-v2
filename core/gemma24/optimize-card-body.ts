@@ -3,6 +3,11 @@
  */
 import type { Gemma24SajuCard } from './saju-knowledge';
 import { humanizeDeepSectionLabel, humanizeDeepSectionText } from './fortune-display-order';
+import {
+  isAuthoringMetaText,
+  isBrokenPlaceholderText,
+  pruneFortuneSectionBody,
+} from './fortune-text-quality';
 
 const MAX_CARD_CHARS = 520;
 const MAX_VARIABLE_CARD_CHARS = 720;
@@ -152,7 +157,8 @@ function preferSummaryOrBody(card: Gemma24SajuCard): string {
 
 function isMetaOnlyParagraph(p: string): boolean {
   return /별도\s*(검토|확인)|판정\s*근거|위원회\s*검증|PASS|FAIL/.test(p)
-    || (/월지\s*본기|본기로\s*격/.test(p) && p.length < 80);
+    || isAuthoringMetaText(p)
+    || isBrokenPlaceholderText(p);
 }
 
 function scoreParagraph(p: string): number {
@@ -292,5 +298,6 @@ export function mergeOptimizedCardBodies(cards: Gemma24SajuCard[]): string {
     }),
   );
   const joined = parts.join('\n\n');
-  return truncateAtSentence(joined, MAX_SECTION_CHARS);
+  const pruned = pruneFortuneSectionBody(truncateAtSentence(joined, MAX_SECTION_CHARS));
+  return pruned;
 }

@@ -23,6 +23,7 @@ import {
   fortuneOutputHasDefects,
   isCardScaffoldBody,
   isLowQualityFortuneBody,
+  isTruncatedFortuneLine,
   polishFortuneText,
   pruneFortuneSectionBody,
   promptHasHourPillar,
@@ -108,9 +109,11 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
   for (const id of FORTUNE_DISPLAY_ORDER) {
     const block = blocks.get(id);
     const bodyOnly = block ? extractSectionBody(block) : '';
+    const hasTruncatedLine = bodyOnly.split('\n').some((line) => isTruncatedFortuneLine(line));
     const weak =
       !block
       || (id === '1' && isCardScaffoldBody(bodyOnly))
+      || (id === '10' && hasTruncatedLine)
       || isLowQualityFortuneBody(bodyOnly, query)
       || fortuneOutputHasDefects(bodyOnly);
 

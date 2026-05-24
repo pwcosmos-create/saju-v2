@@ -52,6 +52,17 @@ export function isCardScaffoldBody(body: string): boolean {
   return false;
 }
 
+/** 문장 중간에서 끊긴 불릿 (용신 화(火) 만 있고 마침 없음) */
+export function isTruncatedFortuneLine(line: string): boolean {
+  const t = line.replace(/^◆\s*|^—\s*/, '').trim();
+  if (t.length < 20) return false;
+  if (/[.!?…][\s]*$/.test(t) || /(습니다|세요|니다|해요|됩니다)\.?\s*$/.test(t)) return false;
+  if (/습관|핵심|옮기|판단해|마무리/.test(t)) return false;
+  if (/살리되,?\s*용신\s+[목화토금수]/.test(t) && !/습관|핵심|옮기/.test(t)) return true;
+  if (/용신\s+[목화토금수]\([^)]+\)\s*$/.test(t)) return true;
+  return false;
+}
+
 function lineHasUnclosedParen(line: string): boolean {
   let depth = 0;
   for (const ch of line) {
@@ -93,6 +104,7 @@ export function isBrokenDisplayLine(line: string): boolean {
   if (isBrokenPlaceholderText(t)) return true;
   if (isAuthoringMetaText(t)) return true;
   if (lineHasUnclosedParen(t)) return true;
+  if (isTruncatedFortuneLine(line)) return true;
   if (/【[^】]+】/.test(t)) return true;
   return false;
 }
@@ -200,7 +212,7 @@ export function fortuneOutputHasDefects(text: string): boolean {
   if (/表現|活動|正官|偏印|本元|劫財/.test(t)) return true;
   if (/←/.test(t)) return true;
   if (/[가-힣]{2,}\(\s*\)/.test(t)) return true;
-  if (t.split('\n').some((line) => lineHasUnclosedParen(line.trim()))) return true;
+  if (t.split('\n').some((line) => lineHasUnclosedParen(line.trim()) || isTruncatedFortuneLine(line))) return true;
   if (isCardScaffoldBody(t)) return true;
   return false;
 }

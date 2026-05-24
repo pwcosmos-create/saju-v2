@@ -87,7 +87,8 @@ function cleanLlamaLeakages(text: string): string {
     .replace(/wichtig/gi, '중요')
     .replace(/wicht/gi, '중요')
     .replace(/zuerst/gi, '우선')
-    .replace(/\[\d+\]/g, '');
+    // 각주형 [2] 만 제거 — 심층 풀이 섹션 헤더 [1]~[10] 은 유지
+    .replace(/(?<=[^\n\[])\[(\d{1,2})\](?!\s*\d{1,2}\.)/g, '');
 }
 
 // Gemini 2.5 Flash Saju Quality & Security Auditor

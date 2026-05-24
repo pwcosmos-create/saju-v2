@@ -6,6 +6,7 @@ import { humanizeDeepSectionLabel, humanizeDeepSectionText } from './fortune-dis
 import {
   isAuthoringMetaText,
   isBrokenPlaceholderText,
+  isTruncatedFortuneLine,
   pruneFortuneSectionBody,
 } from './fortune-text-quality';
 
@@ -298,6 +299,11 @@ export function mergeOptimizedCardBodies(cards: Gemma24SajuCard[]): string {
     }),
   );
   const joined = parts.join('\n\n');
-  const pruned = pruneFortuneSectionBody(truncateAtSentence(joined, MAX_SECTION_CHARS));
-  return pruned;
+  const capped = truncateAtSentence(joined, MAX_SECTION_CHARS);
+  const tailSafe = capped
+    .split('\n')
+    .filter((line) => !isTruncatedFortuneLine(line))
+    .join('\n')
+    .trim();
+  return pruneFortuneSectionBody(tailSafe || capped);
 }

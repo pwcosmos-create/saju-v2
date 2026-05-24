@@ -199,7 +199,13 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
     case '1': {
       if (!facts.stemKo) return null;
       const blurb = STEM_BLURB[facts.stemKo] ?? '일간 기운이 사주 전체 해석의 중심이 됩니다.';
-      const hanja = facts.stemHanja ? `(${facts.stemHanja})` : '';
+      const dayToken = query.match(/일주:\s*([^\s/|·]+)/)?.[1] ?? '';
+      const pillarHanja = dayToken.match(/\(([^)]+)\)/)?.[1]?.trim();
+      const hanja = pillarHanja
+        ? `(${pillarHanja})`
+        : facts.stemHanja
+          ? `(${facts.stemHanja})`
+          : '';
       return [
         header('1'),
         '',

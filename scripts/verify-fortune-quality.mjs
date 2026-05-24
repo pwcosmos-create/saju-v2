@@ -8,6 +8,7 @@ import {
   promptHasHourPillar,
   removeFortuneSectionBlocks,
   isCardScaffoldBody,
+  isTruncatedFortuneLine,
   polishFortuneText,
   stripFortuneFooters,
 } from '../core/gemma24/fortune-text-quality.ts';
@@ -107,6 +108,16 @@ if (!isCardScaffoldBody(scaffold)) {
 
 if (!isBrokenPlaceholderText('용신(화(火)')) {
   console.error('FAIL unclosed paren');
+  fail++;
+}
+
+if (!isTruncatedFortuneLine('— 기토 일간의 강점을 살리되, 용신 화(火)')) {
+  console.error('FAIL truncated yongsin line');
+  fail++;
+}
+
+if (isTruncatedFortuneLine('— 기토 일간의 강점을 살리되, 용신 화(火)을(를) 일상 습관으로 옮기는 것이 핵심입니다.')) {
+  console.error('FAIL full line marked truncated');
   fail++;
 }
 

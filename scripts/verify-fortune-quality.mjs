@@ -2,6 +2,7 @@
 /** fortune-text-quality 스모크 테스트 */
 import {
   isBrokenPlaceholderText,
+  isGenericTemplateOnlyBody,
   isLowQualityFortuneBody,
   pruneFortuneSectionBody,
   promptHasHourPillar,
@@ -51,6 +52,17 @@ if (!low) {
 const stripped = removeFortuneSectionBlocks('[1] ok\n\n[4] bad\n\n[2] ok2', ['4']);
 if (/^\[4\]/m.test(stripped)) {
   console.error('FAIL section remove');
+  fail++;
+}
+
+const genericOnly = `◆ 명식·구조\n년주는 유년\n\n◆ 실천 조언\n습관\n\n◆ 주의\n참고`;
+if (!isGenericTemplateOnlyBody(genericOnly)) {
+  console.error('FAIL generic template detect');
+  fail++;
+}
+
+if (!isBrokenPlaceholderText('격과 용신 견해가 충돌할 때는 을 분명히 하고')) {
+  console.error('FAIL 을 분명히 detect');
   fail++;
 }
 

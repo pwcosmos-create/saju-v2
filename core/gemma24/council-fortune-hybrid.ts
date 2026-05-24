@@ -11,20 +11,90 @@ import {
   type CouncilFreeFortuneResult,
 } from './council-fortune-compose';
 import {
+  FORTUNE_DISPLAY_ORDER,
   FORTUNE_DISPLAY_ORDER_HINT,
   formatFortuneSectionHeader,
+  fortuneSectionNumberedLabel,
   humanizeDeepSectionText,
   sortFortuneSectionBlocks,
 } from './fortune-display-order';
-import { removeFortuneSectionBlocks } from './fortune-text-quality';
+import {
+  isLowQualityFortuneBody,
+  pruneFortuneSectionBody,
+} from './fortune-text-quality';
+
+function parseFortuneSectionBlocks(text: string): Map<string, string> {
+  const blocks = new Map<string, string>();
+  const parts = text
+    .split(/(?=^(?:\[\d+\]|\d{1,2}\.)\s)/m)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    let id: string | null = null;
+    const bracket = part.match(/^\[(\d+)\]/);
+    if (bracket) {
+      id = bracket[1]!;
+    } else {
+      const dotted = part.match(/^(\d{1,2})\.\s/);
+      if (dotted) {
+        const displayNum = Number.parseInt(dotted[1]!, 10);
+        id = FORTUNE_DISPLAY_ORDER[displayNum - 1] ?? dotted[1]!;
+      }
+    }
+    if (!id) continue;
+
+    const body = part
+      .replace(/^\[\d+\][^\n]*\n?/, '')
+      .replace(/^\d{1,2}\.\s*[^\n]*\n?/, '')
+      .trim();
+    const pruned = pruneFortuneSectionBody(body);
+    if (!pruned || isLowQualityFortuneBody(pruned)) continue;
+
+    blocks.set(
+      id,
+      `${formatFortuneSectionHeader(id, fortuneSectionNumberedLabel(id))}\n\n${pruned}`,
+    );
+  }
+  return blocks;
+}
+
+function mergeFortuneWithSupplement(
+  baseText: string,
+  supplementText: string,
+  replaceIds: string[],
+): string {
+  const introMatch = baseText.match(/^[\s\S]*?(?=^\[1\])/m);
+  const intro = introMatch?.[0]?.trim() ?? '';
+  const baseBody = introMatch ? baseText.slice(introMatch[0].length) : baseText;
+
+  const baseBlocks = parseFortuneSectionBlocks(baseBody);
+  const supBlocks = parseFortuneSectionBlocks(supplementText);
+  const replace = new Set(replaceIds);
+
+  for (const id of replace) baseBlocks.delete(id);
+  for (const [id, block] of supBlocks) baseBlocks.set(id, block);
+
+  const ordered = FORTUNE_DISPLAY_ORDER.map((id) => baseBlocks.get(id)).filter(Boolean);
+  const footer = '—\n참고용 풀이이며 전문 상담을 대체하지 않습니다.';
+
+  return [
+    intro || '✦ AI 심층 풀이 — ✓ 사주위원회 인증\n\n입력하신 사주에 맞춰 인증 지식·심층 카드를 조합했습니다.',
+    '',
+    ...ordered,
+    '',
+    footer,
+  ].join('\n');
+}
 
 const SUPPLEMENT_SYSTEM = `당신은 사주팔자 전문가입니다.
 이미 「사주위원회 인증」 지식 카드로 작성된 본문이 있습니다. 그 내용을 반복·요약하지 마세요.
 지시된 번호 섹션만 추가 작성하세요. ◆ 소제목 사용. 평어체(~해요).
 전문 용어는 쉬운 풀이 후 괄호 한자. 출처·각주 표시 금지.
 각 섹션은 반드시 [본문id] 표시번호. 주제 형식으로 시작하세요.
-예: [1] 1. 인사 성향, [4] 3. 오행 균형, [9] 6. 대운 세운
-금지: "에 해당하는 기운", 빈 칸, "으로만 서술", 카드 제작 지시문, 시주 미입력 가정(프롬프트에 시주가 있으면).`;
+예: [2] 2. 사주팔자, [5] 5. 용신 기신 (반드시 대괄호 id 사용)
+금지: "에 해당하는 기운", 빈 칸, "으로만 서술", 카드 제작 지시문, 시주 미입력 가정(프롬프트에 시주가 있으면).
+한국어만 사용(중국어 단어 금지). 일간·연월일시·용신·기신을 프롬프트 숫자와 맞출 것.`;
 
 function hybridGroqEnabled(): boolean {
   return process.env.GEMMA24_HYBRID_GROQ !== '0';
@@ -121,40 +191,25 @@ export async function buildCouncilHybridFortune(
   if (!supplement || isOverloadText(supplement)) {
     const offline = buildOfflineHybridSupplement(query);
     const offlineFiltered = filterOfflineToNeeded(offline, composed.needsSupplementIds);
-    const baseWithoutBadSections = removeFortuneSectionBlocks(
-      composed.text.replace(baseFooter, '').trim(),
-      composed.needsSupplementIds,
+    const text = pruneFortuneSectionBody(
+      mergeFortuneWithSupplement(
+        composed.text.replace(baseFooter, '').trim(),
+        offlineFiltered || offline,
+        composed.needsSupplementIds,
+      ),
     );
-    const text = [
-      baseWithoutBadSections,
-      '',
-      '━━━ 맞춤 풀이 (사주 데이터 기반) ━━━',
-      '',
-      offlineFiltered || offline,
-      '',
-      '—',
-      baseFooter,
-    ].join('\n');
     return { text, mode: 'council-hybrid-pending', cardCount: composed.cardCount };
   }
 
   const sortedSupplement = humanizeDeepSectionText(sortSupplementBlocks(supplement));
 
-  const baseWithoutBadSections = removeFortuneSectionBlocks(
-    composed.text.replace(baseFooter, '').trim(),
-    composed.needsSupplementIds,
+  const text = pruneFortuneSectionBody(
+    mergeFortuneWithSupplement(
+      composed.text.replace(baseFooter, '').trim(),
+      sortedSupplement,
+      composed.needsSupplementIds,
+    ),
   );
-
-  const text = [
-    baseWithoutBadSections,
-    '',
-    '━━━ 맞춤 보충 풀이 ━━━',
-    '',
-    sortedSupplement,
-    '',
-    '—',
-    '인증 카드와 사주 데이터를 바탕으로 작성되었습니다. 추가 질문은 AI 심층 상담을 이용해 주세요.',
-  ].join('\n');
 
   return { text, mode: 'council-hybrid', cardCount: composed.cardCount };
 }

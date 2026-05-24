@@ -16,6 +16,7 @@ import {
   isLowQualityFortuneBody,
   promptHasHourPillar,
   pruneFortuneSectionBody,
+  sectionBlockHasBrokenFragments,
 } from './fortune-text-quality';
 
 /** 화면용 카드 1장 이상이면 조합 (프레임 카드로 수만 채우지 않음) */
@@ -106,7 +107,10 @@ export function composeCouncilFreeFortune(
 
   const needsSupplementIds = FORTUNE_DISPLAY_ORDER.filter((id) => {
     if (!filledIds.has(id)) return true;
-    return (sectionBodyChars[id] ?? 0) < MIN_SECTION_BODY_CHARS;
+    if ((sectionBodyChars[id] ?? 0) < MIN_SECTION_BODY_CHARS) return true;
+    const block = sectionTexts.find((s) => s.startsWith(`[${id}]`));
+    if (block && sectionBlockHasBrokenFragments(block)) return true;
+    return false;
   });
 
   const orderedSections = sortFortuneSectionBlocks(sectionTexts);

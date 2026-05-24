@@ -11,12 +11,22 @@ const BROKEN_PLACEHOLDER_RE = [
   /운은?\(는\)?\s*일간/,
   /격국은?\(는\)?\s*일간/,
   /(?:^|[\s,.])로\s*(?:강점|완화|과잉)/,
-  /(?:^|[\s,.])으(?:로만|로\s*강)/,
+  /(?:^|[\s,.])으(?:로만|로\s*강|을\s*분명히)/,
   /(?:^|[\s,.])와\s*맞물릴/,
+  /(?:^|[\s,.])을\s*분명히/,
+  /(?:^|[\s,.])처럼\s*가능성/,
   /의\s*색깔에\s*가깝습니다/,
   /를\s*보는\s*자리라고/,
   /쉽게\s*말하면\s*의\s+/,
+  /^이\s*강할\s*때는/,
+  /^이\s*약할\s*때는/,
+  /사주팔자에서\s*이\s*년/,
 ];
+
+const GENERIC_ONLY_SUBHEAD_RE = /^◆\s*(명식·구조|실천\s*조언|주의|주의·마무리|인사·성향)$/;
+
+const CHART_SPECIFIC_RE =
+  /일간|일주|연주|월주|시주|용신|기신|희신|한신|격|신약|신강|목\s*\d|화\s*\d|토\s*\d|금\s*\d|수\s*\d|[갑을병정무기경신임계][인묘진사오미신유술亥]/;
 
 const GENERIC_INTRO_RE = /오늘은\s*귀하의\s*사주에서/;
 
@@ -101,6 +111,22 @@ export function pruneFortuneSectionBody(
   return keptBlocks.join('\n\n').trim();
 }
 
+/** 명식 키워드 없이 프레임(주의·실천·명식)만 있는 절 */
+export function isGenericTemplateOnlyBody(body: string): boolean {
+  if (CHART_SPECIFIC_RE.test(body)) return false;
+  const headers = body.match(/^◆\s*.+$/gm) ?? [];
+  if (headers.length < 2) return false;
+  return headers.every((h) => GENERIC_ONLY_SUBHEAD_RE.test(h.trim()));
+}
+
+export function sectionBlockHasBrokenFragments(block: string): boolean {
+  return block.split('\n').some((line) => {
+    const t = line.trim();
+    if (!t || t.startsWith('[')) return false;
+    return isBrokenDisplayLine(line);
+  });
+}
+
 /** 보충 LLM 필요 여부 (정리 후에도 짧거나 깨짐 잔존) */
 export function isLowQualityFortuneBody(body: string): boolean {
   const t = body.trim();
@@ -113,9 +139,10 @@ export function isLowQualityFortuneBody(body: string): boolean {
     (l) => l.length >= 20 && !isAuthoringMetaText(l) && !isBrokenPlaceholderText(l),
   );
   if (substantive.length < 2) return true;
+  if (isGenericTemplateOnlyBody(t)) return true;
 
   const brokenLines = lines.filter((l) => isBrokenDisplayLine(l));
-  if (brokenLines.length >= 2) return true;
+  if (brokenLines.length >= 1) return true;
 
   return false;
 }

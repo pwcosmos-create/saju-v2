@@ -14,6 +14,7 @@ import { useStt } from './use-stt';
 import { isSajuWaitingMessage } from '../../core/user-messages';
 import { useCounselChat } from './use-counsel-chat';
 import { extractCounselVoiceAnswer } from '../../lib/counsel-voice-answer';
+import { renderCounselContent } from './render-counsel-content';
 
 function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
@@ -437,7 +438,7 @@ export default function CounselPanel({
                     </div>
                   ) : (
                     <>
-                      {msg.content}
+                      {isUser ? msg.content : renderCounselContent(msg.content)}
                       {!isUser && !isError && msg.content.length > 10 && (
                         <button
                           onClick={() => {

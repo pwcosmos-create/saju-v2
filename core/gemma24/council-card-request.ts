@@ -5,6 +5,12 @@ import fs from 'fs/promises';
 import path from 'path';
 import { collectGemma24CardStats } from './card-stats';
 import { FORTUNE_SECTION_TITLES } from './fortune-display-order';
+import {
+  buildTodayFortuneCardDraft,
+  TODAY_FORTUNE_CARD_TITLE,
+  type DailyFortuneCounselPayload,
+} from '../daily-fortune/counsel-format';
+import { isTodayFortuneQuestion } from './is-today-fortune-question';
 import { extractPromptFacts, pickConsultDeepIds, type Gemma24SajuCard } from './saju-knowledge';
 
 export type CouncilCardNeed = {
@@ -46,6 +52,7 @@ const DEEP_SECTION_LABEL: Record<number, string> = {
 };
 
 const INTERPRET_BY_TOPIC: [RegExp, string][] = [
+  [/오늘의?\s*운세|오늘\s*운|일운|금일\s*운/, '해석·오늘 일운'],
   [/궁합|연애|애인|결혼|짝|관계|배우자/, '해석·궁합·연인 비교'],
   [/올해|세운|월운|시기|흐름|요즘/, '해석·세운·올해 흐름'],
   [/대운|전환/, '해석·대운 전환기'],
@@ -282,6 +289,7 @@ export function buildCouncilCardDraft(need: CouncilCardNeed): CouncilCardDraft {
   }
   if (kind.startsWith('deep-')) return draftDeep(title);
   if (kind === 'interpret') return draftInterpret(title);
+  if (kind === 'today-fortune') return draftInterpret(TODAY_FORTUNE_CARD_TITLE);
 
   return {
     title,
@@ -493,6 +501,7 @@ export async function autoEnqueueCouncilCardProduction(params: {
   userMessage: string;
   sajuContextSnippet: string;
   counselorName?: string;
+  drafts?: CouncilCardDraft[];
 }): Promise<string | null> {
   if (!councilCardAutoRequestEnabled()) return null;
 
@@ -505,9 +514,103 @@ export async function autoEnqueueCouncilCardProduction(params: {
     sajuContextSnippet: params.sajuContextSnippet.slice(0, 1200),
     counselorName: params.counselorName,
     needs,
-    drafts: buildCouncilCardDrafts(needs),
+    drafts: params.drafts ?? buildCouncilCardDrafts(needs),
   });
   return record.id;
+}
+
+function isTodayFortuneKnowledgeCard(card: Gemma24SajuCard): boolean {
+  const t = card.title.trim();
+  if (/^심층·\[6\]/.test(t)) return false;
+  if (t === TODAY_FORTUNE_CARD_TITLE || /해석·오늘|오늘\s*일운/.test(t)) return true;
+  return /일운|오늘의?\s*운세|금일\s*운|일진/.test(t);
+}
+
+function hasPassTodayFortuneCard(titles: string[], matched: Gemma24SajuCard[]): boolean {
+  const passTitle = (t: string) =>
+    t === TODAY_FORTUNE_CARD_TITLE
+    || /해석·오늘\s*일운/.test(t)
+    || (/일운/.test(t) && /오늘/.test(t));
+  if (titles.some(passTitle)) return true;
+  return matched.some(
+    (c) => c.councilCertified !== false && isTodayFortuneKnowledgeCard(c),
+  );
+}
+
+/**
+ * 오늘의 운세 — PASS 카드 우선, 없으면 일진 데이터로 초안 제작·접수 후 상담에 사용
+ */
+export async function prepareTodayFortuneCounselCards(params: {
+  sajuContext: string;
+  userMessage: string;
+  counselorName?: string;
+  dailyFortune: DailyFortuneCounselPayload | null;
+  searchedCards: Gemma24SajuCard[];
+}): Promise<{ cards: Gemma24SajuCard[]; queuedCount: number }> {
+  if (!isTodayFortuneQuestion(params.userMessage)) {
+    return { cards: [], queuedCount: 0 };
+  }
+
+  const passToday = params.searchedCards.filter(isTodayFortuneKnowledgeCard);
+  const titles = certifiedTitles();
+
+  if (hasPassTodayFortuneCard(titles, passToday) && passToday.length) {
+    return { cards: passToday, queuedCount: 0 };
+  }
+
+  const need: CouncilCardNeed = {
+    title: TODAY_FORTUNE_CARD_TITLE,
+    kind: 'today-fortune',
+    priority: 'P0',
+    reason: `오늘의 운세(${params.dailyFortune?.date ?? '당일'}) 맞춤 인증 카드가 없어 즉석 제작합니다.`,
+  };
+
+  const fromLog = await loadRecentDraftCards([TODAY_FORTUNE_CARD_TITLE]);
+  let draftCards: Gemma24SajuCard[];
+  let draftsForQueue: CouncilCardDraft[];
+
+  if (fromLog.length) {
+    draftCards = fromLog;
+    draftsForQueue = [];
+  } else if (params.dailyFortune) {
+    draftsForQueue = [buildTodayFortuneCardDraft(params.dailyFortune)];
+    draftCards = draftsToSajuCards(draftsForQueue);
+  } else {
+    draftsForQueue = buildCouncilCardDrafts([{ ...need, kind: 'interpret' }]);
+    draftCards = draftsToSajuCards(draftsForQueue);
+  }
+
+  let queuedCount = 0;
+  if (councilCardAutoRequestEnabled() && draftsForQueue.length) {
+    autoEnqueueCouncilCardProductionBackground({
+      needs: [need],
+      drafts: draftsForQueue,
+      source: 'counsel',
+      userMessage: params.userMessage,
+      sajuContextSnippet: params.sajuContext,
+      counselorName: params.counselorName,
+    });
+    queuedCount = 1;
+  } else if (councilCardAutoRequestEnabled() && !fromLog.length) {
+    autoEnqueueCouncilCardProductionBackground({
+      needs: [need],
+      source: 'counsel',
+      userMessage: params.userMessage,
+      sajuContextSnippet: params.sajuContext,
+      counselorName: params.counselorName,
+    });
+    queuedCount = 1;
+  }
+
+  const merged = [...passToday];
+  const seen = new Set(passToday.map((c) => c.title.trim()));
+  for (const c of draftCards) {
+    if (seen.has(c.title.trim())) continue;
+    seen.add(c.title.trim());
+    merged.push(c);
+  }
+
+  return { cards: merged.length ? merged : draftCards, queuedCount };
 }
 
 /** 응답 지연 없이 백그라운드 접수 */
@@ -589,7 +692,7 @@ export function inferCounselFallbackNeeds(userMessage: string): CouncilCardNeed[
   if (!t) return [];
 
   const rules: [RegExp, string, string][] = [
-    [/오늘의?\s*운세|오늘\s*운|일운|금일\s*운/, '해석·오늘 일운', 'interpret'],
+    [/오늘의?\s*운세|오늘\s*운|일운|금일\s*운/, TODAY_FORTUNE_CARD_TITLE, 'today-fortune'],
     [/운세|요즘|지금|이번\s*달|올해|세운|월운|시기|흐름/, '해석·세운·올해 흐름', 'interpret'],
     [/연애|애인|결혼|짝|궁합|관계|배우자/, '해석·궁합·연인 비교', 'interpret'],
     [/재물|돈|금전|투자|수입/, '심층·[7] 재물', 'deep-7'],

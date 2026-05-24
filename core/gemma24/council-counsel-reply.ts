@@ -6,6 +6,7 @@ import {
   draftsToSajuCards,
   inferCounselFallbackNeeds,
   prepareCounselSupplementalCards,
+  prepareTodayFortuneCounselCards,
 } from './council-card-request';
 import type { Gemma24SajuCard } from './saju-knowledge';
 import {
@@ -217,17 +218,42 @@ export async function tryCouncilCounselReply(
     return { content: buildOffTopicReply(), cardCount: 0, draftCardCount: 0, mode: 'council-counsel' };
   }
 
-  if (isTodayFortuneQuestion(trimmed) && options?.dailyFortune) {
-    return {
-      content: buildTodayFortuneCounselReply(options.dailyFortune, counselorName),
-      cardCount: 0,
-      draftCardCount: 0,
-      mode: 'council-counsel',
-    };
-  }
-
   const query = buildConsultCardSearchQuery(sajuContext, trimmed, compareSajuContext);
   const passCards = searchConsultCouncilCards(query, trimmed);
+
+  if (isTodayFortuneQuestion(trimmed)) {
+    const { cards: todayCards, queuedCount } = await prepareTodayFortuneCounselCards({
+      sajuContext,
+      userMessage: trimmed,
+      counselorName,
+      dailyFortune: options?.dailyFortune ?? null,
+      searchedCards: passCards,
+    });
+    if (todayCards.length) {
+      const content = buildCardReply(todayCards, trimmed, counselorName)
+        || (options?.dailyFortune
+          ? buildTodayFortuneCounselReply(options.dailyFortune, counselorName)
+          : '');
+      if (content.trim()) {
+        const picked = pickCardsForReply(todayCards, trimmed);
+        const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
+        return {
+          content,
+          cardCount: certifiedCount,
+          draftCardCount: Math.max(picked.length - certifiedCount, queuedCount > 0 ? 1 : 0),
+          mode: 'council-counsel',
+        };
+      }
+    }
+    if (options?.dailyFortune) {
+      return {
+        content: buildTodayFortuneCounselReply(options.dailyFortune, counselorName),
+        cardCount: 0,
+        draftCardCount: 1,
+        mode: 'council-counsel',
+      };
+    }
+  }
   const { cards: supplemental, queuedCount } = await prepareCounselSupplementalCards({
     sajuContext,
     userMessage: trimmed,

@@ -7,6 +7,8 @@ import {
 import type { DailyFortuneResult } from './types';
 import { summarizeEvents } from './events';
 
+export const TODAY_FORTUNE_CARD_TITLE = '해석·오늘 일운';
+
 export type DailyFortuneCounselPayload = {
   date: string;
   dayLabel: string;
@@ -38,6 +40,41 @@ export function dailyFortuneToCounselPayload(f: DailyFortuneResult): DailyFortun
     daewoonSipsin: f.background.daewoonSipsin,
     yearSipsin: f.background.yearSipsin,
     monthSipsin: f.background.monthSipsin,
+  };
+}
+
+/** PASS 카드 없을 때 즉석 제작·상담 답변용 초안 */
+export function buildTodayFortuneCardDraft(f: DailyFortuneCounselPayload): {
+  title: string;
+  summary: string;
+  body: string;
+  tags: string[];
+} {
+  const mood =
+    f.level === '매우 좋음' || f.level === '좋음'
+      ? '전반적으로 기운이 받쳐 주는 날입니다.'
+      : f.level === '보통'
+        ? '무리하지 않고 리듬을 맞추면 좋은 날입니다.'
+        : '속도를 조금 늦추고 선택을 가볍게 하는 편이 좋습니다.';
+  const flowTip =
+    f.oneLiner.split(' · ').slice(0, -1).join(' · ').trim()
+      || `${f.sipsin} 기운에 맞게 ${f.action}`;
+  const eventsLine =
+    f.eventsSummary !== '특이 사항 없음'
+      ? `원국과 맞물린 포인트: ${f.eventsSummary}`
+      : '원국과 특별히 겹치는 충·합 신호는 크지 않습니다.';
+
+  return {
+    title: TODAY_FORTUNE_CARD_TITLE,
+    summary: `${f.date} ${f.dayLabel}일 · ${f.level} — 오늘의 운세 맞춤 해석`,
+    body: `「${TODAY_FORTUNE_CARD_TITLE}」
+【개요】${f.date} · ${f.dayLabel}일(${f.dayHanja}) · 종합 ${f.level}
+【핵심】${mood} 일진 십신은 ${f.sipsin}이고, ${f.action}
+대운 ${f.daewoonSipsin} · 세운 ${f.yearSipsin} · 월운 ${f.monthSipsin} 속에서 오늘은 ${f.sipsin}의 날로 읽힙니다.
+${eventsLine}
+【실천】${flowTip}
+키워드: 오늘의 운세, 일운, 일진, ${f.sipsin}, ${f.date}`,
+    tags: ['해석', '일운', '오늘의 운세', f.date],
   };
 }
 

@@ -95,7 +95,7 @@ function formatVariableCardBody(body: string): string {
   }
 
   if (blocks.length) return blocks.join('\n\n');
-  return sanitizeCardBody(body);
+  return formatReadableBody(body);
 }
 
 function truncateAtSentence(text: string, max: number): string {
@@ -181,8 +181,55 @@ function pickTopParagraphs(paragraphs: string[], max: number): string[] {
 }
 
 function formatAsBullets(paragraphs: string[]): string {
-  if (paragraphs.length <= 1) return paragraphs[0] ?? '';
-  return paragraphs.map((p) => `— ${p}`).join('\n');
+  if (paragraphs.length <= 1) {
+    const only = paragraphs[0] ?? '';
+    return only.length > 90 ? formatDenseProse(only) : (only ? `— ${only}` : '');
+  }
+  return paragraphs.map((p) => (p.length > 90 ? formatDenseProse(p) : `— ${p}`)).join('\n');
+}
+
+/** 긴 한 덩어리 본문 → 문장·이면-절 단위 불릿 */
+function splitKoSentences(text: string): string[] {
+  const t = normalizeParagraph(text);
+  const parts = t
+    .split(/(?<=[.!?。！？])\s+|(?<=[다요음니다]\.)(?=\s*[가-힣「])/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 10);
+  return parts.length ? parts : [t];
+}
+
+function splitClauseBullets(sentence: string): string[] {
+  if (!/이면.+,.+이면/.test(sentence)) return [sentence];
+  const clauses = sentence.split(
+    /,\s*(?=(?:관성|식상|인성|편재|비겁|재성|용신|기신|역마|충|희신|월지|일간))/,
+  );
+  return clauses.length > 1 ? clauses.map((c) => c.trim()).filter(Boolean) : [sentence];
+}
+
+function formatDenseProse(paragraph: string): string {
+  const lines: string[] = [];
+  for (const sentence of splitKoSentences(paragraph)) {
+    const clauses = splitClauseBullets(sentence);
+    for (const c of clauses) {
+      lines.push(`— ${c.replace(/^[,.]\s*/, '')}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function formatReadableBody(body: string): string {
+  const cleaned = sanitizeCardBody(body);
+  if (!cleaned) return '';
+  if (/^◆\s/m.test(cleaned)) return cleaned;
+
+  const paras = splitParagraphs(cleaned);
+  if (paras.length <= 1) {
+    const single = paras[0] ?? cleaned;
+    return single.length > 90 ? formatDenseProse(single) : `— ${single}`;
+  }
+  return paras
+    .map((p) => (p.length > 90 ? formatDenseProse(p) : `— ${p}`))
+    .join('\n');
 }
 
 /** 카드 1장 → 화면용 본문 */
@@ -208,7 +255,7 @@ export function optimizeCardBodyForDisplay(card: Gemma24SajuCard): string {
     (p) => !/별도\s*(검토|확인)|학파·환경/.test(p),
   );
   const picked = pickTopParagraphs(pool.length ? pool : [core], MAX_PARAS);
-  let text = picked.length ? formatAsBullets(picked) : core;
+  let text = picked.length ? formatAsBullets(picked) : formatReadableBody(core);
   if (kwLine) text = `${text}\n\n${kwLine}`;
   return truncateAtSentence(text, MAX_CARD_CHARS);
 }

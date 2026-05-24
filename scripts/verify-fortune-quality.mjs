@@ -7,6 +7,7 @@ import {
   pruneFortuneSectionBody,
   promptHasHourPillar,
   removeFortuneSectionBlocks,
+  stripFortuneFooters,
 } from '../core/gemma24/fortune-text-quality.ts';
 
 const broken = [
@@ -63,6 +64,23 @@ if (!isGenericTemplateOnlyBody(genericOnly)) {
 
 if (!isBrokenPlaceholderText('격과 용신 견해가 충돌할 때는 을 분명히 하고')) {
   console.error('FAIL 을 분명히 detect');
+  fail++;
+}
+
+if (!isBrokenPlaceholderText('칠살격()은(는) 일간과')) {
+  console.error('FAIL empty parens gyeok');
+  fail++;
+}
+
+const dupFooter = stripFortuneFooters('본문\n\n—\n참고용 풀이 A\n\n—\n참고용 풀이 B');
+if (/참고용/.test(dupFooter)) {
+  console.error('FAIL footer strip');
+  fail++;
+}
+
+const jobEncy = '◆ 직업\n— 관성이 강하면 조직·공무·규율·책임, 식상이면 기술·교육·창업·콘텐츠, 인성이면 연구';
+if (!isLowQualityFortuneBody(jobEncy, '일주: 기미')) {
+  console.error('FAIL encyclopedic job');
   fail++;
 }
 

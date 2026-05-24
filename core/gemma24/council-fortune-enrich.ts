@@ -49,6 +49,7 @@ export function lacksChartPersonalization(body: string, query: string): boolean 
 
   if (PILLAR_BOILERPLATE_RE.test(body) && !/일간|일주|용신|기신/.test(body)) return true;
   if (ENCYCLOPEDIC_RE.test(body) && lacksPersonalizationForEncyclopedia(body, facts.stemKo)) return true;
+  if (/관성이 강하면 조직·공무·규율·책임, 식상이면 기술·교육·창업·콘텐츠/.test(body)) return true;
   if (facts.stemKo || dayPillar) return true;
 
   return false;
@@ -62,14 +63,24 @@ function lacksPersonalizationForEncyclopedia(body: string, stemKo: string | null
 function parsePromptContext(query: string) {
   const facts = extractPromptFacts(query);
   const strength = query.match(/최종 판정:\s*★\s*([^★\n]+)/)?.[1]?.trim() ?? null;
-  const dominant = query.match(/지배 오행:\s*([^\n]+)/)?.[1]?.trim() ?? null;
-  const lacking = query.match(/부족 오행:\s*([^\n]+)/)?.[1]?.trim() ?? null;
+  const dominant = query.match(/지배 오행:\s*([^\n]+)/)?.[1]?.trim()
+    ?? query.match(/지배 오행\(([^)]+)\)/)?.[1]?.trim()
+    ?? null;
+  const lacking = query.match(/부족 오행:\s*([^\n]+)/)?.[1]?.trim()
+    ?? query.match(/보완 오행:\s*([^\n]+)/)?.[1]?.trim()
+    ?? null;
   const yongsinLine = query.match(/용신\(用神\)\s*=\s*([^\n]+)/)?.[1]?.trim() ?? null;
   const huisinLine = query.match(/희신\(喜神\)\s*=\s*([^\n]+)/)?.[1]?.trim() ?? null;
   const gisinLine = query.match(/기신\(忌神\)\s*=\s*([^\n]+)/)?.[1]?.trim() ?? null;
   const pillars = query.match(/연주:[^\n]+/)?.[0]?.trim() ?? null;
   const gyeokLine = query.match(/▶ 격국[^]*?\n\s*([^\n※]+)/)?.[1]?.trim()
+    ?? query.match(/격국:\s*([^\n]+)/)?.[1]?.trim()
     ?? facts.gyeokguk
+    ?? null;
+  const gyeokClean = gyeokLine?.replace(/\(\s*\)/g, '').replace(/\s+/g, ' ').trim() || null;
+
+  const ohaengSummary = query.match(/목\s*\d+\s*개[^·\n]*·[^·\n]*·[^·\n]*·[^·\n]*·\s*수\s*\d+\s*개/)?.[0]?.trim()
+    ?? query.match(/【오행 분포】[^]*?목[^]*?수[^]*?개/)?.[0]?.slice(0, 120)?.trim()
     ?? null;
 
   return {
@@ -82,7 +93,14 @@ function parsePromptContext(query: string) {
     gisinLine,
     pillars,
     gyeokLine,
+    gyeokClean,
+    ohaengSummary,
   };
+}
+
+function cleanGyeokLabel(gyeok: string | null | undefined): string {
+  const g = (gyeok ?? '격국').replace(/\(\s*\)/g, '').replace(/\s+/g, ' ').trim();
+  return g || '격국';
 }
 
 /** 카드 조합 후 빈 [1][4][5][2] 등 채우기 */
@@ -117,15 +135,18 @@ export function buildPromptEnrichedSections(
     });
   }
 
-  if (!filledSectionIds.has('4') && (ctx.dominant || ctx.lacking)) {
+  if (!filledSectionIds.has('4') && (ctx.dominant || ctx.lacking || ctx.ohaengSummary)) {
     out.push({
       id: '4',
       title: FORTUNE_SECTION_TITLES['4'],
       body: [
         '◆ 오행 분포',
+        ctx.ohaengSummary ? `— ${ctx.ohaengSummary}` : '',
         ctx.dominant ? `— 넘치는 기운: ${ctx.dominant}` : '',
         ctx.lacking ? `— 보완하면 좋은 기운: ${ctx.lacking}` : '',
-        '— 넘치는 오행은 강점으로 쓰되 과하면 조절하고, 부족한 오행은 생활 습관으로 채우면 균형이 맞습니다.',
+        facts.stemKo
+          ? `— ${facts.stemKo} 일간 기준, 부족한 오행을 색·음식·리듬으로 보완하면 균형에 가깝습니다.`
+          : '— 넘치는 오행은 강점으로 쓰되 과하면 조절하고, 부족한 오행은 생활 습관으로 채우면 균형이 맞습니다.',
       ].filter(Boolean).join('\n'),
     });
   }
@@ -154,7 +175,7 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
   const ctx = parsePromptContext(query);
   const { facts } = ctx;
   const yTip = facts.yongsinElem ? ELEM_TIP[facts.yongsinElem] : '용신 방향으로 일·관계를 맞추면 흐름이 부드러워집니다.';
-  const gyeok = ctx.gyeokLine ?? facts.gyeokguk ?? '격국';
+  const gyeok = cleanGyeokLabel(ctx.gyeokClean ?? ctx.gyeokLine ?? facts.gyeokguk);
 
   const header = (id: keyof typeof FORTUNE_SECTION_TITLES) =>
     formatFortuneSectionHeader(id, FORTUNE_SECTION_TITLES[id]);
@@ -178,14 +199,17 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         ? [header('2'), '', `◆ 사주 구성\n— ${ctx.pillars}\n— 격국·용신·운세는 이 네 기둥을 기준으로 읽습니다.`].join('\n')
         : null;
     case '4':
-      return (ctx.dominant || ctx.lacking)
+      return (ctx.dominant || ctx.lacking || ctx.ohaengSummary)
         ? [
             header('4'),
             '',
             '◆ 오행 분포',
+            ctx.ohaengSummary ? `— ${ctx.ohaengSummary}` : '',
             ctx.dominant ? `— 넘치는 기운: ${ctx.dominant}` : '',
             ctx.lacking ? `— 보완하면 좋은 기운: ${ctx.lacking}` : '',
-            facts.stemKo ? `— ${facts.stemKo} 일간 기준으로 부족한 오행을 생활 습관으로 채우면 균형에 가깝습니다.` : '',
+            facts.stemKo
+              ? `— ${facts.stemKo} 일간 기준, 부족한 오행(특히 ${ctx.lacking?.replace(/.*?:\s*/, '') ?? '금·수'})을 색·음식·리듬으로 보완하면 균형에 가깝습니다.`
+              : '',
           ].filter(Boolean).join('\n')
         : null;
     case '3':
@@ -208,6 +232,14 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
             `— ${yTip}`,
           ].filter(Boolean).join('\n')
         : null;
+    case '6':
+      return [
+        header('6'),
+        '',
+        `◆ ${gyeok}과 직업`,
+        `— ${gyeok}은 맞는 환경에서 강점이 드러나는 편입니다. ${ctx.strength ? `현재 ${ctx.strength}입니다.` : ''}`,
+        `— ${yTip}`,
+      ].join('\n');
     case '9':
       return [
         header('9'),
@@ -232,14 +264,6 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         '— 일지(日支)와의 합·충을 참고로 쓰되, 특정 인연·이별 시기는 단정하지 않습니다.',
         facts.stemKo ? `— ${facts.stemKo} 일간은 관계에서도 본인의 리듬을 지키는 편이 안정에 가깝습니다.` : '',
       ].filter(Boolean).join('\n');
-    case '6':
-      return [
-        header('6'),
-        '',
-        `◆ ${gyeok}과 직업`,
-        `— ${gyeok}은 맞는 환경에서 강점이 드러나는 편입니다. ${ctx.strength ? `현재 ${ctx.strength}입니다.` : ''}`,
-        `— ${yTip}`,
-      ].join('\n');
     case '10':
       return [
         header('10'),
@@ -260,7 +284,7 @@ export function buildOfflineHybridSupplement(query: string): string {
   const ctx = parsePromptContext(query);
   const { facts } = ctx;
   const yTip = facts.yongsinElem ? ELEM_TIP[facts.yongsinElem] : '용신 방향으로 일·관계를 맞추면 흐름이 부드러워집니다.';
-  const gyeok = ctx.gyeokLine ?? facts.gyeokguk ?? '격국';
+  const gyeok = cleanGyeokLabel(ctx.gyeokClean ?? ctx.gyeokLine ?? facts.gyeokguk);
 
   const sections: { id: keyof typeof FORTUNE_SECTION_TITLES; lines: string[] }[] = [
     {

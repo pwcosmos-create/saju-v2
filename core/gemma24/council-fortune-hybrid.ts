@@ -25,7 +25,16 @@ import {
   pruneFortuneSectionBody,
   promptHasHourPillar,
   sanitizeMixedScript,
+  stripFortuneFooters,
 } from './fortune-text-quality';
+
+function splitFortuneIntro(text: string): { intro: string; body: string } {
+  const m = text.match(/^([\s\S]*?)(?=^(?:\[\d+\]|\d{1,2}\.)\s)/m);
+  if (m) {
+    return { intro: m[1]?.trim() ?? '', body: text.slice(m[0].length) };
+  }
+  return { intro: '', body: text };
+}
 
 function parseFortuneSectionBlocks(text: string, query = ''): Map<string, string> {
   const blocks = new Map<string, string>();
@@ -68,9 +77,7 @@ function mergeFortuneWithSupplement(
   supplementText: string,
   replaceIds: string[],
 ): string {
-  const introMatch = baseText.match(/^[\s\S]*?(?=^\[1\])/m);
-  const intro = introMatch?.[0]?.trim() ?? '';
-  const baseBody = introMatch ? baseText.slice(introMatch[0].length) : baseText;
+  const { intro, body: baseBody } = splitFortuneIntro(baseText);
 
   const baseBlocks = parseFortuneSectionBlocks(baseBody);
   const supBlocks = parseFortuneSectionBlocks(supplementText);
@@ -80,22 +87,18 @@ function mergeFortuneWithSupplement(
   for (const [id, block] of supBlocks) baseBlocks.set(id, block);
 
   const ordered = FORTUNE_DISPLAY_ORDER.map((id) => baseBlocks.get(id)).filter(Boolean);
-  const footer = '—\n참고용 풀이이며 전문 상담을 대체하지 않습니다.';
 
   return [
     intro || '✦ AI 심층 풀이 — ✓ 사주위원회 인증\n\n입력하신 사주에 맞춰 인증 지식·심층 카드를 조합했습니다.',
     '',
     ...ordered,
-    '',
-    footer,
   ].join('\n');
 }
 
 /** 병합 후 절별 품질 검사 → 부족분은 규칙 기반 초안으로 교체 */
 function finalizeCouncilFortuneText(query: string, text: string): string {
-  const introMatch = text.match(/^[\s\S]*?(?=^\[1\])/m);
-  const intro = introMatch?.[0]?.trim() ?? '';
-  const baseBody = introMatch ? text.slice(introMatch[0].length) : text;
+  const cleaned = stripFortuneFooters(text);
+  const { intro, body: baseBody } = splitFortuneIntro(cleaned);
 
   const blocks = parseFortuneSectionBlocks(baseBody, query);
   const merged = new Map<string, string>();
@@ -111,9 +114,17 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
     if (weak) {
       const offline = buildOfflineFortuneSection(query, id);
       if (offline) merged.set(id, offline);
+      else if (block) merged.set(id, block);
       continue;
     }
     if (block) merged.set(id, block);
+  }
+
+  for (const id of FORTUNE_DISPLAY_ORDER) {
+    if (!merged.has(id)) {
+      const offline = buildOfflineFortuneSection(query, id);
+      if (offline) merged.set(id, offline);
+    }
   }
 
   const footer = '—\n참고용 풀이이며 전문 상담을 대체하지 않습니다.';

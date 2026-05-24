@@ -22,9 +22,16 @@ const BROKEN_PLACEHOLDER_RE = [
   /^이\s*강할\s*때는/,
   /^이\s*약할\s*때는/,
   /사주팔자에서\s*이\s*년/,
+  /[가-힣]{2,}\(\s*\)/,
+  /\(\s*\)/,
 ];
 
+const ANNOTATION_LINE_RE = /←|이 일간에게|용신·희신과 겹치면|표시번호|본문id/;
+
 const GENERIC_ONLY_SUBHEAD_RE = /^◆\s*(명식·구조|실천\s*조언|주의|주의·마무리|인사·성향)$/;
+const GENERIC_OHAENG_RE = /월지\s*\(?月支\)?\s*는\s*계절의\s*기운/;
+const ENCYCLOPEDIC_JOB_RE =
+  /관성이 강하면 조직·공무·규율·책임, 식상이면 기술·교육·창업·콘텐츠/;
 
 const GENERIC_INTRO_RE = /오늘은\s*귀하의\s*사주에서/;
 
@@ -43,6 +50,7 @@ export function isAuthoringMetaText(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (AUTHOR_META_RE.test(t)) return true;
+  if (ANNOTATION_LINE_RE.test(t)) return true;
   if (/월지\s*본기/.test(t) && t.length < 100) return true;
   return false;
 }
@@ -114,6 +122,7 @@ export function isGenericTemplateOnlyBody(body: string): boolean {
   const headers = body.match(/^◆\s*.+$/gm) ?? [];
   if (headers.length < 2) return false;
   if (!headers.every((h) => GENERIC_ONLY_SUBHEAD_RE.test(h.trim()))) return false;
+  if (GENERIC_OHAENG_RE.test(body) && !/목\s*\d+\s*개|지배 오행|넘치는 기운/.test(body)) return true;
   return /년주는\s*유년|월주는\s*사회/.test(body)
     && !/일간|용신|기신|[갑을병정무기경신임계][인묘진사오미신유술亥]{1,2}/.test(body);
 }
@@ -140,6 +149,8 @@ export function isLowQualityFortuneBody(body: string, query?: string): boolean {
   if (substantive.length < 2) return true;
   if (isGenericTemplateOnlyBody(t)) return true;
   if (query && lacksChartPersonalization(t, query)) return true;
+  if (ENCYCLOPEDIC_JOB_RE.test(t)) return true;
+  if (GENERIC_OHAENG_RE.test(t) && !/목\s*\d+\s*개|지배 오행|넘치는 기운/.test(t)) return true;
 
   const brokenLines = lines.filter((l) => isBrokenDisplayLine(l));
   if (brokenLines.length >= 1) return true;
@@ -154,7 +165,16 @@ export function fortuneOutputHasDefects(text: string): boolean {
   if (BROKEN_PLACEHOLDER_RE.some((re) => re.test(t))) return true;
   if (/[\u4e00-\u9fff]{3,}/.test(t.replace(/[（）()]/g, ''))) return true;
   if (/表現|活動|正官|偏印|本元|劫財/.test(t)) return true;
+  if (/←/.test(t)) return true;
+  if (/[가-힣]{2,}\(\s*\)/.test(t)) return true;
   return false;
+}
+
+const FOOTER_RE = /\n*—\n*참고용\s*풀이[^\n]*(?=\n|$)/gi;
+
+/** 중복 면책·푸터 제거 */
+export function stripFortuneFooters(text: string): string {
+  return text.replace(FOOTER_RE, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** 본문에서 3자 이상 연속 한자(괄호 밖) 제거 */

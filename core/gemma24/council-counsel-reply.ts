@@ -107,22 +107,21 @@ function pickCardsForReply(cards: Gemma24SajuCard[]): Gemma24SajuCard[] {
 function formatCardSection(card: Gemma24SajuCard): string {
   const sub = shortCardSubtitle(card.title);
   const body = optimizeCardBodyForDisplay(card);
-  const tag = card.councilCertified === false ? ' (맞춤 제작)' : '';
-  return `◆ ${sub}${tag}\n${body}`;
+  return `◆ ${sub}\n${body}`;
 }
 
 function buildGreetingReply(counselorName: string): string {
   const who = counselorName ? `『${counselorName}』입니다. ` : '';
   return [
-    `안녕하세요. ${who}사주위원회 인증 지식을 바탕으로 상담해 드립니다.`,
-    '연애, 재물, 직업, 올해·시기 운세처럼 궁금한 점을 말씀해 주시면, 맞는 인증 카드로 풀어 드릴게요.',
+    `안녕하세요. ${who}사주·운세 상담을 도와드립니다.`,
+    '연애, 재물, 직업, 올해·시기 운세처럼 궁금한 점을 편하게 말씀해 주세요.',
   ].join('\n');
 }
 
 function buildOffTopicReply(): string {
   return [
     '저는 사주·운세 상담만 도와드립니다.',
-    '연애, 재물, 직업, 건강, 올해·시기 흐름처럼 사주와 연결된 질문을 해 주시면 인증 카드로 답해 드릴게요.',
+    '연애, 재물, 직업, 건강, 올해·시기 흐름처럼 사주와 연결된 질문을 해 주시면 답해 드릴게요.',
   ].join('\n');
 }
 
@@ -135,7 +134,7 @@ function buildCompatibilityReply(cards: Gemma24SajuCard[], counselorName: string
   const sections = picked.map(formatCardSection);
   const who = counselorName ? `『${counselorName}』 기준으로 ` : '';
   return [
-    `${who}두 분 사주를 인증·맞춤 지식 카드로 비교해 보았습니다.`,
+    `${who}두 분 사주를 비교해 보았습니다.`,
     '',
     '**강점**',
     sections[0] ?? '— 두 분의 오행·일주 조합에서 서로를 보완하는 지점이 있습니다.',
@@ -154,7 +153,6 @@ function buildCardReply(
   cards: Gemma24SajuCard[],
   userMessage: string,
   counselorName: string,
-  draftCount: number,
 ): string {
   const picked = pickCardsForReply(cards);
   if (!picked.length) return '';
@@ -162,16 +160,14 @@ function buildCardReply(
   const topic = topicLabelFromMessage(userMessage);
   const who = counselorName ? `『${counselorName}』입니다. ` : '';
   const sections = picked.map(formatCardSection);
-  const intro = draftCount > 0
-    ? `${who}질문하신 「${topic}」 주제에 맞춰 인증 카드와 방금 맞춤 제작한 지식을 조합했습니다.`
-    : `${who}질문하신 「${topic}」 주제에 맞춰 사주위원회 인증 카드를 조합했습니다.`;
+  const intro = `${who}질문하신 「${topic}」에 대해 풀어 보았습니다.`;
 
   return [
     intro,
     '',
     ...sections,
     '',
-    '위 내용은 입력하신 사주와 지식 카드를 바탕으로 한 참고 풀이입니다. 더 궁금한 점이 있으면 이어서 물어봐 주세요.',
+    '위 내용은 입력하신 사주를 바탕으로 한 참고 풀이입니다. 더 궁금한 점이 있으면 이어서 물어봐 주세요.',
   ].join('\n');
 }
 
@@ -227,7 +223,7 @@ export async function tryCouncilCounselReply(
   const content =
     chatMode === 'compatibility' && compareSajuContext.trim()
       ? buildCompatibilityReply(allCards, counselorName)
-      : buildCardReply(allCards, trimmed, counselorName, draftCardCount);
+      : buildCardReply(allCards, trimmed, counselorName);
 
   if (!content.trim()) return null;
 

@@ -13,18 +13,7 @@ import { useTts } from './use-tts';
 import { useStt } from './use-stt';
 import { isSajuWaitingMessage } from '../../core/user-messages';
 import { useCounselChat } from './use-counsel-chat';
-
-/** TTS 자동 재생용: 첫 n문장만 추출 (마크다운 제거) */
-function extractFirstSentences(text: string, n: number): string {
-  const cleaned = text
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/\*(.*?)\*/g, '$1')
-    .replace(/#{1,6}\s/g, '')
-    .replace(/\n+/g, ' ')
-    .trim();
-  const sentences = cleaned.match(/[^.!?。！？]+[.!?。！？]*/g) ?? [cleaned];
-  return sentences.slice(0, n).join('').trim() || cleaned.slice(0, 120);
-}
+import { extractCounselVoiceAnswer } from '../../lib/counsel-voice-answer';
 
 function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
@@ -65,10 +54,13 @@ export default function CounselPanel({
 
   /** STT 콜백에서 안전하게 호출하기 위한 ref (클로저 스테일 방지) */
   const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => { });
+  /** 마이크로 보낸 직후 TTS는 답 본문만 읽기 */
+  const lastInputViaVoiceRef = useRef(false);
 
   const { listening, supported: sttSupported, start: startStt } = useStt((text) => {
-    setInput(text);              // 입력창에 인식 내용 표시
-    void sendVoiceRef.current(text); // 자동 전송
+    setInput(text);
+    lastInputViaVoiceRef.current = true;
+    void sendVoiceRef.current(text);
   });
 
 
@@ -160,8 +152,13 @@ export default function CounselPanel({
     setInput('');
     const responseContent = await send(trimmed);
     if (enabled && responseContent) {
-      setSpeakingContent(responseContent); // 버블 강조 시작
-      void speak(responseContent);
+      const viaVoice = lastInputViaVoiceRef.current;
+      lastInputViaVoiceRef.current = false;
+      const spokenText = viaVoice ? extractCounselVoiceAnswer(responseContent) : responseContent;
+      setSpeakingContent(responseContent);
+      void speak(spokenText);
+    } else {
+      lastInputViaVoiceRef.current = false;
     }
     inputRef.current?.focus();
   }
@@ -170,7 +167,8 @@ export default function CounselPanel({
   async function handleSend() {
     const trimmed = input.trim();
     if (!trimmed) return;
-    await primeAudio(); // 화면 터치 → iOS AudioContext unlock
+    lastInputViaVoiceRef.current = false;
+    await primeAudio();
     await handleSendWithText(trimmed);
   }
 

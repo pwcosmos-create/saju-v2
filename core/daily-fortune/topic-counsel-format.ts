@@ -63,6 +63,24 @@ const TOPIC_SECTION: Record<
   ],
 };
 
+const BUSINESS_FORTUNE_RE =
+  /사업운|사업\s*운|창업운|매출운|거래운|사업\s*(?:은|가|를|좀|어때|어떤|궁금)/;
+
+function businessFortuneTips(
+  facts: ReturnType<typeof extractPromptFacts>,
+): string[] {
+  return [
+    '사업운은 재물(편재·정재)과 역할(식상·관성)을 함께 봅니다. 확장과 관리의 균형이 핵심입니다.',
+    facts.gyeokguk
+      ? `${facts.gyeokguk} 명식에서는 무리한 확장보다 검증된 수익 구조를 쌓는 편이 유리합니다.`
+      : '한 번에 크게 키우기보다 현금 흐름·거래 리듬을 점검하세요.',
+    facts.yongsinElem
+      ? `용신 ${facts.yongsinElem} 방향(환경·파트너·시기)에 맞추면 사업 판단이 덜 흔들립니다.`
+      : '중요한 계약·투자는 기운이 안정된 시기에 맞추면 좋습니다.',
+    '구체적인 시기·연도는 「올해 운세」「2027년 운세」처럼 따로 질문하시면 이어서 풀어 드립니다.',
+  ].filter(Boolean) as string[];
+}
+
 /** 인증 카드 없을 때 — 명식 데이터 기반 주제 맞춤 상담 (LLM 없음) */
 export function buildTopicCounselReply(
   sajuContext: string,
@@ -93,7 +111,14 @@ export function buildTopicCounselReply(
   }
 
   const primaryId = intent.deepIds[0] ?? 6;
-  const tips = (TOPIC_SECTION[primaryId] ?? TOPIC_SECTION[6]!)(facts).filter(Boolean);
+  const useBusiness =
+    primaryId === 9
+    && (intent.label === '사업운' || BUSINESS_FORTUNE_RE.test(userMessage));
+  const tips = (
+    useBusiness
+      ? businessFortuneTips(facts)
+      : (TOPIC_SECTION[primaryId] ?? TOPIC_SECTION[6]!)(facts)
+  ).filter(Boolean);
   lines.push('', `◆ ${topic}에서 참고할 점`);
   for (const tip of tips.slice(0, 4)) {
     lines.push(`— ${tip}`);

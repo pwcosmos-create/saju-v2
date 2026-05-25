@@ -27,11 +27,19 @@ export type CounselTopicIntent = {
   label: string;
 };
 
+/** 사업·매출 운세 질문 (일반 「직업」 백과와 구분) */
+const BUSINESS_FORTUNE_RE =
+  /사업운|사업\s*운|창업운|매출운|거래운|사업\s*(?:은|가|를|좀|어때|어떤|궁금)/;
+
 /** 일·연 운세가 아닌 주제 상담 (연애·이직·재물 등) */
 export function parseCounselTopicIntent(message: string): CounselTopicIntent | null {
   const t = message.trim();
   if (!t) return null;
   if (isDayFortuneQuestion(t) || isYearFortuneQuestion(t)) return null;
+
+  if (BUSINESS_FORTUNE_RE.test(t)) {
+    return { deepIds: [9], label: '사업운' };
+  }
 
   const deepIds = pickConsultDeepIds(t);
   if (deepIds.length) {

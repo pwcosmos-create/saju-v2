@@ -1,6 +1,10 @@
 import { fetchLlmStream } from '../config/llm';
 import { tryCouncilCounselReply } from '../gemma24/council-counsel-reply';
 import { applyCounselGeminiCoach } from '../gemma24/counsel-gemini-coach';
+import {
+  buildGreetingReply,
+  isCounselGreetingMessage,
+} from '../gemma24/council-counsel-reply';
 import { shouldUseCounselLlmFallback } from '../gemma24/counsel-llm-fallback';
 import type { DailyFortuneCounselPayload } from '../daily-fortune/counsel-format';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
@@ -126,6 +130,30 @@ ${compareSajuContext}
           ...(finalReply.cardRequestQueued > 0 || finalReply.draftCardCount > 0
             ? { 'X-Saju-Card-Request-Queued': '1' }
             : {}),
+        },
+      },
+    );
+  }
+
+  if (isCounselGreetingMessage(lastUserMessage)) {
+    const greetingReply = await applyCounselGeminiCoach({
+      reply: {
+        content: buildGreetingReply(counselorName),
+        cardCount: 0,
+        draftCardCount: 0,
+        mode: 'council-counsel',
+      },
+      userMessage: lastUserMessage,
+      counselorName,
+    });
+    return Response.json(
+      { content: greetingReply.content },
+      {
+        headers: {
+          'X-Gemma24-Knowledge-Count': '0',
+          'X-Saju-Council-Badge': 'certified',
+          'X-Saju-Counsel-Mode': 'council-counsel',
+          ...(greetingReply.geminiCoached ? { 'X-Saju-Counsel-Coached': '1' } : {}),
         },
       },
     );

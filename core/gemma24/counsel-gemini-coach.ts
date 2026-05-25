@@ -6,7 +6,11 @@ import {
   inferCounselReplyCardGaps,
   type CouncilCardNeed,
 } from './council-card-request';
-import type { CouncilCounselReply } from './council-counsel-reply';
+import {
+  isCounselGreetingMessage,
+  isCounselGreetingReply,
+  type CouncilCounselReply,
+} from './council-counsel-reply';
 import { counselIntentTopicLabel } from './parse-counsel-intent';
 
 /** 상담 코칭 전용 — GOOGLE_AI_API_KEY 와 분리 */
@@ -28,9 +32,15 @@ function hasCounselCoachKey(): boolean {
 }
 
 /** Gemini 코칭 적용 여부 */
-export function shouldCoachCounselReply(reply: CouncilCounselReply): boolean {
+export function shouldCoachCounselReply(
+  reply: CouncilCounselReply,
+  userMessage = '',
+): boolean {
   const mode = counselGeminiCoachMode();
   if (mode === '0' || !hasCounselCoachKey()) return false;
+  if (isCounselGreetingMessage(userMessage) || isCounselGreetingReply(reply.content)) {
+    return true;
+  }
   if (mode === '1') return true;
 
   const t = reply.content.trim();
@@ -99,22 +109,29 @@ export async function applyCounselGeminiCoach(params: {
     reply,
   };
 
-  if (!shouldCoachCounselReply(reply)) {
+  if (!shouldCoachCounselReply(reply, params.userMessage)) {
     return { ...reply, geminiCoached: false, cardRequestQueued: 0 };
   }
+
+  const greetingOnly =
+    isCounselGreetingMessage(params.userMessage)
+    || isCounselGreetingReply(reply.content);
 
   const coached = await coachCounselDraftWithGemini(
     {
       draft: reply.content,
       userMessage: params.userMessage,
-      topicLabel: counselIntentTopicLabel(params.userMessage),
+      topicLabel: greetingOnly ? '인사' : counselIntentTopicLabel(params.userMessage),
       counselorName: params.counselorName,
-      sajuContextSnippet: params.sajuContextSnippet,
+      sajuContextSnippet: greetingOnly ? undefined : params.sajuContextSnippet,
+      mode: greetingOnly ? 'greeting' : 'standard',
     },
     getCounselCoachGeminiApiKey(),
   );
 
-  const cardRequestQueued = enqueueCounselCoachCardProduction(coachContext);
+  const cardRequestQueued = greetingOnly
+    ? 0
+    : enqueueCounselCoachCardProduction(coachContext);
 
   if (!coached.trim() || coached.trim() === reply.content.trim()) {
     return { ...reply, geminiCoached: false, cardRequestQueued };

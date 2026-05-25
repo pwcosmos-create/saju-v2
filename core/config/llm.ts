@@ -137,6 +137,8 @@ export type CounselGeminiCoachInput = {
   topicLabel: string;
   counselorName?: string;
   sajuContextSnippet?: string;
+  /** 인사만 — 명식·사주 풀이 없이 말투만 다듬음 */
+  mode?: 'greeting' | 'standard';
 };
 
 /** 젬마24 초안 — Gemini 코칭(표현·톤만, 팩트 유지). apiKey는 상담 코칭 전용 키만 사용 */
@@ -148,11 +150,23 @@ export async function coachCounselDraftWithGemini(
   const draft = input.draft.trim();
   if (!geminiKey || !draft) return cleanLlamaLeakages(draft);
 
+  const greetingOnly = input.mode === 'greeting';
+
   const who = input.counselorName?.trim()
     ? `상담사 「${input.counselorName}」의 말투를 유지하세요.`
     : '따뜻한 사주 상담사 말투로 다듬으세요.';
 
-  const systemInstruction = `당신은 사주 명리 상담 코치입니다. 젬마24(카드·엔진)가 만든 초안을 사용자에게 보낼 최종 답으로 다듬습니다.
+  const systemInstruction = greetingOnly
+    ? `당신은 사주 명리 상담 코치입니다. 사용자가 인사만 했을 때 젬마24가 만든 짧은 환영 초안의 말투만 다듬습니다.
+
+[절대 규칙]
+1. 인사·환영·질문 유도만 하세요. 일간·용신·오행·신약·격국·출생년·명식 분석을 절대 넣지 마세요.
+2. 초안에 없는 사주 사실·날짜·점수를 추가하지 마세요.
+3. ${who}
+4. 한국어로 2~4문장, 80~220자 내외. 완결된 문장으로 끝냅니다.
+
+오직 최종 인사 답변 본문만 출력하세요.`
+    : `당신은 사주 명리 상담 코치입니다. 젬마24(카드·엔진)가 만든 초안을 사용자에게 보낼 최종 답으로 다듬습니다.
 
 [절대 규칙]
 1. 초안의 사실을 바꾸지 마세요: 일진·세운·십신·용신·기신·격국·날짜·점수·대운 구간·간지 표기는 그대로 유지합니다.
@@ -167,11 +181,11 @@ export async function coachCounselDraftWithGemini(
   const userBlock = [
     `【사용자 질문】 ${input.userMessage.slice(0, 200)}`,
     `【주제】 ${input.topicLabel}`,
-    input.sajuContextSnippet
+    !greetingOnly && input.sajuContextSnippet
       ? `【명식 요약】\n${input.sajuContextSnippet.slice(0, 600)}`
       : '',
     '【젬마24 초안】',
-    draft.slice(0, 6000),
+    draft.slice(0, greetingOnly ? 800 : 6000),
   ].filter(Boolean).join('\n\n');
 
   try {
@@ -189,18 +203,23 @@ export async function coachCounselDraftWithGemini(
             { role: 'system', content: systemInstruction },
             { role: 'user', content: userBlock },
           ],
-          temperature: 0.35,
-          max_tokens: 2048,
+          temperature: greetingOnly ? 0.4 : 0.35,
+          max_tokens: greetingOnly ? 256 : 2048,
         }),
-        signal: AbortSignal.timeout(35000),
+        signal: AbortSignal.timeout(greetingOnly ? 15000 : 35000),
       },
     );
 
     if (res.ok) {
       const data = await res.json();
       const coached = data.choices?.[0]?.message?.content;
-      if (typeof coached === 'string' && coached.trim().length >= 80) {
-        return cleanLlamaLeakages(coached.trim());
+      const minLen = greetingOnly ? 30 : 80;
+      if (typeof coached === 'string' && coached.trim().length >= minLen) {
+        const out = cleanLlamaLeakages(coached.trim());
+        if (greetingOnly && /일간|용신|오행|신약|격국|庚金|身弱/.test(out)) {
+          return cleanLlamaLeakages(draft);
+        }
+        return out;
       }
     }
   } catch (e) {

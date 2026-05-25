@@ -663,11 +663,27 @@ export async function prepareDayFortuneCounselCards(params: {
 /** @deprecated prepareDayFortuneCounselCards 사용 */
 export const prepareTodayFortuneCounselCards = prepareDayFortuneCounselCards;
 
+/** 심층·[N] 주제 백과·일반 「직업」 등 — 명식 맞춤 풀이가 아님 */
+export function isGenericDeepTopicCard(card: Gemma24SajuCard): boolean {
+  const t = card.title.trim();
+  if (/^심층·\[\d+\]/.test(t)) return true;
+  if (/^(직업|재물|건강|성향|사주팔자|명식·구조|인사·성향|운세·시기|오행|격국)$/.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/** 질문 주제에 맞는 개인화·해석 카드(일운·세운·맞춤 해석 등) */
+export function isPersonalizedCounselCard(card: Gemma24SajuCard): boolean {
+  return !isEncyclopediaCounselCard(card) && !isGenericDeepTopicCard(card);
+}
+
 /** 교육용·템플릿 카드(질문 주제 맞춤 카드 아님) */
 export function isEncyclopediaCounselCard(card: Gemma24SajuCard): boolean {
   const t = card.title.trim();
   if (/^해석·\d{4}년/.test(t) && /일운/.test(t)) return false;
   if (/^해석·(?:오늘|내일|모레)\s*일운$/.test(t)) return false;
+  if (isGenericDeepTopicCard(card)) return true;
   if (/^심층·\[1\]/.test(t)) return true;
   if (/^변수·운\s+(용신|기신|희신)\s/.test(t)) return true;
   if (/인사·성향|사주팔자|명식·구조|실천 조언|^주의$/.test(t)) return true;

@@ -9,6 +9,7 @@ import {
   inferCounselFallbackNeeds,
   inferCounselReplyCardGaps,
   isEncyclopediaCounselCard,
+  isPersonalizedCounselCard,
   prepareCounselSupplementalCards,
   prepareDayFortuneCounselCards,
 } from './council-card-request';
@@ -43,6 +44,20 @@ const MAX_CARDS_IN_REPLY = 4;
 const GREETING_RE =
   /^(안녕|안뇽|하이|헬로|hello|hi|반가|ㅎㅇ|하이요|안녕하세요|안녕하십니까|반갑)[\s!.?~]*$/i;
 
+/** 인사만 — 코칭·LLM 확장 제외 */
+export function isCounselGreetingMessage(message: string): boolean {
+  const t = message.trim();
+  return t.length > 0 && t.length <= 24 && GREETING_RE.test(t);
+}
+
+export function isCounselGreetingReply(content: string): boolean {
+  const t = content.trim();
+  return (
+    t.length <= 280
+    && /사주·운세 상담을 도와드립니다|편하게 말씀해 주세요|궁금한 점을 편하게/.test(t)
+  );
+}
+
 const OFF_TOPIC_RE =
   /맛집|맛있는\s*집|날씨|주식\s*(추천|종목)|코딩|프로그래밍|레시피|영화\s*추천|드라마\s*추천|번역해|코드\s*짜|숙제\s*해/;
 
@@ -63,10 +78,6 @@ function counselCardOnlyEnabled(): boolean {
   return process.env.GEMMA24_COUNSEL_CARD_ONLY !== '0';
 }
 
-function isGreeting(message: string): boolean {
-  const t = message.trim();
-  return t.length > 0 && t.length <= 24 && GREETING_RE.test(t);
-}
 
 function isLikelyOffTopic(message: string): boolean {
   return OFF_TOPIC_RE.test(message);
@@ -155,7 +166,7 @@ function formatCardSection(card: Gemma24SajuCard): string {
   return `◆ ${sub}\n${body}`;
 }
 
-function buildGreetingReply(counselorName: string): string {
+export function buildGreetingReply(counselorName: string): string {
   const who = counselorName ? `『${counselorName}』입니다. ` : '';
   return [
     `안녕하세요. ${who}사주·운세 상담을 도와드립니다.`,
@@ -201,7 +212,7 @@ function buildCardReply(
   const picked = pickCardsForReply(cards, userMessage);
   if (!picked.length) return '';
 
-  const topic = topicLabelFromMessage(userMessage);
+  const topic = counselIntentTopicLabel(userMessage);
   const who = counselorName ? `『${counselorName}』입니다. ` : '';
   const sections = picked.map(formatCardSection);
   const intro = `${who}질문하신 「${topic}」에 대해 풀어 보았습니다.`;
@@ -241,7 +252,7 @@ export async function tryCouncilCounselReply(
   const counselorName = options?.counselorName ?? '';
   const chatMode = options?.chatMode ?? 'single';
 
-  if (isGreeting(trimmed)) {
+  if (isCounselGreetingMessage(trimmed)) {
     return { content: buildGreetingReply(counselorName), cardCount: 0, draftCardCount: 0, mode: 'council-counsel' };
   }
 
@@ -369,10 +380,11 @@ export async function tryCouncilCounselReply(
   }
 
   const topicIntent = parseCounselTopicIntent(trimmed);
+  const hasPersonalizedTopicCard = pickedPre.some(isPersonalizedCounselCard);
   const onlyEncyclopedia =
     pickedPre.length > 0 && pickedPre.every(isEncyclopediaCounselCard);
 
-  if (substantive.length === 0 && topicIntent && sajuContext.trim()) {
+  if (topicIntent && sajuContext.trim() && !hasPersonalizedTopicCard) {
     const topicContent = buildTopicCounselReply(
       sajuContext,
       trimmed,

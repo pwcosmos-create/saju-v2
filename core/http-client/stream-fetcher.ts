@@ -100,7 +100,7 @@ export async function fetchStream(prompt: string, callbacks: StreamCallbacks): P
         buffer += decoder.decode(value, { stream: true });
         drainBuffer(false);
       }
-      if (finished) return;
+      if (finished) break;
       if (done) {
         drainBuffer(true);
         if (buffer.trim()) processSseLine(buffer.trim());

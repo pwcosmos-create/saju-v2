@@ -20,6 +20,14 @@ export type Msg = { role: 'user' | 'assistant'; content: string };
 
 const API_PATH = '/api/saju-chat';
 const TIMEOUT_MS = 90_000;
+/** 답변 표시 전 최소 대기(ms) — 즉시 튀어나오는 느낌 완화 */
+const REPLY_MIN_DELAY_MS = 1000;
+
+function waitMinReplyDelay(startedAt: number): Promise<void> {
+  const remain = REPLY_MIN_DELAY_MS - (Date.now() - startedAt);
+  if (remain <= 0) return Promise.resolve();
+  return new Promise((resolve) => window.setTimeout(resolve, remain));
+}
 /** 인트로 말풍선은 API에 포함하지 않음 */
 const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
 
@@ -69,6 +77,7 @@ export function useCounselChat(
 
     const ac = new AbortController();
     const timeoutId = window.setTimeout(() => ac.abort(), TIMEOUT_MS);
+    const startedAt = Date.now();
 
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
@@ -107,6 +116,8 @@ export function useCounselChat(
       if (data.error) throw new Error(data.error);
       const content = (data.content ?? '').trim();
       if (!content) throw new Error('빈 응답');
+
+      await waitMinReplyDelay(startedAt);
 
       const answered: Msg[] = [...msgsRef.current];
       const last = answered[answered.length - 1];

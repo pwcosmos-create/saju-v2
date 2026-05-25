@@ -22,6 +22,7 @@ import { buildDayFortuneCounselReply } from '../core/daily-fortune/counsel-forma
 import {
   parseDayFortuneOffset,
   parseDayFortuneTarget,
+  parseRelativeDayOffset,
   resolveDailyFortuneDate,
 } from '../core/gemma24/is-today-fortune-question.ts';
 import {
@@ -244,6 +245,15 @@ if (!may28 || may28.kind !== 'date') {
 }
 if (!resolveDailyFortuneDate('5월28일 은 어때')) {
   console.error('FAIL resolveDailyFortuneDate for partial month-day');
+  fail++;
+}
+if (parseRelativeDayOffset('3일뒤 운세') !== 3) {
+  console.error('FAIL 3일뒤 offset');
+  fail++;
+}
+const in3days = parseDayFortuneTarget('3일뒤 운세');
+if (!in3days || in3days.kind !== 'date') {
+  console.error('FAIL 3일뒤 운세 target', in3days);
   fail++;
 }
 if (!isYearFortuneQuestion('2027년 운세는') || parseYearFortuneYear('2027년 운세는') !== 2027) {

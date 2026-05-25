@@ -69,10 +69,32 @@ function formatDateTopicLabel(date: Date): string {
   return `${y}년 ${m}월 ${d}일 운세`;
 }
 
+/** N일 뒤/후 — 3일뒤 운세, 5일 후 등 */
+export function parseRelativeDayOffset(message: string): number | null {
+  const t = message.trim();
+  const m =
+    t.match(/(\d{1,2})\s*일\s*(?:뒤|후|후에|이후)/)
+    ?? t.match(/(\d{1,2})일\s*(?:뒤|후|후에)/);
+  if (m) {
+    const n = Number.parseInt(m[1]!, 10);
+    if (n >= 0 && n <= 45) return n;
+  }
+  if (/이틀\s*(?:뒤|후)|이틀후/.test(t)) return 2;
+  if (/사흘/.test(t)) return 3;
+  if (/하루\s*(?:뒤|후)|하루뒤/.test(t)) return 1;
+  return null;
+}
+
 /** 일운 대상 날짜·표시 라벨 */
 export function parseDayFortuneTarget(message: string): DayFortuneTarget | null {
   const t = message.trim();
   if (!t) return null;
+
+  const rel = parseRelativeDayOffset(t);
+  if (rel !== null && DATE_FORTUNE_ASK_RE.test(t)) {
+    const date = kstCalendarDatePlusDays(rel);
+    return { kind: 'date', date, label: formatDateTopicLabel(date) };
+  }
 
   const cal = parseFortuneCalendarDate(t);
   if (cal && DATE_FORTUNE_ASK_RE.test(t)) {

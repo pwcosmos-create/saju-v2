@@ -232,6 +232,15 @@ if (!resolveDailyFortuneDate('2026년 5월30일 운세는')) {
   console.error('FAIL resolveDailyFortuneDate for calendar date');
   fail++;
 }
+const may28 = parseDayFortuneTarget('5월28일 은 어때');
+if (!may28 || may28.kind !== 'date') {
+  console.error('FAIL 5월28일 은 어때 detect', may28);
+  fail++;
+}
+if (!resolveDailyFortuneDate('5월28일 은 어때')) {
+  console.error('FAIL resolveDailyFortuneDate for partial month-day');
+  fail++;
+}
 const tomorrowReply = buildDayFortuneCounselReply(todayPayload, '유진', '내일');
 if (!/내일의 운세|◆\s*내일의 기운/.test(tomorrowReply)) {
   console.error('FAIL tomorrow counsel reply');

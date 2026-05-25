@@ -16,6 +16,12 @@ const TOMORROW_EVENT_RE =
 
 const FORTUNE_ASK_RE = /운세|일운|기운|하루|일진/;
 
+/** 특정 날짜 + 「어때」 등 일운 의도 */
+const DATE_FORTUNE_ASK_RE =
+  /운세|일운|기운|하루|일진|어때|어떤|어떨|좋을|나을|괜찮|어떻|사주|괜찮을|나을까/;
+
+const PARTIAL_MONTH_DAY_RE = /(\d{1,2})\s*월\s*(\d{1,2})\s*일/;
+
 export type DayFortuneTarget =
   | { kind: 'offset'; offset: number; label: string }
   | { kind: 'date'; date: Date; label: string };
@@ -38,6 +44,24 @@ export function parseFortuneCalendarDate(message: string): Date | null {
   return calendarDateUtc(y, mo, d);
 }
 
+/** M월 D일 — 연도 생략 시 KST 기준 가장 가까운 미래(또는 오늘) */
+export function parsePartialFortuneCalendarDate(message: string): Date | null {
+  const t = message.trim();
+  if (/\d{4}\s*년/.test(t)) return null;
+  const m = t.match(PARTIAL_MONTH_DAY_RE);
+  if (!m) return null;
+  const mo = Number.parseInt(m[1]!, 10);
+  const d = Number.parseInt(m[2]!, 10);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+
+  const today = kstCalendarDatePlusDays(0);
+  const y = today.getUTCFullYear();
+  const tm = today.getUTCMonth() + 1;
+  const td = today.getUTCDate();
+  const year = mo < tm || (mo === tm && d < td) ? y + 1 : y;
+  return calendarDateUtc(year, mo, d);
+}
+
 function formatDateTopicLabel(date: Date): string {
   const y = date.getUTCFullYear();
   const m = date.getUTCMonth() + 1;
@@ -51,8 +75,13 @@ export function parseDayFortuneTarget(message: string): DayFortuneTarget | null 
   if (!t) return null;
 
   const cal = parseFortuneCalendarDate(t);
-  if (cal && FORTUNE_ASK_RE.test(t)) {
+  if (cal && DATE_FORTUNE_ASK_RE.test(t)) {
     return { kind: 'date', date: cal, label: formatDateTopicLabel(cal) };
+  }
+
+  const partial = parsePartialFortuneCalendarDate(t);
+  if (partial && DATE_FORTUNE_ASK_RE.test(t)) {
+    return { kind: 'date', date: partial, label: formatDateTopicLabel(partial) };
   }
 
   if (TOMORROW_EVENT_RE.test(t) && !FORTUNE_ASK_RE.test(t)) return null;

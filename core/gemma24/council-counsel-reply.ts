@@ -22,6 +22,12 @@ import { optimizeCardBodyForDisplay, shortCardSubtitle } from './optimize-card-b
 import { isDayFortuneQuestion, parseDayFortuneTarget } from './is-today-fortune-question';
 import { isYearFortuneQuestion, parseYearFortuneYear } from './is-year-fortune-question';
 import {
+  counselIntentTopicLabel,
+  parseCounselTopicIntent,
+} from './parse-counsel-intent';
+import { buildTopicCounselReply } from '../daily-fortune/topic-counsel-format';
+import { shouldUseCounselLlmFallback } from './counsel-llm-fallback';
+import {
   buildDayFortuneCounselReply,
   offsetToDayLabel,
   type DailyFortuneCounselPayload,
@@ -67,10 +73,8 @@ function isLikelyOffTopic(message: string): boolean {
 }
 
 function topicLabelFromMessage(message: string): string {
-  const dayTarget = parseDayFortuneTarget(message);
-  if (dayTarget) return dayTarget.label;
-  const year = parseYearFortuneYear(message);
-  if (year !== null) return `${year}년 운세`;
+  const fromIntent = counselIntentTopicLabel(message);
+  if (fromIntent !== '사주') return fromIntent;
   for (const [re, id] of [
     [/연애|애인|결혼|짝|궁합|관계|배우자/, 8],
     [/재물|돈|금전|투자|수입/, 7],
@@ -102,6 +106,13 @@ function rankCounselCards(cards: Gemma24SajuCard[], userMessage: string): Gemma2
     if (yearQ) {
       if (/세운|해석·\d{4}년|올해\s*흐름/.test(title)) return 0;
       if (k.startsWith('deep-6') || title.startsWith('심층·[6]')) return 1;
+      if (k.startsWith('deep-')) return 6;
+    }
+    const topicQ = parseCounselTopicIntent(userMessage);
+    if (topicQ) {
+      for (const id of topicQ.deepIds) {
+        if (title.startsWith(`심층·[${id}]`) || title.includes(topicQ.label)) return 0;
+      }
       if (k.startsWith('deep-')) return 6;
     }
     if (k.startsWith('deep-')) return 0;
@@ -345,6 +356,7 @@ export async function tryCouncilCounselReply(
   if (!allCards.length) return null;
 
   const pickedPre = pickCardsForReply(allCards, trimmed);
+  const substantive = pickedPre.filter((c) => !isEncyclopediaCounselCard(c));
   const replyGaps = inferCounselReplyCardGaps(trimmed, pickedPre, passCards);
   if (replyGaps.length && councilCardAutoRequestEnabled()) {
     autoEnqueueCouncilCardProductionBackground({
@@ -356,12 +368,29 @@ export async function tryCouncilCounselReply(
     });
   }
 
+  const topicIntent = parseCounselTopicIntent(trimmed);
   const onlyEncyclopedia =
     pickedPre.length > 0 && pickedPre.every(isEncyclopediaCounselCard);
-  if (
-    onlyEncyclopedia
-    && (isDayFortuneQuestion(trimmed) || isYearFortuneQuestion(trimmed))
-  ) {
+
+  if (substantive.length === 0 && topicIntent && sajuContext.trim()) {
+    const topicContent = buildTopicCounselReply(
+      sajuContext,
+      trimmed,
+      counselorName,
+      topicIntent,
+    );
+    if (topicContent) {
+      return {
+        content: topicContent,
+        cardCount: 0,
+        draftCardCount: replyGaps.length > 0 ? 1 : 0,
+        mode: 'council-counsel',
+      };
+    }
+  }
+
+  if (onlyEncyclopedia || substantive.length === 0) {
+    if (shouldUseCounselLlmFallback()) return null;
     const who = counselorName ? `『${counselorName}』입니다. ` : '';
     return {
       content: [
@@ -375,12 +404,26 @@ export async function tryCouncilCounselReply(
   }
 
   const draftCardCount = supplemental.length;
+  const replyCards = substantive.length ? substantive : allCards;
   const content =
     chatMode === 'compatibility' && compareSajuContext.trim()
       ? buildCompatibilityReply(allCards, counselorName)
-      : buildCardReply(allCards, trimmed, counselorName);
+      : buildCardReply(replyCards, trimmed, counselorName);
 
-  if (!content.trim()) return null;
+  if (!content.trim()) {
+    return shouldUseCounselLlmFallback()
+      ? null
+      : {
+          content: [
+            counselorName ? `『${counselorName}』입니다. ` : '',
+            `질문하신 「${topicLabelFromMessage(trimmed)}」에 대한 답을 준비 중입니다.`,
+            '잠시 후 다시 질문해 주세요.',
+          ].join(''),
+          cardCount: 0,
+          draftCardCount: replyGaps.length > 0 ? 1 : 0,
+          mode: 'council-counsel',
+        };
+  }
 
   const picked = pickedPre;
   const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;

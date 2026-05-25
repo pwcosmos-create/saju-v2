@@ -25,6 +25,7 @@ import {
   parseYearFortuneYear,
   yearFortuneCardTitle,
 } from './is-year-fortune-question';
+import { parseCounselTopicIntent } from './parse-counsel-intent';
 import { dayFortuneCardTitleForTarget } from '../daily-fortune/counsel-format';
 import { extractPromptFacts, pickConsultDeepIds, type Gemma24SajuCard } from './saju-knowledge';
 
@@ -717,6 +718,21 @@ export function inferCounselReplyCardGaps(
     return [];
   }
 
+  const topic = parseCounselTopicIntent(userMessage);
+  if (topic) {
+    const primary = topic.deepIds[0]!;
+    const label = DEEP_SECTION_LABEL[primary] ?? `심층·[${primary}]`;
+    const need: CouncilCardNeed = {
+      title: label,
+      kind: `deep-${primary}`,
+      priority: 'P0',
+      reason: `질문(${userMessage.slice(0, 48)}) 주제(${topic.label}) 인증 카드가 없어 제작 요청합니다.`,
+    };
+    if (!cardCoversTitle(all, need.title)) return [need];
+    if (!pickedCards.some((c) => !isEncyclopediaCounselCard(c))) return [need];
+    return [];
+  }
+
   const target = parseDayFortuneTarget(userMessage);
 
   if (target) {
@@ -816,6 +832,7 @@ export function inferCounselFallbackNeeds(userMessage: string): CouncilCardNeed[
   if (!t) return [];
 
   const rules: [RegExp, string, string][] = [
+    [/내년|내녴|다음\s*해/i, '해석·세운·올해 흐름', 'interpret'],
     [/내일|다음\s*날|tomorrow/i, TOMORROW_FORTUNE_CARD_TITLE, 'today-fortune'],
     [/오늘의?\s*운세|오늘\s*운|일운|금일\s*운/, TODAY_FORTUNE_CARD_TITLE, 'today-fortune'],
     [/운세|요즘|지금|이번\s*달|올해|세운|월운|시기|흐름/, '해석·세운·올해 흐름', 'interpret'],

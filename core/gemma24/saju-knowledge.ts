@@ -11,11 +11,7 @@ import {
   parseDayFortuneOffset,
   parseDayFortuneTarget,
 } from './is-today-fortune-question';
-import {
-  isYearFortuneQuestion,
-  parseYearFortuneYear,
-  yearFortuneCardTitle,
-} from './is-year-fortune-question';
+import { isYearFortuneQuestion, parseYearFortuneYear, yearFortuneCardTitle } from './is-year-fortune-question';
 import { dayFortuneCardTitle, dayFortuneCardTitleForTarget, offsetToDayLabel } from '../daily-fortune/counsel-format';
 
 export type Gemma24SajuCard = {
@@ -648,7 +644,9 @@ const CONSULT_TOPIC_DEEP: [RegExp, number][] = [
   [/재물|돈|금전|투자|수입|벌이|재테크/, 7],
   [/직업|커리어|사업|취업|이직|승진|직장/, 9],
   [/건강|몸|질병|컨디션|체력/, 10],
-  [/대운|세운|올해|월운|시기|흐름|언제|요즘/, 6],
+  [/대운|세운|올해|내년|내녴|금년|월운|시기|흐름|언제|요즘|전망/, 6],
+  [/이직|면접|승진|퇴사/, 9],
+  [/결혼|재혼|이혼/, 8],
   [/성격|성향|처음|타인/, 1],
   [/오행|균형/, 4],
   [/용신|기신|희신/, 5],
@@ -656,7 +654,7 @@ const CONSULT_TOPIC_DEEP: [RegExp, number][] = [
 ];
 
 export function pickConsultDeepIds(userMessage: string): number[] {
-  if (isDayFortuneQuestion(userMessage)) return [];
+  if (isDayFortuneQuestion(userMessage) || isYearFortuneQuestion(userMessage)) return [];
 
   const ids: number[] = [];
   for (const [re, id] of CONSULT_TOPIC_DEEP) {

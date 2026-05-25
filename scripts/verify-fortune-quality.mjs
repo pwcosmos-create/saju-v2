@@ -28,6 +28,7 @@ import {
   isYearFortuneQuestion,
   parseYearFortuneYear,
 } from '../core/gemma24/is-year-fortune-question.ts';
+import { parseCounselTopicIntent } from '../core/gemma24/parse-counsel-intent.ts';
 import { extractCounselVoiceAnswer } from '../lib/counsel-voice-answer.ts';
 import { prepareTextForTts } from '../lib/prepare-text-for-tts.ts';
 import { splitForPausedReading } from '../lib/tts-paused-reading.ts';
@@ -247,6 +248,15 @@ if (!resolveDailyFortuneDate('5월28일 은 어때')) {
 }
 if (!isYearFortuneQuestion('2027년 운세는') || parseYearFortuneYear('2027년 운세는') !== 2027) {
   console.error('FAIL 2027년 운세 detect');
+  fail++;
+}
+if (parseYearFortuneYear('내년 운세') === null) {
+  console.error('FAIL 내년 운세 detect');
+  fail++;
+}
+const love = parseCounselTopicIntent('연애운 어때');
+if (!love || love.label !== '연애·관계') {
+  console.error('FAIL 연애 topic intent', love);
   fail++;
 }
 const tomorrowReply = buildDayFortuneCounselReply(todayPayload, '유진', '내일');

@@ -18,8 +18,16 @@ export function parseYearFortuneYear(message: string): number | null {
     if (y >= 1900 && y <= 2100) return y;
   }
 
+  const thisYear = kstCalendarDatePlusDays(0).getUTCFullYear();
+
+  if (/내년|내녴|다음\s*해|next\s*year/i.test(t) && YEAR_FORTUNE_ASK_RE.test(t)) {
+    return thisYear + 1;
+  }
+  if (/작년|지난해|last\s*year/i.test(t) && YEAR_FORTUNE_ASK_RE.test(t)) {
+    return thisYear - 1;
+  }
   if (/올해|금년|this\s*year/i.test(t) && YEAR_FORTUNE_ASK_RE.test(t)) {
-    return kstCalendarDatePlusDays(0).getUTCFullYear();
+    return thisYear;
   }
 
   return null;

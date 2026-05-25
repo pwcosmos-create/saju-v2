@@ -1,5 +1,6 @@
 import { fetchLlmStream } from '../config/llm';
 import { tryCouncilCounselReply } from '../gemma24/council-counsel-reply';
+import { shouldUseCounselLlmFallback } from '../gemma24/counsel-llm-fallback';
 import type { DailyFortuneCounselPayload } from '../daily-fortune/counsel-format';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
 import { SAJU_WAITING_LABEL } from '../user-messages';
@@ -7,7 +8,7 @@ import { makeRateLimiter } from '../http-client/rate-limit';
 import { COUNSELOR_ALLOWLIST } from '../counselor-config';
 
 function llmCounselFallbackEnabled(): boolean {
-  return process.env.GEMMA24_COUNSEL_LLM_FALLBACK === '1';
+  return shouldUseCounselLlmFallback();
 }
 
 const checkConsultRateLimit = makeRateLimiter(20, 60_000);

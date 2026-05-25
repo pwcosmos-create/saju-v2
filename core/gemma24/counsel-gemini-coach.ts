@@ -1,6 +1,18 @@
 import { coachCounselDraftWithGemini } from '../config/llm';
+import {
+  autoEnqueueCouncilCardProductionBackground,
+  councilCardAutoRequestEnabled,
+  inferCounselFallbackNeeds,
+  inferCounselReplyCardGaps,
+  type CouncilCardNeed,
+} from './council-card-request';
 import type { CouncilCounselReply } from './council-counsel-reply';
 import { counselIntentTopicLabel } from './parse-counsel-intent';
+
+/** 상담 코칭 전용 — GOOGLE_AI_API_KEY 와 분리 */
+export function getCounselCoachGeminiApiKey(): string {
+  return process.env.GEMINI_COUNSEL_COACH_API_KEY?.trim() ?? '';
+}
 
 export type CounselGeminiCoachMode = '0' | '1' | 'auto';
 
@@ -11,14 +23,14 @@ export function counselGeminiCoachMode(): CounselGeminiCoachMode {
   return 'auto';
 }
 
-function hasGeminiKey(): boolean {
-  return Boolean(process.env.GOOGLE_AI_API_KEY?.trim());
+function hasCounselCoachKey(): boolean {
+  return Boolean(getCounselCoachGeminiApiKey());
 }
 
 /** Gemini 코칭 적용 여부 */
 export function shouldCoachCounselReply(reply: CouncilCounselReply): boolean {
   const mode = counselGeminiCoachMode();
-  if (mode === '0' || !hasGeminiKey()) return false;
+  if (mode === '0' || !hasCounselCoachKey()) return false;
   if (mode === '1') return true;
 
   const t = reply.content.trim();
@@ -32,7 +44,45 @@ export function shouldCoachCounselReply(reply: CouncilCounselReply): boolean {
   return false;
 }
 
-export type CoachedCounselResult = CouncilCounselReply & { geminiCoached: boolean };
+export type CoachedCounselResult = CouncilCounselReply & {
+  geminiCoached: boolean;
+  cardRequestQueued: number;
+};
+
+/** 코칭에 쓰인 주제·초안 카드 → PASS 인증 카드 제작 요청 */
+export function inferCounselCoachCardNeeds(
+  userMessage: string,
+  reply: CouncilCounselReply,
+): CouncilCardNeed[] {
+  let gaps = inferCounselReplyCardGaps(userMessage, [], []);
+  if (!gaps.length && reply.draftCardCount > 0) {
+    gaps = inferCounselFallbackNeeds(userMessage);
+  }
+  return gaps.map((n) => ({
+    ...n,
+    priority: 'P0' as const,
+    reason: `코칭에 활용한 주제(${n.title}) PASS 인증 카드 제작`,
+  }));
+}
+
+function enqueueCounselCoachCardProduction(params: {
+  userMessage: string;
+  sajuContextSnippet?: string;
+  counselorName?: string;
+  reply: CouncilCounselReply;
+}): number {
+  if (!councilCardAutoRequestEnabled()) return 0;
+  const needs = inferCounselCoachCardNeeds(params.userMessage, params.reply);
+  if (!needs.length) return 0;
+  autoEnqueueCouncilCardProductionBackground({
+    needs,
+    source: 'counsel',
+    userMessage: params.userMessage,
+    sajuContextSnippet: params.sajuContextSnippet ?? '',
+    counselorName: params.counselorName,
+  });
+  return needs.length;
+}
 
 /** 젬마24 답변에 Gemini 코칭(표현만) 적용 */
 export async function applyCounselGeminiCoach(params: {
@@ -42,25 +92,38 @@ export async function applyCounselGeminiCoach(params: {
   sajuContextSnippet?: string;
 }): Promise<CoachedCounselResult> {
   const { reply } = params;
+  const coachContext = {
+    userMessage: params.userMessage,
+    sajuContextSnippet: params.sajuContextSnippet,
+    counselorName: params.counselorName,
+    reply,
+  };
+
   if (!shouldCoachCounselReply(reply)) {
-    return { ...reply, geminiCoached: false };
+    return { ...reply, geminiCoached: false, cardRequestQueued: 0 };
   }
 
-  const coached = await coachCounselDraftWithGemini({
-    draft: reply.content,
-    userMessage: params.userMessage,
-    topicLabel: counselIntentTopicLabel(params.userMessage),
-    counselorName: params.counselorName,
-    sajuContextSnippet: params.sajuContextSnippet,
-  });
+  const coached = await coachCounselDraftWithGemini(
+    {
+      draft: reply.content,
+      userMessage: params.userMessage,
+      topicLabel: counselIntentTopicLabel(params.userMessage),
+      counselorName: params.counselorName,
+      sajuContextSnippet: params.sajuContextSnippet,
+    },
+    getCounselCoachGeminiApiKey(),
+  );
+
+  const cardRequestQueued = enqueueCounselCoachCardProduction(coachContext);
 
   if (!coached.trim() || coached.trim() === reply.content.trim()) {
-    return { ...reply, geminiCoached: false };
+    return { ...reply, geminiCoached: false, cardRequestQueued };
   }
 
   return {
     ...reply,
     content: coached,
     geminiCoached: true,
+    cardRequestQueued,
   };
 }

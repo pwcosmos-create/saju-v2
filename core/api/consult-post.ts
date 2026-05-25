@@ -122,8 +122,10 @@ ${compareSajuContext}
           ...(finalReply.geminiCoached ? { 'X-Saju-Counsel-Coached': '1' } : {}),
           ...(finalReply.draftCardCount > 0 ? {
             'X-Saju-Card-Draft-Count': String(finalReply.draftCardCount),
-            'X-Saju-Card-Request-Queued': '1',
           } : {}),
+          ...(finalReply.cardRequestQueued > 0 || finalReply.draftCardCount > 0
+            ? { 'X-Saju-Card-Request-Queued': '1' }
+            : {}),
         },
       },
     );

@@ -139,11 +139,12 @@ export type CounselGeminiCoachInput = {
   sajuContextSnippet?: string;
 };
 
-/** 젬마24 초안 — Gemini 코칭(표현·톤만, 팩트 유지) */
+/** 젬마24 초안 — Gemini 코칭(표현·톤만, 팩트 유지). apiKey는 상담 코칭 전용 키만 사용 */
 export async function coachCounselDraftWithGemini(
   input: CounselGeminiCoachInput,
+  apiKey = '',
 ): Promise<string> {
-  const geminiKey = process.env.GOOGLE_AI_API_KEY ?? '';
+  const geminiKey = apiKey.trim();
   const draft = input.draft.trim();
   if (!geminiKey || !draft) return cleanLlamaLeakages(draft);
 

@@ -20,12 +20,17 @@ import {
 } from './saju-knowledge';
 import { optimizeCardBodyForDisplay, shortCardSubtitle } from './optimize-card-body';
 import { isDayFortuneQuestion, parseDayFortuneTarget } from './is-today-fortune-question';
+import { isYearFortuneQuestion, parseYearFortuneYear } from './is-year-fortune-question';
 import {
   buildDayFortuneCounselReply,
   offsetToDayLabel,
   type DailyFortuneCounselPayload,
 } from '../daily-fortune/counsel-format';
 import { tryDailyFortuneFromSajuContext } from '../daily-fortune/from-saju-context';
+import {
+  buildYearFortuneCounselReply,
+  tryYearFortuneFromSajuContext,
+} from '../daily-fortune/year-counsel-format';
 
 const MAX_CARDS_IN_REPLY = 4;
 
@@ -64,6 +69,8 @@ function isLikelyOffTopic(message: string): boolean {
 function topicLabelFromMessage(message: string): string {
   const dayTarget = parseDayFortuneTarget(message);
   if (dayTarget) return dayTarget.label;
+  const year = parseYearFortuneYear(message);
+  if (year !== null) return `${year}년 운세`;
   for (const [re, id] of [
     [/연애|애인|결혼|짝|궁합|관계|배우자/, 8],
     [/재물|돈|금전|투자|수입/, 7],
@@ -82,6 +89,7 @@ function topicLabelFromMessage(message: string): string {
 
 function rankCounselCards(cards: Gemma24SajuCard[], userMessage: string): Gemma24SajuCard[] {
   const dayQ = isDayFortuneQuestion(userMessage);
+  const yearQ = isYearFortuneQuestion(userMessage);
   const score = (c: Gemma24SajuCard): number => {
     if (c.councilCertified === false) return 5;
     const k = cardKind(c);
@@ -89,6 +97,11 @@ function rankCounselCards(cards: Gemma24SajuCard[], userMessage: string): Gemma2
     if (dayQ) {
       if (/일운|일진|해석·(?:오늘|내일|모레|\d{4}년)/.test(title)) return 0;
       if (k.startsWith('deep-6') || title.startsWith('심층·[6]')) return 8;
+      if (k.startsWith('deep-')) return 6;
+    }
+    if (yearQ) {
+      if (/세운|해석·\d{4}년|올해\s*흐름/.test(title)) return 0;
+      if (k.startsWith('deep-6') || title.startsWith('심층·[6]')) return 1;
       if (k.startsWith('deep-')) return 6;
     }
     if (k.startsWith('deep-')) return 0;
@@ -277,6 +290,47 @@ export async function tryCouncilCounselReply(
       mode: 'council-counsel',
     };
   }
+
+  const year = parseYearFortuneYear(trimmed);
+  if (year !== null) {
+    const yearPayload = tryYearFortuneFromSajuContext(sajuContext, year);
+    if (yearPayload) {
+      const content = buildYearFortuneCounselReply(yearPayload, counselorName);
+      const yearCards = passCards.filter((c) =>
+        /세운|대운|해석·\d{4}년/.test(c.title.trim()),
+      );
+      const picked = yearCards.length ? pickCardsForReply(yearCards, trimmed) : [];
+      const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
+      const replyGaps = inferCounselReplyCardGaps(trimmed, picked, passCards);
+      if (replyGaps.length && councilCardAutoRequestEnabled()) {
+        autoEnqueueCouncilCardProductionBackground({
+          needs: replyGaps,
+          source: 'counsel',
+          userMessage: trimmed,
+          sajuContextSnippet: sajuContext,
+          counselorName,
+        });
+      }
+      return {
+        content,
+        cardCount: certifiedCount,
+        draftCardCount: Math.max(picked.length - certifiedCount, replyGaps.length > 0 ? 1 : 0),
+        mode: 'council-counsel',
+      };
+    }
+
+    const who = counselorName ? `『${counselorName}』입니다. ` : '';
+    return {
+      content: [
+        `${who}「${year}년 운세」를 계산하려면 사주 입력 정보가 필요합니다.`,
+        '생년월일을 확인한 뒤 다시 질문해 주세요.',
+      ].join('\n'),
+      cardCount: 0,
+      draftCardCount: 0,
+      mode: 'council-counsel',
+    };
+  }
+
   const { cards: supplemental, queuedCount } = await prepareCounselSupplementalCards({
     sajuContext,
     userMessage: trimmed,
@@ -304,12 +358,15 @@ export async function tryCouncilCounselReply(
 
   const onlyEncyclopedia =
     pickedPre.length > 0 && pickedPre.every(isEncyclopediaCounselCard);
-  if (onlyEncyclopedia && isDayFortuneQuestion(trimmed)) {
+  if (
+    onlyEncyclopedia
+    && (isDayFortuneQuestion(trimmed) || isYearFortuneQuestion(trimmed))
+  ) {
     const who = counselorName ? `『${counselorName}』입니다. ` : '';
     return {
       content: [
         `${who}질문하신 「${topicLabelFromMessage(trimmed)}」에 맞는 인증 카드를 준비 중입니다.`,
-        '잠시 후 같은 질문을 다시 해 주시면 일운 풀이가 이어집니다.',
+        '잠시 후 같은 질문을 다시 해 주시면 맞춤 풀이가 이어집니다.',
       ].join('\n'),
       cardCount: 0,
       draftCardCount: replyGaps.length > 0 ? 1 : 0,

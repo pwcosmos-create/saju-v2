@@ -11,6 +11,11 @@ import {
   parseDayFortuneOffset,
   parseDayFortuneTarget,
 } from './is-today-fortune-question';
+import {
+  isYearFortuneQuestion,
+  parseYearFortuneYear,
+  yearFortuneCardTitle,
+} from './is-year-fortune-question';
 import { dayFortuneCardTitle, dayFortuneCardTitleForTarget, offsetToDayLabel } from '../daily-fortune/counsel-format';
 
 export type Gemma24SajuCard = {
@@ -680,6 +685,22 @@ export function searchConsultCouncilCards(
   if (!pack?.cards.length) return [];
 
   const certifiedOnly = process.env.GEMMA24_COUNCIL_CERTIFIED_ONLY !== '0';
+
+  if (isYearFortuneQuestion(userMessage)) {
+    const year = parseYearFortuneYear(userMessage)!;
+    const wantTitle = yearFortuneCardTitle(year);
+    const yearCards = pack.cards.filter((c) => {
+      const t = c.title.trim();
+      return (
+        t === wantTitle
+        || t.includes(`${year}년`)
+        || /해석·세운|올해\s*흐름|심층·\[6\]/.test(t)
+      );
+    });
+    const filtered = filterCouncilCertifiedCards(yearCards);
+    if (certifiedOnly && !filtered.some((c) => c.councilCertified)) return [];
+    return filtered;
+  }
 
   if (isDayFortuneQuestion(userMessage)) {
     const target = parseDayFortuneTarget(userMessage);

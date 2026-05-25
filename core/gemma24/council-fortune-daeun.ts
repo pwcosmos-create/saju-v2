@@ -94,7 +94,8 @@ function stemElemFromLabel(label: string): string | null {
   return STEM_KO_TO_ELEM[stem] ?? null;
 }
 
-function periodAdvice(
+/** 대운 구간별 조언 (상담·세운 풀이 공용) */
+export function adviseDaeunPeriod(
   period: DaeunPeriod,
   yongsinElem: string | null,
   gisinElems: string[],
@@ -173,7 +174,7 @@ export function buildDaeunFortuneBody(opts: {
   lines.push('', '◆ 구간별 흐름 (10년 단위)');
   for (const p of periods) {
     lines.push(
-      `— ${p.age}세(${p.startYear}~${p.endYear}) ${p.label}: ${periodAdvice(p, yongsinElem, gisinElems)}`,
+      `— ${p.age}세(${p.startYear}~${p.endYear}) ${p.label}: ${adviseDaeunPeriod(p, yongsinElem, gisinElems)}`,
     );
   }
 
@@ -182,7 +183,7 @@ export function buildDaeunFortuneBody(opts: {
     const age = new Date().getFullYear() - birthYear;
     if (cur) {
       lines.push('', `◆ 지금(${age}세) — ${cur.label} 대운`);
-      lines.push(`— ${periodAdvice(cur, yongsinElem, gisinElems)}`);
+      lines.push(`— ${adviseDaeunPeriod(cur, yongsinElem, gisinElems)}`);
       if (yongsinElem) {
         lines.push(`— 용신 ${yongsinElem} 방향(안정·관리)에 맞춰 역할을 정리하면 흐름이 부드럽습니다.`);
       }

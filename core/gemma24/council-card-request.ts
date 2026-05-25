@@ -20,6 +20,11 @@ import {
   parseDayFortuneTarget,
   type DayFortuneTarget,
 } from './is-today-fortune-question';
+import {
+  isYearFortuneQuestion,
+  parseYearFortuneYear,
+  yearFortuneCardTitle,
+} from './is-year-fortune-question';
 import { dayFortuneCardTitleForTarget } from '../daily-fortune/counsel-format';
 import { extractPromptFacts, pickConsultDeepIds, type Gemma24SajuCard } from './saju-knowledge';
 
@@ -696,8 +701,23 @@ export function inferCounselReplyCardGaps(
   pickedCards: Gemma24SajuCard[],
   poolCards: Gemma24SajuCard[],
 ): CouncilCardNeed[] {
-  const target = parseDayFortuneTarget(userMessage);
+  const year = parseYearFortuneYear(userMessage);
   const all = [...poolCards, ...pickedCards];
+
+  if (year !== null) {
+    const title = yearFortuneCardTitle(year);
+    const need: CouncilCardNeed = {
+      title,
+      kind: 'interpret',
+      priority: 'P0',
+      reason: `질문(${userMessage.slice(0, 48)})에 맞는 인증 세운 카드(${title})가 없어 제작 요청합니다.`,
+    };
+    if (!cardCoversTitle(all, need.title)) return [need];
+    if (!pickedCards.some((c) => !isEncyclopediaCounselCard(c))) return [need];
+    return [];
+  }
+
+  const target = parseDayFortuneTarget(userMessage);
 
   if (target) {
     const need = dayFortuneCardNeed(target, userMessage);

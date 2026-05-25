@@ -1,6 +1,7 @@
 /**
  * 인증 카드 본문 → 화면용 풀이 (중복·면책·메타 제거, 변수 카드 구조 보존)
  */
+import { isTodayFortuneDisplayCard } from '../daily-fortune/counsel-format';
 import type { Gemma24SajuCard } from './saju-knowledge';
 import { humanizeDeepSectionLabel, humanizeDeepSectionText } from './fortune-display-order';
 import {
@@ -146,7 +147,7 @@ function stripKeywordBlock(text: string): string {
 }
 
 function preferSummaryOrBody(card: Gemma24SajuCard): string {
-  if (isVariableCard(card)) return card.body;
+  if (isVariableCard(card) || isTodayFortuneDisplayCard(card)) return card.body;
   const summary = card.summary?.trim();
   const body = sanitizeCardBody(card.body);
   if (summary && summary.length >= 24 && summary.length <= 320) {
@@ -241,7 +242,7 @@ function formatReadableBody(body: string): string {
 
 /** 카드 1장 → 화면용 본문 */
 export function optimizeCardBodyForDisplay(card: Gemma24SajuCard): string {
-  if (isVariableCard(card)) {
+  if (isVariableCard(card) || isTodayFortuneDisplayCard(card)) {
     const sub = shortCardSubtitle(card.title);
     const body = formatVariableCardBody(card.body);
     const text = body.startsWith('◆') ? body : `◆ ${sub}\n${body}`;

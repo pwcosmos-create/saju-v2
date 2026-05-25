@@ -9,6 +9,11 @@ import { summarizeEvents } from './events';
 
 export const TODAY_FORTUNE_CARD_TITLE = '해석·오늘 일운';
 
+export function isTodayFortuneDisplayCard(card: { title: string }): boolean {
+  const t = card.title.trim();
+  return t === TODAY_FORTUNE_CARD_TITLE || /해석·오늘\s*일운/.test(t);
+}
+
 export type DailyFortuneCounselPayload = {
   date: string;
   dayLabel: string;

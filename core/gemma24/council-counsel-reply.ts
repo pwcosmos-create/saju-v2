@@ -229,11 +229,21 @@ export async function tryCouncilCounselReply(
       dailyFortune: options?.dailyFortune ?? null,
       searchedCards: passCards,
     });
+
+    if (options?.dailyFortune) {
+      const content = buildTodayFortuneCounselReply(options.dailyFortune, counselorName);
+      const picked = todayCards.length ? pickCardsForReply(todayCards, trimmed) : [];
+      const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
+      return {
+        content,
+        cardCount: certifiedCount,
+        draftCardCount: Math.max(picked.length - certifiedCount, queuedCount > 0 ? 1 : 0),
+        mode: 'council-counsel',
+      };
+    }
+
     if (todayCards.length) {
-      const content = buildCardReply(todayCards, trimmed, counselorName)
-        || (options?.dailyFortune
-          ? buildTodayFortuneCounselReply(options.dailyFortune, counselorName)
-          : '');
+      const content = buildCardReply(todayCards, trimmed, counselorName);
       if (content.trim()) {
         const picked = pickCardsForReply(todayCards, trimmed);
         const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
@@ -244,14 +254,6 @@ export async function tryCouncilCounselReply(
           mode: 'council-counsel',
         };
       }
-    }
-    if (options?.dailyFortune) {
-      return {
-        content: buildTodayFortuneCounselReply(options.dailyFortune, counselorName),
-        cardCount: 0,
-        draftCardCount: 1,
-        mode: 'council-counsel',
-      };
     }
   }
   const { cards: supplemental, queuedCount } = await prepareCounselSupplementalCards({

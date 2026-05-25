@@ -13,6 +13,11 @@ import {
   stripFortuneFooters,
 } from '../core/gemma24/fortune-text-quality.ts';
 import { buildDaeunFortuneBody, parseDaeunFromQuery } from '../core/gemma24/council-fortune-daeun.ts';
+import {
+  buildTodayFortuneCardDraft,
+  buildTodayFortuneCounselReply,
+} from '../core/daily-fortune/counsel-format.ts';
+import { optimizeCardBodyForDisplay } from '../core/gemma24/optimize-card-body.ts';
 import { extractPromptFacts } from '../core/gemma24/saju-knowledge.ts';
 
 const DAEUN_SAMPLE = `
@@ -165,6 +170,39 @@ const genericDaeun =
   '◆ 대운·세운\n— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다. 상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다.';
 if (!isLowQualityFortuneBody(genericDaeun, DAEUN_SAMPLE)) {
   console.error('FAIL generic daeun detect');
+  fail++;
+}
+
+const todayPayload = {
+  date: '2026-05-25',
+  dayLabel: '己亥',
+  dayHanja: '己亥',
+  level: '보통',
+  score: 0,
+  sipsin: '정인',
+  action: '휴식·학습·회복 유리',
+  oneLiner: '편인 흐름에 정인일 · 특이 사항 없음 · 보통',
+  eventsSummary: '특이 사항 없음',
+  daewoonSipsin: '정재',
+  yearSipsin: '편인',
+  monthSipsin: '식신',
+};
+const todayDraft = buildTodayFortuneCardDraft(todayPayload);
+const todayCard = {
+  id: 9001,
+  title: todayDraft.title,
+  body: todayDraft.body,
+  summary: todayDraft.summary,
+  councilCertified: false,
+};
+const todayOptimized = optimizeCardBodyForDisplay(todayCard);
+if (!/◆\s*핵심|일진 십신|◆\s*실천/.test(todayOptimized)) {
+  console.error('FAIL today fortune card body:', todayOptimized.slice(0, 120));
+  fail++;
+}
+const todayReply = buildTodayFortuneCounselReply(todayPayload, '유진');
+if (!/◆\s*오늘의 기운|◆\s*흐름 한눈에|◆\s*오늘 이렇게/.test(todayReply)) {
+  console.error('FAIL today fortune counsel reply');
   fail++;
 }
 

@@ -102,11 +102,18 @@ function parsePromptContext(query: string) {
   };
 }
 
+const ELEM_HANJA: Record<string, string> = { 목: '木', 화: '火', 토: '土', 금: '金', 수: '水' };
+
 function formatYongsinHint(ctx: ReturnType<typeof parsePromptContext>): string {
-  const raw = ctx.yongsinLine?.split(/[/·]/)[0]?.trim();
-  if (raw) return raw;
-  const elem = ctx.facts.yongsinElem;
-  return elem ? `${elem}(${({ 목: '木', 화: '火', 토: '土', 금: '金', 수: '水' } as const)[elem]})` : '확정 용신';
+  const raw = ctx.yongsinLine?.split(/[/·]/)[0]?.trim() ?? '';
+  const elem = raw.match(/([목화토금수])/)?.[1] ?? ctx.facts.yongsinElem;
+  if (!elem) return '확정 용신';
+  const hanja =
+    raw.match(/\(([土金水木火])\)/)?.[1]
+    ?? raw.match(/\(([土金水木火])/)?.[1]
+    ?? ELEM_HANJA[elem]
+    ?? '';
+  return hanja ? `${elem}(${hanja})` : elem;
 }
 
 function cleanGyeokLabel(gyeok: string | null | undefined): string {

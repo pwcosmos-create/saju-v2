@@ -121,6 +121,12 @@ if (isTruncatedFortuneLine('— 기토 일간의 강점을 살리되, 용신 화
   fail++;
 }
 
+const fixed = polishFortuneText('— 경금 일간의 강점을 살리되, 용신 토(土을(를) 일상');
+if (!fixed.includes('토(土)을(를)')) {
+  console.error('FAIL yongsin paren repair:', fixed);
+  fail++;
+}
+
 if (fail) {
   console.error(`\n${fail} failure(s)`);
   process.exit(1);

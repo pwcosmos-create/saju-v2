@@ -213,6 +213,7 @@ export function fortuneOutputHasDefects(text: string): boolean {
   if (/←/.test(t)) return true;
   if (/[가-힣]{2,}\(\s*\)/.test(t)) return true;
   if (t.split('\n').some((line) => lineHasUnclosedParen(line.trim()) || isTruncatedFortuneLine(line))) return true;
+  if (/\([土金水木火]을\(를\)/.test(t)) return true;
   if (isCardScaffoldBody(t)) return true;
   return false;
 }
@@ -247,9 +248,15 @@ export function polishFortuneText(text: string): string {
     seen.add(key);
     return block;
   });
+  out = out.replace(/([목화토금수])\(([土金水木火])을\(를\)/g, '$1($2)을(를)');
   out = out.replace(
-    /— (\S+) 일간의 강점을 살리되, 용신 ([목화토금수]\([^)\n]+)\)?\s*$/gm,
-    '— $1 일간의 강점을 살리되, 용신 $2을(를) 일상 습관으로 옮기는 것이 핵심입니다.',
+    /— (\S+) 일간의 강점을 살리되, 용신 ([목화토금수])(?:\(([土金水木火])\))?\s*$/gm,
+    (_full, stem, elem, hanja) => {
+      const hanjaMap = { 목: '木', 화: '火', 토: '土', 금: '金', 수: '水' } as const;
+      const h = hanja ?? hanjaMap[elem as keyof typeof hanjaMap] ?? '';
+      const label = h ? `${elem}(${h})` : elem;
+      return `— ${stem} 일간의 강점을 살리되, 용신 ${label}을(를) 일상 습관으로 옮기는 것이 핵심입니다.`;
+    },
   );
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }

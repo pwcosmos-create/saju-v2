@@ -6,7 +6,7 @@ import {
   draftsToSajuCards,
   inferCounselFallbackNeeds,
   prepareCounselSupplementalCards,
-  prepareTodayFortuneCounselCards,
+  prepareDayFortuneCounselCards,
 } from './council-card-request';
 import type { Gemma24SajuCard } from './saju-knowledge';
 import {
@@ -15,9 +15,14 @@ import {
   searchConsultCouncilCards,
 } from './saju-knowledge';
 import { optimizeCardBodyForDisplay, shortCardSubtitle } from './optimize-card-body';
-import { isTodayFortuneQuestion } from './is-today-fortune-question';
 import {
-  buildTodayFortuneCounselReply,
+  dayFortuneTopicLabel,
+  isDayFortuneQuestion,
+  parseDayFortuneOffset,
+} from './is-today-fortune-question';
+import {
+  buildDayFortuneCounselReply,
+  offsetToDayLabel,
   type DailyFortuneCounselPayload,
 } from '../daily-fortune/counsel-format';
 
@@ -56,7 +61,8 @@ function isLikelyOffTopic(message: string): boolean {
 }
 
 function topicLabelFromMessage(message: string): string {
-  if (isTodayFortuneQuestion(message)) return '오늘의 운세';
+  const dayOffset = parseDayFortuneOffset(message);
+  if (dayOffset !== null) return dayFortuneTopicLabel(dayOffset);
   for (const [re, id] of [
     [/연애|애인|결혼|짝|궁합|관계|배우자/, 8],
     [/재물|돈|금전|투자|수입/, 7],
@@ -74,13 +80,13 @@ function topicLabelFromMessage(message: string): string {
 }
 
 function rankCounselCards(cards: Gemma24SajuCard[], userMessage: string): Gemma24SajuCard[] {
-  const todayQ = isTodayFortuneQuestion(userMessage);
+  const dayQ = isDayFortuneQuestion(userMessage);
   const score = (c: Gemma24SajuCard): number => {
     if (c.councilCertified === false) return 5;
     const k = cardKind(c);
     const title = c.title.trim();
-    if (todayQ) {
-      if (/일운|오늘|일진|해석·세운/.test(title)) return 0;
+    if (dayQ) {
+      if (/일운|일진|해석·(?:오늘|내일)|오늘|내일/.test(title)) return 0;
       if (k.startsWith('deep-6') || title.startsWith('심층·[6]')) return 8;
       if (k.startsWith('deep-')) return 6;
     }
@@ -221,17 +227,20 @@ export async function tryCouncilCounselReply(
   const query = buildConsultCardSearchQuery(sajuContext, trimmed, compareSajuContext);
   const passCards = searchConsultCouncilCards(query, trimmed);
 
-  if (isTodayFortuneQuestion(trimmed)) {
-    const { cards: todayCards, queuedCount } = await prepareTodayFortuneCounselCards({
+  const dayOffset = parseDayFortuneOffset(trimmed);
+  if (dayOffset !== null) {
+    const day = offsetToDayLabel(dayOffset);
+    const { cards: todayCards, queuedCount } = await prepareDayFortuneCounselCards({
       sajuContext,
       userMessage: trimmed,
       counselorName,
       dailyFortune: options?.dailyFortune ?? null,
       searchedCards: passCards,
+      dayOffset,
     });
 
     if (options?.dailyFortune) {
-      const content = buildTodayFortuneCounselReply(options.dailyFortune, counselorName);
+      const content = buildDayFortuneCounselReply(options.dailyFortune, counselorName, day);
       const picked = todayCards.length ? pickCardsForReply(todayCards, trimmed) : [];
       const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
       return {

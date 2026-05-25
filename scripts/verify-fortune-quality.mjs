@@ -18,6 +18,8 @@ import {
   buildTodayFortuneCounselReply,
 } from '../core/daily-fortune/counsel-format.ts';
 import { optimizeCardBodyForDisplay } from '../core/gemma24/optimize-card-body.ts';
+import { buildDayFortuneCounselReply } from '../core/daily-fortune/counsel-format.ts';
+import { parseDayFortuneOffset } from '../core/gemma24/is-today-fortune-question.ts';
 import { extractCounselVoiceAnswer } from '../lib/counsel-voice-answer.ts';
 import { prepareTextForTts } from '../lib/prepare-text-for-tts.ts';
 import { splitForPausedReading } from '../lib/tts-paused-reading.ts';
@@ -206,6 +208,16 @@ if (!/◆\s*핵심|일진 십신|◆\s*실천/.test(todayOptimized)) {
 const todayReply = buildTodayFortuneCounselReply(todayPayload, '유진');
 if (!/◆\s*오늘의 기운|◆\s*흐름 한눈에|◆\s*오늘 이렇게/.test(todayReply)) {
   console.error('FAIL today fortune counsel reply');
+  fail++;
+}
+
+if (parseDayFortuneOffset('내일은 어때?') !== 1) {
+  console.error('FAIL tomorrow question detect');
+  fail++;
+}
+const tomorrowReply = buildDayFortuneCounselReply(todayPayload, '유진', '내일');
+if (!/내일의 운세|◆\s*내일의 기운/.test(tomorrowReply)) {
+  console.error('FAIL tomorrow counsel reply');
   fail++;
 }
 

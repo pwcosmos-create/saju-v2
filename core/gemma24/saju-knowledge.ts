@@ -6,7 +6,8 @@
 import fs from 'fs';
 import path from 'path';
 import { liveCardsPaths } from './cards-path';
-import { isTodayFortuneQuestion } from './is-today-fortune-question';
+import { isDayFortuneQuestion, parseDayFortuneOffset } from './is-today-fortune-question';
+import { dayFortuneCardTitle, offsetToDayLabel } from '../daily-fortune/counsel-format';
 
 export type Gemma24SajuCard = {
   id: number;
@@ -646,7 +647,7 @@ const CONSULT_TOPIC_DEEP: [RegExp, number][] = [
 ];
 
 export function pickConsultDeepIds(userMessage: string): number[] {
-  if (isTodayFortuneQuestion(userMessage)) return [];
+  if (isDayFortuneQuestion(userMessage)) return [];
 
   const ids: number[] = [];
   for (const [re, id] of CONSULT_TOPIC_DEEP) {
@@ -675,6 +676,24 @@ export function searchConsultCouncilCards(
   if (!pack?.cards.length) return [];
 
   const certifiedOnly = process.env.GEMMA24_COUNCIL_CERTIFIED_ONLY !== '0';
+
+  if (isDayFortuneQuestion(userMessage)) {
+    const offset = parseDayFortuneOffset(userMessage) ?? 0;
+    const wantTitle = dayFortuneCardTitle(offsetToDayLabel(offset));
+    const dayCards = pack.cards.filter((c) => {
+      const t = c.title.trim();
+      return (
+        t === wantTitle
+        || (offset === 0 && /해석·오늘\s*일운/.test(t))
+        || (offset === 1 && /해석·내일\s*일운/.test(t))
+        || (/일운/.test(t) && (offset === 0 ? /오늘/ : /내일/).test(t))
+      );
+    });
+    const filtered = filterCouncilCertifiedCards(dayCards);
+    if (certifiedOnly && !filtered.some((c) => c.councilCertified)) return [];
+    return filtered;
+  }
+
   const facts = extractPromptFacts(query);
   const seen = new Set<number>();
   const out: Gemma24SajuCard[] = [];

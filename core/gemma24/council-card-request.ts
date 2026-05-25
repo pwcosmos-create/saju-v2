@@ -6,11 +6,15 @@ import path from 'path';
 import { collectGemma24CardStats } from './card-stats';
 import { FORTUNE_SECTION_TITLES } from './fortune-display-order';
 import {
-  buildTodayFortuneCardDraft,
+  buildDayFortuneCardDraft,
+  dayFortuneCardTitle,
+  dayFortuneTopic,
+  offsetToDayLabel,
+  TOMORROW_FORTUNE_CARD_TITLE,
   TODAY_FORTUNE_CARD_TITLE,
   type DailyFortuneCounselPayload,
 } from '../daily-fortune/counsel-format';
-import { isTodayFortuneQuestion } from './is-today-fortune-question';
+import { isDayFortuneQuestion, parseDayFortuneOffset } from './is-today-fortune-question';
 import { extractPromptFacts, pickConsultDeepIds, type Gemma24SajuCard } from './saju-knowledge';
 
 export type CouncilCardNeed = {
@@ -52,7 +56,8 @@ const DEEP_SECTION_LABEL: Record<number, string> = {
 };
 
 const INTERPRET_BY_TOPIC: [RegExp, string][] = [
-  [/오늘의?\s*운세|오늘\s*운|일운|금일\s*운/, '해석·오늘 일운'],
+  [/내일|다음\s*날|tomorrow/i, TOMORROW_FORTUNE_CARD_TITLE],
+  [/오늘의?\s*운세|오늘\s*운|일운|금일\s*운/, TODAY_FORTUNE_CARD_TITLE],
   [/궁합|연애|애인|결혼|짝|관계|배우자/, '해석·궁합·연인 비교'],
   [/올해|세운|월운|시기|흐름|요즘/, '해석·세운·올해 흐름'],
   [/대운|전환/, '해석·대운 전환기'],
@@ -519,53 +524,66 @@ export async function autoEnqueueCouncilCardProduction(params: {
   return record.id;
 }
 
-function isTodayFortuneKnowledgeCard(card: Gemma24SajuCard): boolean {
+function isDayFortuneKnowledgeCard(card: Gemma24SajuCard, dayOffset: number): boolean {
   const t = card.title.trim();
   if (/^심층·\[6\]/.test(t)) return false;
-  if (t === TODAY_FORTUNE_CARD_TITLE || /해석·오늘|오늘\s*일운/.test(t)) return true;
-  return /일운|오늘의?\s*운세|금일\s*운|일진/.test(t);
+  const day = offsetToDayLabel(dayOffset);
+  const want = dayFortuneCardTitle(day);
+  if (t === want || new RegExp(`해석·${day}\\s*일운`).test(t)) return true;
+  if (dayOffset === 0) return /일운|오늘의?\s*운세|금일\s*운|일진/.test(t) && /오늘|일운/.test(t);
+  return /일운|내일/.test(t);
 }
 
-function hasPassTodayFortuneCard(titles: string[], matched: Gemma24SajuCard[]): boolean {
+function hasPassDayFortuneCard(
+  titles: string[],
+  matched: Gemma24SajuCard[],
+  dayOffset: number,
+): boolean {
+  const day = offsetToDayLabel(dayOffset);
+  const want = dayFortuneCardTitle(day);
   const passTitle = (t: string) =>
-    t === TODAY_FORTUNE_CARD_TITLE
-    || /해석·오늘\s*일운/.test(t)
-    || (/일운/.test(t) && /오늘/.test(t));
+    t === want
+    || new RegExp(`해석·${day}\\s*일운`).test(t)
+    || (/일운/.test(t) && (dayOffset === 0 ? /오늘/ : /내일/).test(t));
   if (titles.some(passTitle)) return true;
   return matched.some(
-    (c) => c.councilCertified !== false && isTodayFortuneKnowledgeCard(c),
+    (c) => c.councilCertified !== false && isDayFortuneKnowledgeCard(c, dayOffset),
   );
 }
 
 /**
- * 오늘의 운세 — PASS 카드 우선, 없으면 일진 데이터로 초안 제작·접수 후 상담에 사용
+ * 오늘·내일 일운 — PASS 카드 우선, 없으면 일진 엔진 데이터로 초안 제작
  */
-export async function prepareTodayFortuneCounselCards(params: {
+export async function prepareDayFortuneCounselCards(params: {
   sajuContext: string;
   userMessage: string;
   counselorName?: string;
   dailyFortune: DailyFortuneCounselPayload | null;
   searchedCards: Gemma24SajuCard[];
+  dayOffset?: number;
 }): Promise<{ cards: Gemma24SajuCard[]; queuedCount: number }> {
-  if (!isTodayFortuneQuestion(params.userMessage)) {
+  const dayOffset = params.dayOffset ?? parseDayFortuneOffset(params.userMessage) ?? 0;
+  if (!isDayFortuneQuestion(params.userMessage)) {
     return { cards: [], queuedCount: 0 };
   }
 
-  const passToday = params.searchedCards.filter(isTodayFortuneKnowledgeCard);
+  const day = offsetToDayLabel(dayOffset);
+  const cardTitle = dayFortuneCardTitle(day);
+  const passDay = params.searchedCards.filter((c) => isDayFortuneKnowledgeCard(c, dayOffset));
   const titles = certifiedTitles();
 
-  if (hasPassTodayFortuneCard(titles, passToday) && passToday.length) {
-    return { cards: passToday, queuedCount: 0 };
+  if (hasPassDayFortuneCard(titles, passDay, dayOffset) && passDay.length) {
+    return { cards: passDay, queuedCount: 0 };
   }
 
   const need: CouncilCardNeed = {
-    title: TODAY_FORTUNE_CARD_TITLE,
+    title: cardTitle,
     kind: 'today-fortune',
     priority: 'P0',
-    reason: `오늘의 운세(${params.dailyFortune?.date ?? '당일'}) 맞춤 인증 카드가 없어 즉석 제작합니다.`,
+    reason: `${dayFortuneTopic(day)}(${params.dailyFortune?.date ?? day}) 맞춤 인증 카드가 없어 즉석 제작합니다.`,
   };
 
-  const fromLog = await loadRecentDraftCards([TODAY_FORTUNE_CARD_TITLE]);
+  const fromLog = await loadRecentDraftCards([cardTitle]);
   let draftCards: Gemma24SajuCard[];
   let draftsForQueue: CouncilCardDraft[];
 
@@ -573,7 +591,7 @@ export async function prepareTodayFortuneCounselCards(params: {
     draftCards = fromLog;
     draftsForQueue = [];
   } else if (params.dailyFortune) {
-    draftsForQueue = [buildTodayFortuneCardDraft(params.dailyFortune)];
+    draftsForQueue = [buildDayFortuneCardDraft(params.dailyFortune, day)];
     draftCards = draftsToSajuCards(draftsForQueue);
   } else {
     draftsForQueue = buildCouncilCardDrafts([{ ...need, kind: 'interpret' }]);
@@ -602,8 +620,8 @@ export async function prepareTodayFortuneCounselCards(params: {
     queuedCount = 1;
   }
 
-  const merged = [...passToday];
-  const seen = new Set(passToday.map((c) => c.title.trim()));
+  const merged = [...passDay];
+  const seen = new Set(passDay.map((c) => c.title.trim()));
   for (const c of draftCards) {
     if (seen.has(c.title.trim())) continue;
     seen.add(c.title.trim());
@@ -612,6 +630,9 @@ export async function prepareTodayFortuneCounselCards(params: {
 
   return { cards: merged.length ? merged : draftCards, queuedCount };
 }
+
+/** @deprecated prepareDayFortuneCounselCards 사용 */
+export const prepareTodayFortuneCounselCards = prepareDayFortuneCounselCards;
 
 /** 응답 지연 없이 백그라운드 접수 */
 export function autoEnqueueCouncilCardProductionBackground(
@@ -692,6 +713,7 @@ export function inferCounselFallbackNeeds(userMessage: string): CouncilCardNeed[
   if (!t) return [];
 
   const rules: [RegExp, string, string][] = [
+    [/내일|다음\s*날|tomorrow/i, TOMORROW_FORTUNE_CARD_TITLE, 'today-fortune'],
     [/오늘의?\s*운세|오늘\s*운|일운|금일\s*운/, TODAY_FORTUNE_CARD_TITLE, 'today-fortune'],
     [/운세|요즘|지금|이번\s*달|올해|세운|월운|시기|흐름/, '해석·세운·올해 흐름', 'interpret'],
     [/연애|애인|결혼|짝|궁합|관계|배우자/, '해석·궁합·연인 비교', 'interpret'],

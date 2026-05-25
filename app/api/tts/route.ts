@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 import { resolveGeminiTtsVoiceForCounselor } from '../../../core/counselor-config';
-import { stripHanjaForTts } from '../../../lib/strip-hanja-for-tts';
+import { prepareTextForTts } from '../../../lib/prepare-text-for-tts';
 import { geminiTtsGenerateUrl, resolveGeminiTtsModel } from '../../../lib/gemini-tts-config';
 
 /** 긴 답은 여러 청크로 호출되므로 채팅보다 여유 있게 */
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     body.ttsContext === 'compatibility' ? 'compatibility' : 'single',
   );
 
-  const text = stripHanjaForTts((body.text ?? '').trim());
+  const text = prepareTextForTts((body.text ?? '').trim());
   if (!text) {
     return new Response(JSON.stringify({ error: 'text 없음' }), { status: 400 });
   }

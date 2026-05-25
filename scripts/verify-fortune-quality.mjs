@@ -18,6 +18,9 @@ import {
   buildTodayFortuneCounselReply,
 } from '../core/daily-fortune/counsel-format.ts';
 import { optimizeCardBodyForDisplay } from '../core/gemma24/optimize-card-body.ts';
+import { extractCounselVoiceAnswer } from '../lib/counsel-voice-answer.ts';
+import { prepareTextForTts } from '../lib/prepare-text-for-tts.ts';
+import { splitForPausedReading } from '../lib/tts-paused-reading.ts';
 import { extractPromptFacts } from '../core/gemma24/saju-knowledge.ts';
 
 const DAEUN_SAMPLE = `
@@ -203,6 +206,33 @@ if (!/◆\s*핵심|일진 십신|◆\s*실천/.test(todayOptimized)) {
 const todayReply = buildTodayFortuneCounselReply(todayPayload, '유진');
 if (!/◆\s*오늘의 기운|◆\s*흐름 한눈에|◆\s*오늘 이렇게/.test(todayReply)) {
   console.error('FAIL today fortune counsel reply');
+  fail++;
+}
+
+const counselRaw = `『유진』입니다. 질문하신 「오늘의 운세」에 대해 풀어 보았습니다.
+
+◆ 오늘의 기운
+2026-05-25 · 보통
+무리하지 않고 리듬을 맞추면 좋은 날입니다.
+
+위 내용은 오늘 일진과 사주 흐름을 바탕으로 한 참고 풀이입니다.`;
+const voiceOnly = extractCounselVoiceAnswer(counselRaw);
+if (/질문하신|위 내용은/.test(voiceOnly)) {
+  console.error('FAIL counsel voice extract:', voiceOnly);
+  fail++;
+}
+if (!/오늘의 기운/.test(voiceOnly)) {
+  console.error('FAIL counsel voice missing body');
+  fail++;
+}
+const ttsReady = prepareTextForTts(counselRaw);
+if (!/2026년 5월 25일/.test(ttsReady) || /己亥|★/.test(ttsReady)) {
+  console.error('FAIL prepareTextForTts:', ttsReady);
+  fail++;
+}
+const ttsUnits = splitForPausedReading(ttsReady);
+if (ttsUnits.length < 2 || !ttsUnits.some((u) => u.text.includes('오늘의 기운'))) {
+  console.error('FAIL splitForPausedReading units:', ttsUnits.length);
   fail++;
 }
 

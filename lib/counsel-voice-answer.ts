@@ -1,22 +1,51 @@
 /**
- * 음성 상담 TTS용 — 질문에 대한 답 본문만 추출 (인트로·면책·◆ 제목·푸터 제외)
+ * 음성 상담 TTS용 — 질문에 대한 답 본문만 추출 (인트로·면책·푸터 제외)
  */
 
-const INTRO_LINE_RE =
-  /^(『[^』]+』입니다\.?\s*)?(질문하신\s*「[^」]+」에 대해 풀어 보았습니다\.?|질문하신\s*「오늘의 운세」를[^.\n]+풀어 보았습니다\.?|『[^』]+』\s*기준으로\s*)?두 분 사주를 비교해 보았습니다\.?$/;
+function isIntroBlock(block: string): boolean {
+  const t = block.replace(/\*\*/g, '').trim();
+  if (t.startsWith('◆')) return false;
+  return (/질문하신\s*「[^」]+」/.test(t) || /『[^』]+』\s*기준으로/.test(t))
+    && (/풀어\s*보았|비교해\s*보았/.test(t));
+}
+
+function isFooterBlock(block: string): boolean {
+  const first = block.split('\n')[0]?.trim() ?? '';
+  return FOOTER_LINE_RE.test(first) || FOOTER_LINE_RE.test(block.trim());
+}
 
 const FOOTER_LINE_RE =
-  /^(위 내용은 입력하신 사주|더 궁금한 점이 있으면|참고용 풀이|본 내용은 명리|운영 후원|💛)/;
+  /^(위 내용은(?: 입력하신 사주| 오늘 일진)|더 궁금한 점이 있으면|참고용 풀이|본 내용은 명리|운영 후원|💛|saju\.coupax)/i;
 
 const SECTION_HEADER_RE = /^\*\*(강점|주의점|실천 팁)\*\*\s*$/;
 
 const CAUTION_BLOCK_RE = /◆\s*주의[\s\S]*?(?=(\n\s*\n)|$)/g;
 
+const SKIP_LINE_RE =
+  /^(키워드\s*[:：]|PASS\s*[:：]|FAIL\s*[:：]|—\s*saju\.)/i;
+
+function flattenBullets(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/^—\s*/, '').trim())
+    .filter((line) => line && !SKIP_LINE_RE.test(line))
+    .join('\n');
+}
+
+/** ◆ 소제목 + 본문 → "소제목. 본문" (음성용) */
 function bodyFromCardBlock(block: string): string {
-  const lines = block.split('\n');
-  if (!lines[0]?.trim().startsWith('◆')) return block;
-  const body = lines.slice(1).join('\n').trim();
-  return body || block.replace(/^◆\s*[^\n]+\n?/, '').trim();
+  const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return '';
+
+  const head = lines[0] ?? '';
+  const m = head.match(/^◆\s*(.+)$/);
+  const label = m?.[1]?.trim() ?? '';
+  const rest = flattenBullets(lines.slice(1).join('\n'));
+
+  if (label && rest) return `${label}. ${rest}`;
+  if (label) return label;
+  if (rest) return rest;
+  return flattenBullets(block.replace(/^◆\s*[^\n]+\n?/, ''));
 }
 
 /** 화면용 상담 답변 → 음성으로 읽을 본문만 */
@@ -32,8 +61,8 @@ export function extractCounselVoiceAnswer(content: string): string {
     const flat = block.replace(/\*\*/g, '').trim();
     const firstLine = block.split('\n')[0]?.replace(/\*\*/g, '').trim() ?? '';
 
-    if (INTRO_LINE_RE.test(flat) || INTRO_LINE_RE.test(firstLine)) continue;
-    if (FOOTER_LINE_RE.test(flat) || FOOTER_LINE_RE.test(firstLine)) continue;
+    if (isIntroBlock(block) || isIntroBlock(firstLine)) continue;
+    if (isFooterBlock(block)) continue;
     if (SECTION_HEADER_RE.test(block.trim())) continue;
     if (/^◆\s*주의/.test(block)) continue;
 
@@ -43,9 +72,10 @@ export function extractCounselVoiceAnswer(content: string): string {
       continue;
     }
 
-    kept.push(block.replace(/\*\*(.+?)\*\*/g, '$1'));
+    const plain = flattenBullets(block.replace(/\*\*(.+?)\*\*/g, '$1'));
+    if (plain && !FOOTER_LINE_RE.test(plain.split('\n')[0] ?? '')) kept.push(plain);
   }
 
   const answer = kept.join('\n\n').trim();
-  return answer || trimmed;
+  return answer || flattenBullets(trimmed.replace(CAUTION_BLOCK_RE, ''));
 }

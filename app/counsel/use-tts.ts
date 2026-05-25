@@ -3,7 +3,7 @@
  * useTts — 브라우저 Web Speech, 문장·단락마다 끊어 읽기
  */
 import { useState, useRef, useCallback } from 'react';
-import { stripHanjaForTts } from '../../lib/strip-hanja-for-tts';
+import { prepareTextForTts } from '../../lib/prepare-text-for-tts';
 import { primeBrowserTtsVoices, speakPausedBrowserReading } from '../../lib/browser-tts-voice';
 import { splitForPausedReading } from '../../lib/tts-paused-reading';
 
@@ -29,7 +29,7 @@ export function useTts(counselor: string) {
   }, []);
 
   const speak = useCallback(async (text: string) => {
-    const ttsText = stripHanjaForTts(text);
+    const ttsText = prepareTextForTts(text);
     if (!enabled || !ttsText) return;
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     stop();

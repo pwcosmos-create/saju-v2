@@ -4,15 +4,22 @@
 export type PausedReadUnit = { text: string; pauseAfterMs: number };
 
 /** 문장 사이 쉼 (ms) */
-export const PAUSE_BETWEEN_SENTENCES_MS = 650;
+export const PAUSE_BETWEEN_SENTENCES_MS = 580;
 /** 단락 사이 쉼 (ms) */
-export const PAUSE_BETWEEN_PARAGRAPHS_MS = 1100;
+export const PAUSE_BETWEEN_PARAGRAPHS_MS = 950;
+/** ◆ 소제목 직후 쉼 (ms) */
+export const PAUSE_AFTER_SECTION_HEADING_MS = 880;
 /** 「주의」 제목만 읽은 뒤 본문 전 쉼 (ms) */
-export const PAUSE_AFTER_CAUTION_HEADING_MS = 1500;
+export const PAUSE_AFTER_CAUTION_HEADING_MS = 1400;
 /** 한 utterance 상한 */
 export const SENTENCE_HARD_MAX = 200;
 
 const CAUTION_HEADING_SPLIT_RE = /◆\s*주의(?:\s*\n+|\s+)/;
+const SECTION_HEADING_LINE_RE = /^◆\s*(.+)$/;
+
+/** 한국어 종결 포함 문장 경계 */
+const KO_SENTENCE_SPLIT_RE =
+  /(?<=[.!?。！？…]|다\.|요\.|습니다\.|니다\.|해요\.|네요\.|거예요\.)\s+/;
 
 type TextSegment =
   | { kind: 'normal'; text: string }
@@ -81,7 +88,7 @@ function paragraphToUnits(paragraph: string): PausedReadUnit[] {
   if (!para) return [];
 
   const rawSentences = para
-    .split(/(?<=[.!?。！？…])\s+/)
+    .split(KO_SENTENCE_SPLIT_RE)
     .map((s) => s.trim())
     .filter(Boolean);
   const sentences = (rawSentences.length ? rawSentences : [para]).flatMap(splitLongClause);
@@ -92,11 +99,31 @@ function paragraphToUnits(paragraph: string): PausedReadUnit[] {
   }));
 }
 
+/** ◆ 소제목 단락 → 제목 한 번 + 본문 문장들 */
+function sectionBlockToUnits(block: string): PausedReadUnit[] {
+  const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+
+  const head = lines[0] ?? '';
+  const m = head.match(SECTION_HEADING_LINE_RE);
+  if (!m) return paragraphToUnits(block);
+
+  const heading = m[1]!.trim();
+  const body = lines.slice(1).join('\n').trim();
+  const units: PausedReadUnit[] = [{ text: heading, pauseAfterMs: PAUSE_AFTER_SECTION_HEADING_MS }];
+  if (body) units.push(...textToUnits(body));
+  return units;
+}
+
 function textToUnits(text: string): PausedReadUnit[] {
   const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   const units: PausedReadUnit[] = [];
   for (const para of paragraphs) {
-    units.push(...paragraphToUnits(para));
+    if (SECTION_HEADING_LINE_RE.test(para.split('\n')[0]?.trim() ?? '')) {
+      units.push(...sectionBlockToUnits(para));
+    } else {
+      units.push(...paragraphToUnits(para));
+    }
   }
   return units;
 }

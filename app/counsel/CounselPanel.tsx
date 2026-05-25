@@ -13,7 +13,6 @@ import { useTts } from './use-tts';
 import { useStt } from './use-stt';
 import { isSajuWaitingMessage } from '../../core/user-messages';
 import { useCounselChat } from './use-counsel-chat';
-import { extractCounselVoiceAnswer } from '../../lib/counsel-voice-answer';
 import { renderCounselContent } from './render-counsel-content';
 
 function pickCounselor(): string {
@@ -153,11 +152,9 @@ export default function CounselPanel({
     setInput('');
     const responseContent = await send(trimmed);
     if (enabled && responseContent) {
-      const viaVoice = lastInputViaVoiceRef.current;
       lastInputViaVoiceRef.current = false;
-      const spokenText = viaVoice ? extractCounselVoiceAnswer(responseContent) : responseContent;
       setSpeakingContent(responseContent);
-      void speak(spokenText);
+      void speak(responseContent);
     } else {
       lastInputViaVoiceRef.current = false;
     }

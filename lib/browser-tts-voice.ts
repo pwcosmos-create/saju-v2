@@ -139,7 +139,8 @@ export function speakPausedBrowserReading(
       const voice = pickCounselorKoVoice(synth, counselorName);
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ko-KR';
-      utterance.rate = 0.95;
+      utterance.rate = text.length > 120 ? 0.93 : 0.96;
+      utterance.pitch = 1;
       if (voice) utterance.voice = voice;
 
       utterance.onend = () => {

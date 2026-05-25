@@ -1,5 +1,6 @@
 import { fetchLlmStream } from '../config/llm';
 import { tryCouncilCounselReply } from '../gemma24/council-counsel-reply';
+import { applyCounselGeminiCoach } from '../gemma24/counsel-gemini-coach';
 import { shouldUseCounselLlmFallback } from '../gemma24/counsel-llm-fallback';
 import type { DailyFortuneCounselPayload } from '../daily-fortune/counsel-format';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
@@ -105,15 +106,22 @@ ${compareSajuContext}
   });
 
   if (cardReply) {
+    const finalReply = await applyCounselGeminiCoach({
+      reply: cardReply,
+      userMessage: lastUserMessage,
+      counselorName,
+      sajuContextSnippet: sajuContext.slice(0, 1200),
+    });
     return Response.json(
-      { content: cardReply.content },
+      { content: finalReply.content },
       {
         headers: {
-          'X-Gemma24-Knowledge-Count': String(cardReply.cardCount),
-          'X-Saju-Council-Badge': cardReply.draftCardCount > 0 ? 'reviewed' : 'certified',
-          'X-Saju-Counsel-Mode': cardReply.mode,
-          ...(cardReply.draftCardCount > 0 ? {
-            'X-Saju-Card-Draft-Count': String(cardReply.draftCardCount),
+          'X-Gemma24-Knowledge-Count': String(finalReply.cardCount),
+          'X-Saju-Council-Badge': finalReply.draftCardCount > 0 ? 'reviewed' : 'certified',
+          'X-Saju-Counsel-Mode': finalReply.mode,
+          ...(finalReply.geminiCoached ? { 'X-Saju-Counsel-Coached': '1' } : {}),
+          ...(finalReply.draftCardCount > 0 ? {
+            'X-Saju-Card-Draft-Count': String(finalReply.draftCardCount),
             'X-Saju-Card-Request-Queued': '1',
           } : {}),
         },

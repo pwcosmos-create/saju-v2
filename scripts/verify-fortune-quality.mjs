@@ -215,6 +215,10 @@ if (parseDayFortuneOffset('내일은 어때?') !== 1) {
   console.error('FAIL tomorrow question detect');
   fail++;
 }
+if (parseDayFortuneOffset('내일의 사주') !== 1) {
+  console.error('FAIL 내일의 사주 detect');
+  fail++;
+}
 const tomorrowReply = buildDayFortuneCounselReply(todayPayload, '유진', '내일');
 if (!/내일의 운세|◆\s*내일의 기운/.test(tomorrowReply)) {
   console.error('FAIL tomorrow counsel reply');

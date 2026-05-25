@@ -25,6 +25,7 @@ import {
   offsetToDayLabel,
   type DailyFortuneCounselPayload,
 } from '../daily-fortune/counsel-format';
+import { tryDailyFortuneFromSajuContext } from '../daily-fortune/from-saju-context';
 
 const MAX_CARDS_IN_REPLY = 4;
 
@@ -230,17 +231,21 @@ export async function tryCouncilCounselReply(
   const dayOffset = parseDayFortuneOffset(trimmed);
   if (dayOffset !== null) {
     const day = offsetToDayLabel(dayOffset);
+    const fortunePayload =
+      options?.dailyFortune
+      ?? tryDailyFortuneFromSajuContext(sajuContext, dayOffset);
+
     const { cards: todayCards, queuedCount } = await prepareDayFortuneCounselCards({
       sajuContext,
       userMessage: trimmed,
       counselorName,
-      dailyFortune: options?.dailyFortune ?? null,
+      dailyFortune: fortunePayload,
       searchedCards: passCards,
       dayOffset,
     });
 
-    if (options?.dailyFortune) {
-      const content = buildDayFortuneCounselReply(options.dailyFortune, counselorName, day);
+    if (fortunePayload) {
+      const content = buildDayFortuneCounselReply(fortunePayload, counselorName, day);
       const picked = todayCards.length ? pickCardsForReply(todayCards, trimmed) : [];
       const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
       return {
@@ -251,19 +256,16 @@ export async function tryCouncilCounselReply(
       };
     }
 
-    if (todayCards.length) {
-      const content = buildCardReply(todayCards, trimmed, counselorName);
-      if (content.trim()) {
-        const picked = pickCardsForReply(todayCards, trimmed);
-        const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
-        return {
-          content,
-          cardCount: certifiedCount,
-          draftCardCount: Math.max(picked.length - certifiedCount, queuedCount > 0 ? 1 : 0),
-          mode: 'council-counsel',
-        };
-      }
-    }
+    const who = counselorName ? `『${counselorName}』입니다. ` : '';
+    return {
+      content: [
+        `${who}「${dayFortuneTopicLabel(dayOffset)}」를 계산하려면 사주 입력 정보가 필요합니다.`,
+        '생년월일을 확인한 뒤 다시 질문해 주세요.',
+      ].join('\n'),
+      cardCount: 0,
+      draftCardCount: queuedCount > 0 ? 1 : 0,
+      mode: 'council-counsel',
+    };
   }
   const { cards: supplemental, queuedCount } = await prepareCounselSupplementalCards({
     sajuContext,

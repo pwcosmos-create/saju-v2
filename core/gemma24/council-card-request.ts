@@ -594,8 +594,8 @@ export async function prepareDayFortuneCounselCards(params: {
     draftsForQueue = [buildDayFortuneCardDraft(params.dailyFortune, day)];
     draftCards = draftsToSajuCards(draftsForQueue);
   } else {
-    draftsForQueue = buildCouncilCardDrafts([{ ...need, kind: 'interpret' }]);
-    draftCards = draftsToSajuCards(draftsForQueue);
+    draftsForQueue = [];
+    draftCards = [];
   }
 
   let queuedCount = 0;

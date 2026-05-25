@@ -21,15 +21,15 @@ export function parseSajuInputFromContext(context: string): SajuInput | null {
 /** 클라이언트 dailyFortune 누락 시 서버에서 일운 재계산 */
 export function tryDailyFortuneFromSajuContext(
   sajuContext: string,
-  dayOffset: number,
+  when: Date | number,
 ): DailyFortuneCounselPayload | null {
   const input = parseSajuInputFromContext(sajuContext);
   if (!input) return null;
+  const targetDate =
+    typeof when === 'number' ? kstCalendarDatePlusDays(when) : when;
   try {
     const natal = calculate(input);
-    return dailyFortuneToCounselPayload(
-      dailyFortune(natal, kstCalendarDatePlusDays(dayOffset)),
-    );
+    return dailyFortuneToCounselPayload(dailyFortune(natal, targetDate));
   } catch {
     return null;
   }

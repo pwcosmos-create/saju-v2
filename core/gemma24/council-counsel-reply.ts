@@ -2,9 +2,13 @@
  * AI 심층 상담 — 서버 인증 카드 + 즉석 초안 카드 조합 (Groq/Gemini 미사용)
  */
 import {
+  autoEnqueueCouncilCardProductionBackground,
   buildCouncilCardDrafts,
+  councilCardAutoRequestEnabled,
   draftsToSajuCards,
   inferCounselFallbackNeeds,
+  inferCounselReplyCardGaps,
+  isEncyclopediaCounselCard,
   prepareCounselSupplementalCards,
   prepareDayFortuneCounselCards,
 } from './council-card-request';
@@ -15,11 +19,7 @@ import {
   searchConsultCouncilCards,
 } from './saju-knowledge';
 import { optimizeCardBodyForDisplay, shortCardSubtitle } from './optimize-card-body';
-import {
-  dayFortuneTopicLabel,
-  isDayFortuneQuestion,
-  parseDayFortuneOffset,
-} from './is-today-fortune-question';
+import { isDayFortuneQuestion, parseDayFortuneTarget } from './is-today-fortune-question';
 import {
   buildDayFortuneCounselReply,
   offsetToDayLabel,
@@ -62,8 +62,8 @@ function isLikelyOffTopic(message: string): boolean {
 }
 
 function topicLabelFromMessage(message: string): string {
-  const dayOffset = parseDayFortuneOffset(message);
-  if (dayOffset !== null) return dayFortuneTopicLabel(dayOffset);
+  const dayTarget = parseDayFortuneTarget(message);
+  if (dayTarget) return dayTarget.label;
   for (const [re, id] of [
     [/연애|애인|결혼|짝|궁합|관계|배우자/, 8],
     [/재물|돈|금전|투자|수입/, 7],
@@ -87,7 +87,7 @@ function rankCounselCards(cards: Gemma24SajuCard[], userMessage: string): Gemma2
     const k = cardKind(c);
     const title = c.title.trim();
     if (dayQ) {
-      if (/일운|일진|해석·(?:오늘|내일)|오늘|내일/.test(title)) return 0;
+      if (/일운|일진|해석·(?:오늘|내일|모레|\d{4}년)/.test(title)) return 0;
       if (k.startsWith('deep-6') || title.startsWith('심층·[6]')) return 8;
       if (k.startsWith('deep-')) return 6;
     }
@@ -228,12 +228,13 @@ export async function tryCouncilCounselReply(
   const query = buildConsultCardSearchQuery(sajuContext, trimmed, compareSajuContext);
   const passCards = searchConsultCouncilCards(query, trimmed);
 
-  const dayOffset = parseDayFortuneOffset(trimmed);
-  if (dayOffset !== null) {
-    const day = offsetToDayLabel(dayOffset);
+  const dayTarget = parseDayFortuneTarget(trimmed);
+  if (dayTarget) {
+    const fortuneWhen =
+      dayTarget.kind === 'date' ? dayTarget.date : dayTarget.offset;
     const fortunePayload =
       options?.dailyFortune
-      ?? tryDailyFortuneFromSajuContext(sajuContext, dayOffset);
+      ?? tryDailyFortuneFromSajuContext(sajuContext, fortuneWhen);
 
     const { cards: todayCards, queuedCount } = await prepareDayFortuneCounselCards({
       sajuContext,
@@ -241,11 +242,20 @@ export async function tryCouncilCounselReply(
       counselorName,
       dailyFortune: fortunePayload,
       searchedCards: passCards,
-      dayOffset,
+      dayOffset: dayTarget.kind === 'offset' ? dayTarget.offset : undefined,
     });
 
+    const replyLabel =
+      dayTarget.kind === 'date'
+        ? dayTarget.label
+        : offsetToDayLabel(dayTarget.offset);
+
     if (fortunePayload) {
-      const content = buildDayFortuneCounselReply(fortunePayload, counselorName, day);
+      const content = buildDayFortuneCounselReply(
+        fortunePayload,
+        counselorName,
+        dayTarget.label,
+      );
       const picked = todayCards.length ? pickCardsForReply(todayCards, trimmed) : [];
       const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
       return {
@@ -259,7 +269,7 @@ export async function tryCouncilCounselReply(
     const who = counselorName ? `『${counselorName}』입니다. ` : '';
     return {
       content: [
-        `${who}「${dayFortuneTopicLabel(dayOffset)}」를 계산하려면 사주 입력 정보가 필요합니다.`,
+        `${who}「${replyLabel}」를 계산하려면 사주 입력 정보가 필요합니다.`,
         '생년월일을 확인한 뒤 다시 질문해 주세요.',
       ].join('\n'),
       cardCount: 0,
@@ -280,6 +290,33 @@ export async function tryCouncilCounselReply(
   }
   if (!allCards.length) return null;
 
+  const pickedPre = pickCardsForReply(allCards, trimmed);
+  const replyGaps = inferCounselReplyCardGaps(trimmed, pickedPre, passCards);
+  if (replyGaps.length && councilCardAutoRequestEnabled()) {
+    autoEnqueueCouncilCardProductionBackground({
+      needs: replyGaps,
+      source: 'counsel',
+      userMessage: trimmed,
+      sajuContextSnippet: sajuContext,
+      counselorName,
+    });
+  }
+
+  const onlyEncyclopedia =
+    pickedPre.length > 0 && pickedPre.every(isEncyclopediaCounselCard);
+  if (onlyEncyclopedia && isDayFortuneQuestion(trimmed)) {
+    const who = counselorName ? `『${counselorName}』입니다. ` : '';
+    return {
+      content: [
+        `${who}질문하신 「${topicLabelFromMessage(trimmed)}」에 맞는 인증 카드를 준비 중입니다.`,
+        '잠시 후 같은 질문을 다시 해 주시면 일운 풀이가 이어집니다.',
+      ].join('\n'),
+      cardCount: 0,
+      draftCardCount: replyGaps.length > 0 ? 1 : 0,
+      mode: 'council-counsel',
+    };
+  }
+
   const draftCardCount = supplemental.length;
   const content =
     chatMode === 'compatibility' && compareSajuContext.trim()
@@ -288,7 +325,7 @@ export async function tryCouncilCounselReply(
 
   if (!content.trim()) return null;
 
-  const picked = pickCardsForReply(allCards, trimmed);
+  const picked = pickedPre;
   const certifiedCount = picked.filter((c) => c.councilCertified !== false).length;
 
   return {

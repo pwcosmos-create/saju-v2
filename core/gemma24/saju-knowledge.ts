@@ -6,8 +6,12 @@
 import fs from 'fs';
 import path from 'path';
 import { liveCardsPaths } from './cards-path';
-import { isDayFortuneQuestion, parseDayFortuneOffset } from './is-today-fortune-question';
-import { dayFortuneCardTitle, offsetToDayLabel } from '../daily-fortune/counsel-format';
+import {
+  isDayFortuneQuestion,
+  parseDayFortuneOffset,
+  parseDayFortuneTarget,
+} from './is-today-fortune-question';
+import { dayFortuneCardTitle, dayFortuneCardTitleForTarget, offsetToDayLabel } from '../daily-fortune/counsel-format';
 
 export type Gemma24SajuCard = {
   id: number;
@@ -678,15 +682,25 @@ export function searchConsultCouncilCards(
   const certifiedOnly = process.env.GEMMA24_COUNCIL_CERTIFIED_ONLY !== '0';
 
   if (isDayFortuneQuestion(userMessage)) {
-    const offset = parseDayFortuneOffset(userMessage) ?? 0;
-    const wantTitle = dayFortuneCardTitle(offsetToDayLabel(offset));
+    const target = parseDayFortuneTarget(userMessage);
+    const wantTitle = target
+      ? dayFortuneCardTitleForTarget(target)
+      : dayFortuneCardTitle(offsetToDayLabel(parseDayFortuneOffset(userMessage) ?? 0));
     const dayCards = pack.cards.filter((c) => {
       const t = c.title.trim();
+      if (t === wantTitle || wantTitle.includes(t) || t.includes(wantTitle)) return true;
+      if (target?.kind === 'date') {
+        const y = target.date.getUTCFullYear();
+        const m = target.date.getUTCMonth() + 1;
+        const d = target.date.getUTCDate();
+        return new RegExp(`해석·${y}년\\s*${m}월\\s*${d}일\\s*일운`).test(t);
+      }
+      const offset = parseDayFortuneOffset(userMessage) ?? 0;
       return (
-        t === wantTitle
-        || (offset === 0 && /해석·오늘\s*일운/.test(t))
+        (offset === 0 && /해석·오늘\s*일운/.test(t))
         || (offset === 1 && /해석·내일\s*일운/.test(t))
-        || (/일운/.test(t) && (offset === 0 ? /오늘/ : /내일/).test(t))
+        || (offset === 2 && /해석·모레\s*일운/.test(t))
+        || (/일운/.test(t) && (offset === 0 ? /오늘/ : offset === 1 ? /내일/ : /모레/).test(t))
       );
     });
     const filtered = filterCouncilCertifiedCards(dayCards);

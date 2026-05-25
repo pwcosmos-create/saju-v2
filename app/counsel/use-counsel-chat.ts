@@ -13,8 +13,7 @@ import { SAJU_WAITING_LABEL } from '../../core/user-messages';
 import { buildChatContext } from './build-saju-context';
 import { dailyFortune } from '../../core/daily-fortune';
 import { dailyFortuneToCounselPayload } from '../../core/daily-fortune/counsel-format';
-import { kstCalendarDatePlusDays } from '../../core/daily-fortune/kst-date';
-import { guessDayFortuneOffsetForPayload } from '../../core/gemma24/is-today-fortune-question';
+import { resolveDailyFortuneDate } from '../../core/gemma24/is-today-fortune-question';
 
 export type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -92,12 +91,10 @@ export function useCounselChat(
           chatMode: 'single',
           counselorName: counselorRef.current,
           dailyFortune: (() => {
-            const offset = guessDayFortuneOffsetForPayload(trimmed);
-            if (offset === null) return null;
+            const targetDate = resolveDailyFortuneDate(trimmed);
+            if (!targetDate) return null;
             try {
-              return dailyFortuneToCounselPayload(
-                dailyFortune(result, kstCalendarDatePlusDays(offset)),
-              );
+              return dailyFortuneToCounselPayload(dailyFortune(result, targetDate));
             } catch {
               return null;
             }

@@ -14,7 +14,13 @@ import {
   TODAY_FORTUNE_CARD_TITLE,
   type DailyFortuneCounselPayload,
 } from '../daily-fortune/counsel-format';
-import { isDayFortuneQuestion, parseDayFortuneOffset } from './is-today-fortune-question';
+import {
+  dayFortuneTopicLabel,
+  isDayFortuneQuestion,
+  parseDayFortuneTarget,
+  type DayFortuneTarget,
+} from './is-today-fortune-question';
+import { dayFortuneCardTitleForTarget } from '../daily-fortune/counsel-format';
 import { extractPromptFacts, pickConsultDeepIds, type Gemma24SajuCard } from './saju-knowledge';
 
 export type CouncilCardNeed = {
@@ -294,7 +300,7 @@ export function buildCouncilCardDraft(need: CouncilCardNeed): CouncilCardDraft {
   }
   if (kind.startsWith('deep-')) return draftDeep(title);
   if (kind === 'interpret') return draftInterpret(title);
-  if (kind === 'today-fortune') return draftInterpret(TODAY_FORTUNE_CARD_TITLE);
+  if (kind === 'today-fortune') return draftInterpret(title);
 
   return {
     title,
@@ -524,30 +530,34 @@ export async function autoEnqueueCouncilCardProduction(params: {
   return record.id;
 }
 
-function isDayFortuneKnowledgeCard(card: Gemma24SajuCard, dayOffset: number): boolean {
+function isDayFortuneKnowledgeCard(card: Gemma24SajuCard, target: DayFortuneTarget): boolean {
   const t = card.title.trim();
   if (/^심층·\[6\]/.test(t)) return false;
+  const want = dayFortuneCardTitleForTarget(target);
+  if (t === want || want.includes(t) || t.includes(want)) return true;
+  if (target.kind === 'date') {
+    const y = target.date.getUTCFullYear();
+    const m = target.date.getUTCMonth() + 1;
+    const d = target.date.getUTCDate();
+    return new RegExp(`해석·${y}년\\s*${m}월\\s*${d}일\\s*일운`).test(t);
+  }
+  const dayOffset = target.offset;
   const day = offsetToDayLabel(dayOffset);
-  const want = dayFortuneCardTitle(day);
-  if (t === want || new RegExp(`해석·${day}\\s*일운`).test(t)) return true;
+  if (new RegExp(`해석·${day}\\s*일운`).test(t)) return true;
   if (dayOffset === 0) return /일운|오늘의?\s*운세|금일\s*운|일진/.test(t) && /오늘|일운/.test(t);
-  return /일운|내일/.test(t);
+  return /일운|내일|모레/.test(t);
 }
 
 function hasPassDayFortuneCard(
   titles: string[],
   matched: Gemma24SajuCard[],
-  dayOffset: number,
+  target: DayFortuneTarget,
 ): boolean {
-  const day = offsetToDayLabel(dayOffset);
-  const want = dayFortuneCardTitle(day);
-  const passTitle = (t: string) =>
-    t === want
-    || new RegExp(`해석·${day}\\s*일운`).test(t)
-    || (/일운/.test(t) && (dayOffset === 0 ? /오늘/ : /내일/).test(t));
+  const want = dayFortuneCardTitleForTarget(target);
+  const passTitle = (t: string) => t === want || t.includes(want) || want.includes(t);
   if (titles.some(passTitle)) return true;
   return matched.some(
-    (c) => c.councilCertified !== false && isDayFortuneKnowledgeCard(c, dayOffset),
+    (c) => c.councilCertified !== false && isDayFortuneKnowledgeCard(c, target),
   );
 }
 
@@ -562,17 +572,26 @@ export async function prepareDayFortuneCounselCards(params: {
   searchedCards: Gemma24SajuCard[];
   dayOffset?: number;
 }): Promise<{ cards: Gemma24SajuCard[]; queuedCount: number }> {
-  const dayOffset = params.dayOffset ?? parseDayFortuneOffset(params.userMessage) ?? 0;
-  if (!isDayFortuneQuestion(params.userMessage)) {
+  const target =
+    params.dayOffset !== undefined
+      ? {
+          kind: 'offset' as const,
+          offset: params.dayOffset,
+          label: dayFortuneTopicLabel(params.dayOffset),
+        }
+      : parseDayFortuneTarget(params.userMessage);
+  if (!target) {
     return { cards: [], queuedCount: 0 };
   }
 
-  const day = offsetToDayLabel(dayOffset);
-  const cardTitle = dayFortuneCardTitle(day);
-  const passDay = params.searchedCards.filter((c) => isDayFortuneKnowledgeCard(c, dayOffset));
+  const day = target.kind === 'date'
+    ? `${target.date.getUTCFullYear()}년 ${target.date.getUTCMonth() + 1}월 ${target.date.getUTCDate()}일`
+    : offsetToDayLabel(target.offset);
+  const cardTitle = dayFortuneCardTitleForTarget(target);
+  const passDay = params.searchedCards.filter((c) => isDayFortuneKnowledgeCard(c, target));
   const titles = certifiedTitles();
 
-  if (hasPassDayFortuneCard(titles, passDay, dayOffset) && passDay.length) {
+  if (hasPassDayFortuneCard(titles, passDay, target) && passDay.length) {
     return { cards: passDay, queuedCount: 0 };
   }
 
@@ -580,7 +599,7 @@ export async function prepareDayFortuneCounselCards(params: {
     title: cardTitle,
     kind: 'today-fortune',
     priority: 'P0',
-    reason: `${dayFortuneTopic(day)}(${params.dailyFortune?.date ?? day}) 맞춤 인증 카드가 없어 즉석 제작합니다.`,
+    reason: `${target.label}(${params.dailyFortune?.date ?? day}) 맞춤 인증 카드가 없어 즉석 제작합니다.`,
   };
 
   const fromLog = await loadRecentDraftCards([cardTitle]);
@@ -591,7 +610,11 @@ export async function prepareDayFortuneCounselCards(params: {
     draftCards = fromLog;
     draftsForQueue = [];
   } else if (params.dailyFortune) {
-    draftsForQueue = [buildDayFortuneCardDraft(params.dailyFortune, day)];
+    const draftDay =
+      target.kind === 'date'
+        ? `${target.date.getUTCFullYear()}년 ${target.date.getUTCMonth() + 1}월 ${target.date.getUTCDate()}일`
+        : offsetToDayLabel(target.offset);
+    draftsForQueue = [buildDayFortuneCardDraft(params.dailyFortune, draftDay)];
     draftCards = draftsToSajuCards(draftsForQueue);
   } else {
     draftsForQueue = [];
@@ -633,6 +656,66 @@ export async function prepareDayFortuneCounselCards(params: {
 
 /** @deprecated prepareDayFortuneCounselCards 사용 */
 export const prepareTodayFortuneCounselCards = prepareDayFortuneCounselCards;
+
+/** 교육용·템플릿 카드(질문 주제 맞춤 카드 아님) */
+export function isEncyclopediaCounselCard(card: Gemma24SajuCard): boolean {
+  const t = card.title.trim();
+  if (/^해석·\d{4}년/.test(t) && /일운/.test(t)) return false;
+  if (/^해석·(?:오늘|내일|모레)\s*일운$/.test(t)) return false;
+  if (/^심층·\[1\]/.test(t)) return true;
+  if (/^변수·운\s+(용신|기신|희신)\s/.test(t)) return true;
+  if (/인사·성향|사주팔자|명식·구조|실천 조언|^주의$/.test(t)) return true;
+  const head = card.body.slice(0, 280);
+  if (/일간\(日干\).{0,60}월지\(月支\)/.test(head)) return true;
+  if (/년주=유년|월급·저축|본 내용은 명리 참고용/.test(head)) return true;
+  if (/상담 맥락에서 필요한 지식 카드/.test(head)) return true;
+  return false;
+}
+
+function cardCoversTitle(cards: Gemma24SajuCard[], title: string): boolean {
+  const want = title.trim();
+  return cards.some((c) => {
+    const t = c.title.trim();
+    return t === want || t.includes(want) || want.includes(t);
+  });
+}
+
+function dayFortuneCardNeed(target: DayFortuneTarget, userMessage: string): CouncilCardNeed {
+  const title = dayFortuneCardTitleForTarget(target);
+  return {
+    title,
+    kind: 'today-fortune',
+    priority: 'P0',
+    reason: `질문(${userMessage.slice(0, 48)})에 맞는 인증 일운 카드(${title})가 없어 제작 요청합니다.`,
+  };
+}
+
+/** 답변에 쓸 주제 맞춤 카드가 없을 때 제작 요청 */
+export function inferCounselReplyCardGaps(
+  userMessage: string,
+  pickedCards: Gemma24SajuCard[],
+  poolCards: Gemma24SajuCard[],
+): CouncilCardNeed[] {
+  const target = parseDayFortuneTarget(userMessage);
+  const all = [...poolCards, ...pickedCards];
+
+  if (target) {
+    const need = dayFortuneCardNeed(target, userMessage);
+    if (!cardCoversTitle(all, need.title)) return [need];
+    if (!pickedCards.some((c) => !isEncyclopediaCounselCard(c))) return [need];
+    return [];
+  }
+
+  const substantive = pickedCards.filter((c) => !isEncyclopediaCounselCard(c));
+  if (substantive.length >= 1) return [];
+
+  return inferCounselFallbackNeeds(userMessage)
+    .filter((n) => !cardCoversTitle(all, n.title))
+    .map((n) => ({
+      ...n,
+      reason: `질문 주제(${n.title}) 인증 카드가 없어 제작 요청합니다.`,
+    }));
+}
 
 /** 응답 지연 없이 백그라운드 접수 */
 export function autoEnqueueCouncilCardProductionBackground(

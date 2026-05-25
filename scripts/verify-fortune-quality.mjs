@@ -19,7 +19,11 @@ import {
 } from '../core/daily-fortune/counsel-format.ts';
 import { optimizeCardBodyForDisplay } from '../core/gemma24/optimize-card-body.ts';
 import { buildDayFortuneCounselReply } from '../core/daily-fortune/counsel-format.ts';
-import { parseDayFortuneOffset } from '../core/gemma24/is-today-fortune-question.ts';
+import {
+  parseDayFortuneOffset,
+  parseDayFortuneTarget,
+  resolveDailyFortuneDate,
+} from '../core/gemma24/is-today-fortune-question.ts';
 import { extractCounselVoiceAnswer } from '../lib/counsel-voice-answer.ts';
 import { prepareTextForTts } from '../lib/prepare-text-for-tts.ts';
 import { splitForPausedReading } from '../lib/tts-paused-reading.ts';
@@ -217,6 +221,15 @@ if (parseDayFortuneOffset('내일은 어때?') !== 1) {
 }
 if (parseDayFortuneOffset('내일의 사주') !== 1) {
   console.error('FAIL 내일의 사주 detect');
+  fail++;
+}
+const may30 = parseDayFortuneTarget('2026년 5월30일 운세는');
+if (!may30 || may30.kind !== 'date' || may30.label !== '2026년 5월 30일 운세') {
+  console.error('FAIL 2026년 5월30일 운세 detect', may30);
+  fail++;
+}
+if (!resolveDailyFortuneDate('2026년 5월30일 운세는')) {
+  console.error('FAIL resolveDailyFortuneDate for calendar date');
   fail++;
 }
 const tomorrowReply = buildDayFortuneCounselReply(todayPayload, '유진', '내일');

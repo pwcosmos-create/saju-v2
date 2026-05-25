@@ -12,7 +12,21 @@ import {
   polishFortuneText,
   stripFortuneFooters,
 } from '../core/gemma24/fortune-text-quality.ts';
+import { buildDaeunFortuneBody, parseDaeunFromQuery } from '../core/gemma24/council-fortune-daeun.ts';
 import { extractPromptFacts } from '../core/gemma24/saju-knowledge.ts';
+
+const DAEUN_SAMPLE = `
+생년월일: 1974년 3월 10일
+대운: 4세: 갑자 / 14세: 을축 / 24세: 병인 (순행)
+【월별 엔진 데이터】
+1월: 보통 ★★
+3월: 매우 좋음 ★★★★★
+8월: 매우 주의 ★
+【대운 데이터(누락 금지)】
+- 4세(1978~1987): 갑자(甲子)
+- 14세(1988~1997): 을축(乙丑)
+- 24세(1998~2007): 병인(丙寅)
+`;
 
 const broken = [
   '오늘은 귀하의 사주에서 에 해당하는 기운을 중심으로',
@@ -124,6 +138,33 @@ if (isTruncatedFortuneLine('— 기토 일간의 강점을 살리되, 용신 화
 const fixed = polishFortuneText('— 경금 일간의 강점을 살리되, 용신 토(土을(를) 일상');
 if (!fixed.includes('토(土)을(를)')) {
   console.error('FAIL yongsin paren repair:', fixed);
+  fail++;
+}
+
+const daeunParsed = parseDaeunFromQuery(DAEUN_SAMPLE);
+if (daeunParsed.periods.length < 3) {
+  console.error('FAIL parseDaeunFromQuery periods:', daeunParsed.periods.length);
+  fail++;
+}
+const daeunBody = buildDaeunFortuneBody({
+  ...daeunParsed,
+  yongsinElem: '토',
+  gisinElems: ['화'],
+  stemKo: '경금',
+  query: DAEUN_SAMPLE,
+});
+if (!daeunBody || !/10년 대운|구간별 흐름|4세\(1978/.test(daeunBody)) {
+  console.error('FAIL daeun body:', daeunBody?.slice(0, 80));
+  fail++;
+}
+if (!/상반기:|주의 달:|좋은 달:/.test(daeunBody)) {
+  console.error('FAIL daeun monthly summary');
+  fail++;
+}
+const genericDaeun =
+  '◆ 대운·세운\n— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다. 상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다.';
+if (!isLowQualityFortuneBody(genericDaeun, DAEUN_SAMPLE)) {
+  console.error('FAIL generic daeun detect');
   fail++;
 }
 

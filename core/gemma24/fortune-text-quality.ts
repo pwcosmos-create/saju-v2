@@ -30,6 +30,8 @@ const ANNOTATION_LINE_RE = /←|이 일간에게|용신·희신과 겹치면|표
 
 const GENERIC_ONLY_SUBHEAD_RE = /^◆\s*(명식·구조|실천\s*조언|주의|주의·마무리|인사·성향)$/;
 const GENERIC_OHAENG_RE = /월지\s*\(?月支\)?\s*는\s*계절의\s*기운/;
+const GENERIC_DAEUN_RE =
+  /세운·월운은 확정 데이터와 함께 읽을 때 정확합니다|상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다/;
 const ENCYCLOPEDIC_JOB_RE =
   /관성이 강하면 조직·공무·규율·책임, 식상이면 기술·교육·창업·콘텐츠/;
 
@@ -196,6 +198,7 @@ export function isLowQualityFortuneBody(body: string, query?: string): boolean {
   if (query && lacksChartPersonalization(t, query)) return true;
   if (ENCYCLOPEDIC_JOB_RE.test(t)) return true;
   if (GENERIC_OHAENG_RE.test(t) && !/목\s*\d+\s*개|지배 오행|넘치는 기운/.test(t)) return true;
+  if (GENERIC_DAEUN_RE.test(t) && !/\d+세\(|지금\(|구간별 흐름|10년 대운/.test(t)) return true;
 
   const brokenLines = lines.filter((l) => isBrokenDisplayLine(l));
   if (brokenLines.length >= 1) return true;

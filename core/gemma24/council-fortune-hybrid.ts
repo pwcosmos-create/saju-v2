@@ -117,10 +117,10 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
       || isLowQualityFortuneBody(bodyOnly, query)
       || fortuneOutputHasDefects(bodyOnly);
 
-    if (id === '10') {
-      const offline10 = buildOfflineFortuneSection(query, '10');
-      if (offline10) {
-        merged.set('10', offline10);
+    if (id === '9' || id === '10') {
+      const offline = buildOfflineFortuneSection(query, id);
+      if (offline) {
+        merged.set(id, offline);
         continue;
       }
     }

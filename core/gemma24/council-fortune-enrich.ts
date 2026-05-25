@@ -1,6 +1,7 @@
 /**
  * 인증 카드가 적을 때 프롬프트 확정 데이터로 섹션 보강 (LLM 없음)
  */
+import { buildDaeunFortuneBody, parseDaeunFromQuery } from './council-fortune-daeun';
 import { extractPromptFacts } from './saju-knowledge';
 import { FORTUNE_SECTION_TITLES, formatFortuneSectionHeader } from './fortune-display-order';
 
@@ -268,14 +269,26 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         `— ${gyeok}은 맞는 환경에서 강점이 드러나는 편입니다. ${ctx.strength ? `현재 ${ctx.strength}입니다.` : ''}`,
         `— ${yTip}`,
       ].join('\n');
-    case '9':
-      return [
-        header('9'),
-        '',
-        '◆ 대운·세운',
-        '— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다. 상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다.',
-        '— 급한 결정은 피하고, 몸과 마음의 리듬을 맞추면 운의 변화를 더 잘 타실 수 있습니다.',
-      ].join('\n');
+    case '9': {
+      const daeun = parseDaeunFromQuery(query);
+      const body = buildDaeunFortuneBody({
+        ...daeun,
+        yongsinElem: facts.yongsinElem,
+        gisinElems: facts.gisinElems,
+        stemKo: facts.stemKo,
+        query,
+      });
+      if (!body) {
+        return [
+          header('9'),
+          '',
+          '◆ 대운·세운',
+          '— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다. 상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다.',
+          '— 급한 결정은 피하고, 몸과 마음의 리듬을 맞추면 운의 변화를 더 잘 타실 수 있습니다.',
+        ].join('\n');
+      }
+      return [header('9'), '', body].join('\n');
+    }
     case '8':
       return [
         header('8'),
@@ -319,11 +332,20 @@ export function buildOfflineHybridSupplement(query: string): string {
   const sections: { id: keyof typeof FORTUNE_SECTION_TITLES; lines: string[] }[] = [
     {
       id: '9',
-      lines: [
-        '◆ 시기별 조언',
-        '— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다. 상반기는 기반을 다지고, 하반기는 용신 방향으로 실행·정리하는 흐름이 맞습니다.',
-        '— 급한 결정은 피하고, 몸과 마음의 리듬을 맞추면 운의 변화를 더 잘 타실 수 있습니다.',
-      ],
+      lines: (() => {
+        const daeun = parseDaeunFromQuery(query);
+        const body = buildDaeunFortuneBody({
+          ...daeun,
+          yongsinElem: facts.yongsinElem,
+          gisinElems: facts.gisinElems,
+          stemKo: facts.stemKo,
+          query,
+        });
+        return body ? body.split('\n') : [
+          '◆ 시기별 조언',
+          '— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다.',
+        ];
+      })(),
     },
     {
       id: '8',

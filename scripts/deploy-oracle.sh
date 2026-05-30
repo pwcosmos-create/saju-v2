@@ -7,7 +7,7 @@ PM2_NAME="${PM2_NAME:-saju-v2}"
 
 cd "$APP_DIR"
 git pull
-npm ci
+npm install
 
 echo "Stopping $PM2_NAME before rebuild..."
 pm2 stop "$PM2_NAME" || true

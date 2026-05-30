@@ -44,6 +44,9 @@ export type ConsultRequestBody = {
   counselorName?: string;
   stream?: boolean;
   dailyFortune?: DailyFortuneCounselPayload | null;
+  /** @internal 서버에서 상담 LLM을 Gemini 우선/전용 쓸 때 설정 */
+  geminiFirst?: boolean;
+  geminiOnly?: boolean;
 };
 
 export async function postConsult(
@@ -218,6 +221,9 @@ ${sajuContext}`;
     max_tokens: 8192,
     temperature: 0.7,
     messages: llmMessages,
+    /** 심층 상담 — Gemini 2.5 Flash 전용 (Groq/Llama 폴백 없음) */
+    geminiFirst: true,
+    geminiOnly: true,
   });
 
   if (!upstream.ok) {

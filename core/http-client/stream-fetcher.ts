@@ -1,10 +1,8 @@
 /**
  * AI Saju Stream Fetcher - v2.0.3
- * 
- * - 클라이언트 측 스트리밍 데이터 수신 및 버퍼링
- * - Draft-Review-Type 워크플로우를 위한 전체 데이터 수집 지원
  */
-// 한국어 외 언어 토큰 제거 (일본어 가나, 베트남 전용 자모, CJK 확장)
+import { tossFortune } from '../../lib/toss-http';
+
 const LEAKED = /[\u3040-\u30FF\u3400-\u4DBF]|[ăâêôơưđ]/gi;
 function filterLeaked(text: string): string {
   return text.replace(LEAKED, '');
@@ -21,7 +19,7 @@ export type SajuFortuneMode =
 
 export interface StreamCallbacks {
   onChunk: (text: string) => void;
-  onDone:  () => void;
+  onDone: () => void;
   onError: (err: Error) => void;
   onMeta?: (meta: {
     councilBadge: SajuCouncilBadgeLevel;
@@ -35,11 +33,23 @@ export async function fetchStream(prompt: string, callbacks: StreamCallbacks): P
   const { onChunk, onDone, onError, onMeta } = callbacks;
 
   try {
+    if (process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1') {
+      const result = await tossFortune(prompt);
+      if (!result.ok) {
+        onError(new Error(result.error));
+        return;
+      }
+      onMeta?.({ councilBadge: 'certified', knowledgeCount: 0, fortuneMode: 'council-compose' });
+      onChunk(filterLeaked(result.content));
+      onDone();
+      return;
+    }
+
     const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
     const res = await fetch(`${base}/api/fortune-stream`, {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt }),
     });
 
     if (!res.ok || !res.body) {
@@ -66,7 +76,7 @@ export async function fetchStream(prompt: string, callbacks: StreamCallbacks): P
       cardRequestQueued: res.headers.get('X-Saju-Card-Request-Queued') === '1',
     });
 
-    const reader  = res.body.getReader();
+    const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     let finished = false;
@@ -82,7 +92,7 @@ export async function fetchStream(prompt: string, callbacks: StreamCallbacks): P
         const json = JSON.parse(raw);
         const raw2 = json.choices?.[0]?.delta?.content;
         if (raw2) onChunk(filterLeaked(raw2));
-      } catch { /* skip malformed/partial line */ }
+      } catch { /* skip */ }
       return false;
     };
 

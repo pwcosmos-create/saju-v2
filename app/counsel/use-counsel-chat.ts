@@ -14,6 +14,9 @@ import { buildChatContext } from './build-saju-context';
 import { dailyFortune } from '../../core/daily-fortune';
 import { dailyFortuneToCounselPayload } from '../../core/daily-fortune/counsel-format';
 import { resolveDailyFortuneDate } from '../../core/gemma24/is-today-fortune-question';
+import { tossChat } from '../../lib/toss-http';
+
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
 export type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -79,13 +82,9 @@ export function useCounselChat(
     const startedAt = Date.now();
 
     try {
-      const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
-      const res = await fetch(`${base}${API_PATH}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        signal: ac.signal,
-        body: JSON.stringify({
+      let content = '';
+      if (APPS_IN_TOSS) {
+        const payload = {
           messages: apiMessages,
           sajuContext: buildChatContext(result),
           chatMode: 'single',
@@ -99,19 +98,46 @@ export function useCounselChat(
               return null;
             }
           })(),
-        }),
-      });
+        };
+        const bridged = await tossChat(payload);
+        if (!bridged.ok) throw new Error(bridged.error);
+        content = bridged.content.trim();
+      } else {
+        const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
+        const res = await fetch(`${base}${API_PATH}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          signal: ac.signal,
+          body: JSON.stringify({
+            messages: apiMessages,
+            sajuContext: buildChatContext(result),
+            chatMode: 'single',
+            counselorName: counselorRef.current,
+            dailyFortune: (() => {
+              const targetDate = resolveDailyFortuneDate(trimmed);
+              if (!targetDate) return null;
+              try {
+                return dailyFortuneToCounselPayload(dailyFortune(result, targetDate));
+              } catch {
+                return null;
+              }
+            })(),
+          }),
+        });
 
-      const raw = await res.text();
-      if (!res.ok) {
-        let errMsg = `서버 오류 (${res.status})`;
-        try { errMsg = (JSON.parse(raw) as { error?: string }).error ?? errMsg; } catch { /* noop */ }
-        throw new Error(errMsg);
+        const raw = await res.text();
+        if (!res.ok) {
+          let errMsg = `서버 오류 (${res.status})`;
+          try { errMsg = (JSON.parse(raw) as { error?: string }).error ?? errMsg; } catch { /* noop */ }
+          throw new Error(errMsg);
+        }
+
+        const data = JSON.parse(raw) as { content?: string; error?: string };
+        if (data.error) throw new Error(data.error);
+        content = (data.content ?? '').trim();
       }
 
-      const data = JSON.parse(raw) as { content?: string; error?: string };
-      if (data.error) throw new Error(data.error);
-      const content = (data.content ?? '').trim();
       if (!content) throw new Error('빈 응답');
 
       await waitMinReplyDelay(startedAt);

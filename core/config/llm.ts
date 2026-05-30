@@ -338,12 +338,16 @@ async function completeWithGemini(upstreamBody: Record<string, unknown>): Promis
 /** Groq → Gemini (또는 geminiFirst) 단일 완성. 실패 시 null */
 export async function fetchLlmCompletionText(
   body: Record<string, unknown>,
-  options?: { geminiFirst?: boolean },
+  options?: { geminiFirst?: boolean; geminiOnly?: boolean },
 ): Promise<string | null> {
   const upstreamBody = prepareUpstreamBody(body);
   const groq = () => completeWithGroq(upstreamBody);
   const gemini = () => completeWithGemini(upstreamBody);
-  const text = options?.geminiFirst ? ((await gemini()) || (await groq())) : ((await groq()) || (await gemini()));
+  const text = options?.geminiOnly
+    ? await gemini()
+    : options?.geminiFirst
+      ? ((await gemini()) || (await groq()))
+      : ((await groq()) || (await gemini()));
   return text.trim() ? cleanLlamaLeakages(text) : null;
 }
 
@@ -353,7 +357,13 @@ export async function fetchLlmStream(body: any): Promise<Response> {
 
   const upstreamBody = prepareUpstreamBody(body as Record<string, unknown>);
 
-  draftText = (await completeWithGroq(upstreamBody)) || (await completeWithGemini(upstreamBody));
+  const geminiOnly = Boolean(body.geminiOnly);
+  const geminiFirst = Boolean(body.geminiFirst);
+  draftText = geminiOnly
+    ? await completeWithGemini(upstreamBody)
+    : geminiFirst
+      ? ((await completeWithGemini(upstreamBody)) || (await completeWithGroq(upstreamBody)))
+      : ((await completeWithGroq(upstreamBody)) || (await completeWithGemini(upstreamBody)));
   if (!draftText && GROQ_KEYS.length === 0 && !process.env.GOOGLE_AI_API_KEY) {
     console.error('GOOGLE_AI_API_KEY missing; cannot fall back from Groq.');
   }

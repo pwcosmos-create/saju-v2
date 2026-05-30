@@ -19,6 +19,8 @@ import {
   supportAccountManualCopyHint,
 } from '../lib/support-account';
 
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+
 // 한자·괄호 한자 제거 — TTS 전용
 function stripHanja(text: string): string {
   return text
@@ -2214,7 +2216,7 @@ export default function ChatWidget({
 
         {/* Messages */}
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {canStartCounseling && result && (
+          {!APPS_IN_TOSS && canStartCounseling && result && (
             <div
               role="note"
               style={{

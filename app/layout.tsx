@@ -8,6 +8,7 @@ export const viewport: Viewport = {
 };
 import './globals.css';
 import { Analytics } from '@vercel/analytics/react';
+import Script from 'next/script';
 
 const SITE_URL = 'https://saju.coupax.co.kr';
 const THIS_YEAR = new Date().getFullYear();
@@ -115,6 +116,11 @@ const WEBAPP_SCHEMA = {
 };
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+const PAYPAL_CLIENT_ID = APPS_IN_TOSS
+  ? ''
+  : (process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
+    'AagriM6wPC0OV-teas4BeZ0rX8G6d-FxAG5H4WisfPMNcabwvMy3Ofdc-iArr91vfin9bFaY4wIhJ1mZ');
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -131,17 +137,34 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         `}} />}
         {/* RSS 자동 발견 — 네이버/구글 크롤러 RSS 인식용 */}
         <link rel="alternate" type="application/rss+xml" title="사주팔자 무료 분석 RSS" href="https://saju.coupax.co.kr/rss.xml" />
-        <link rel="preconnect" href="https://cdn.jsdelivr.net" />
-        <link rel="stylesheet" crossOrigin="anonymous"
-          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+        {!APPS_IN_TOSS && (
+          <>
+            <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+            <link rel="stylesheet" crossOrigin="anonymous"
+              href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+          </>
+        )}
         <script type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBAPP_SCHEMA) }} />
         <script type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }} />
+        {APPS_IN_TOSS && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function(){var p=location.pathname||"";if(/\\/saju\\/?$/i.test(p)||/saju\\/index\\.html$/i.test(p))return;function resolve(el){var raw=el.getAttribute("data-saju-href")||el.getAttribute("href")||"saju/index.html";try{return new URL(raw,document.baseURI||location.href).href;}catch(e){return raw;}}function onTap(e){var el=e.target&&e.target.closest&&e.target.closest("[data-saju-go]");if(!el)return;e.preventDefault();e.stopPropagation();location.href=resolve(el);}document.addEventListener("click",onTap,true);document.addEventListener("touchend",onTap,true);})();`,
+            }}
+          />
+        )}
       </head>
       <body>
+        {!APPS_IN_TOSS && PAYPAL_CLIENT_ID && (
+          <Script
+            src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=KRW`}
+            strategy="beforeInteractive"
+          />
+        )}
         {children}
-        <Analytics />
+        {!APPS_IN_TOSS && <Analytics />}
       </body>
     </html>
   );

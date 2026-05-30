@@ -3,21 +3,15 @@
  */
 export type PausedReadUnit = { text: string; pauseAfterMs: number };
 
-/** 문장 사이 쉼 (ms) */
 export const PAUSE_BETWEEN_SENTENCES_MS = 580;
-/** 단락 사이 쉼 (ms) */
 export const PAUSE_BETWEEN_PARAGRAPHS_MS = 950;
-/** ◆ 소제목 직후 쉼 (ms) */
 export const PAUSE_AFTER_SECTION_HEADING_MS = 880;
-/** 「주의」 제목만 읽은 뒤 본문 전 쉼 (ms) */
 export const PAUSE_AFTER_CAUTION_HEADING_MS = 1400;
-/** 한 utterance 상한 */
 export const SENTENCE_HARD_MAX = 200;
 
 const CAUTION_HEADING_SPLIT_RE = /◆\s*주의(?:\s*\n+|\s+)/;
 const SECTION_HEADING_LINE_RE = /^◆\s*(.+)$/;
 
-/** 한국어 종결 포함 문장 경계 */
 const KO_SENTENCE_SPLIT_RE =
   /(?<=[.!?。！？…]|다\.|요\.|습니다\.|니다\.|해요\.|네요\.|거예요\.)\s+/;
 
@@ -52,7 +46,6 @@ function splitLongClause(sentence: string): string[] {
   return out.length ? out : [sentence];
 }
 
-/** ◆ 주의 … 면책 본문을 일반 본문과 분리 */
 function splitByCautionBlocks(text: string): TextSegment[] {
   const segments: TextSegment[] = [];
   let rest = text;
@@ -99,7 +92,6 @@ function paragraphToUnits(paragraph: string): PausedReadUnit[] {
   }));
 }
 
-/** ◆ 소제목 단락 → 제목 한 번 + 본문 문장들 */
 function sectionBlockToUnits(block: string): PausedReadUnit[] {
   const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return [];
@@ -128,7 +120,6 @@ function textToUnits(text: string): PausedReadUnit[] {
   return units;
 }
 
-/** 마크다운 제거 후 문장·단락·주의 면책 단위로 분할 */
 export function splitForPausedReading(text: string): PausedReadUnit[] {
   const cleaned = cleanForTts(text);
   if (!cleaned) return [];

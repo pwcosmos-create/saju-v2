@@ -20,6 +20,8 @@ import { BRAND } from './ui-brand';
 
 const APP_VERSION = packageJson.version;
 
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+
 const FEATURES = [
   {
     icon: '✨',
@@ -333,7 +335,7 @@ export default function HomePageClient() {
           분석·심층 풀이·AI 상담은 무료입니다 · 서버·운영비는 선택 후원으로 보조합니다
         </div>
 
-        {SUPPORT_BANK && SUPPORT_ACCOUNT_NO && (
+        {!APPS_IN_TOSS && SUPPORT_BANK && SUPPORT_ACCOUNT_NO && (
           <div
             role="note"
             style={{

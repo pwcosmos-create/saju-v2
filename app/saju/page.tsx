@@ -3,16 +3,26 @@
  * AI Saju Analytics Platform - v2.0.3
  * 
  * 주요 변경 사항:
- * - AI 심층 풀이: 「AI 풀이 받기」 클릭 시에만 시작, 완료 후 본문 표시
+ * - Draft-Review-Type 워크플로우 도입 (전체 생성 후 검토 및 타이핑)
  * - 단계별 로딩 상태 애니메이션 최적화
  * - 스트리밍 데이터 누락 방지 로직 강화
  */
 
 import Link from 'next/link';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { SiteNav } from '../site-chrome';
 import CounselPanel from '../counsel/CounselPanel';
 import { calculate, SajuResult } from '../../core/pillar-calc/main-calculator';
+import { readSajuFormFromDom, readInitialSajuForm } from '../../lib/toss-form-read';
+import { consumePendingResult, consumePendingForm } from '../../lib/toss-standalone-analyze';
+import { primeSpeechAudio, speakKoreanQueued, stopKoreanSpeech } from '../../lib/korean-tts';
+import { tossTts } from '../../lib/toss-http';
+import { playServerTtsAudio } from '../../lib/server-tts-playback';
+import {
+  buildNaturalTtsUnits,
+  SERVER_TTS_PLAYBACK_RATE,
+  splitUnitForApi,
+} from '../../lib/natural-server-tts';
 import {
   STEMS, BRANCHES, STEMS_H, BRANCHES_H, ZODIAC,
   STEM_ELEM, BRANCH_ELEM, ELEM_NAMES, ELEM_NAMES_H, ELEM_COLORS,
@@ -23,8 +33,11 @@ import {
   JOBS_BY_STEM, F2026_BY_STEM, getIljooDesc,
 } from '../../core/interpretation-db/matcher';
 import { buildPrompt } from '../../core/ai-templates/blueprints';
-import { fetchStream, type SajuCouncilBadgeLevel, type SajuFortuneMode } from '../../core/http-client/stream-fetcher';
-import { isLlmUserOverloadText, SAJU_WAITING_LABEL } from '../../core/user-messages';
+import {
+  fortuneSectionNumberedLabel,
+  fortuneSectionSortIndex,
+} from '../../core/gemma24/fortune-display-order';
+import { fetchStream } from '../../core/http-client/stream-fetcher';
 import { dailyFortune } from '../../core/daily-fortune';
 import type { DailyFortuneResult } from '../../core/daily-fortune';
 import { calcStrength, getSipsin, classifyElements } from '../../core/daily-fortune/classifier';
@@ -33,11 +46,6 @@ import type { MonthlyBrief } from '../../core/daily-fortune/monthly-brief';
 import type { OhaengResult } from '../../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
-import {
-  FORTUNE_DISPLAY_ORDER,
-  fortuneSectionNumberedLabel,
-  fortuneSectionSortIndex,
-} from '../../core/gemma24/fortune-display-order';
 
 // 음력 변환 (클라이언트 전용)
 type MsLib = { lunarToSolar: (y:number,m:number,d:number,leap:boolean)=>{year:number,month:number,day:number} };
@@ -47,6 +55,18 @@ if (typeof window !== 'undefined') {
 }
 
 const THIS_YEAR = new Date().getFullYear();
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+
+function initTossFormValue<T>(pick: (f: NonNullable<ReturnType<typeof readInitialSajuForm>>) => T, fallback: T): T {
+  if (typeof window === 'undefined' || !APPS_IN_TOSS) return fallback;
+  const init = readInitialSajuForm();
+  return init ? pick(init) : fallback;
+}
+
+function showFormError(setter: (msg: string) => void, msg: string) {
+  setter(msg);
+  if (!APPS_IN_TOSS) alert(msg);
+}
 // 간지 연도: 갑자(甲子) = 1984 기준
 function yearGanji(y: number): { s: number; b: number } {
   return { s: ((y - 4) % 10 + 10) % 10, b: ((y - 4) % 12 + 12) % 12 };
@@ -71,28 +91,6 @@ type TabName = typeof TAB_NAMES[number];
 const STEM_ICONS = ['🌳','🌿','☀️','🕯️','⛰️','🌾','🪨','💎','🌊','🌧️'];
 
 // 오행 배지 색상 — 목:초록 화:빨강 토:황금 금:은회색 수:딥네이비(검정물)
-function SajuCouncilBadge({ level, compact }: { level: SajuCouncilBadgeLevel; compact?: boolean }) {
-  if (level === 'none') return null;
-  const certified = level === 'certified';
-  return (
-    <span style={{
-      fontSize: compact ? '.68rem' : '.72rem',
-      fontWeight: 800,
-      color: certified ? '#ffe8a8' : 'rgba(255,255,255,.85)',
-      background: certified
-        ? 'linear-gradient(135deg, rgba(184,134,11,.45), rgba(139,111,198,.35))'
-        : 'rgba(255,255,255,.12)',
-      border: certified ? '1px solid rgba(255,215,120,.55)' : '1px solid rgba(255,255,255,.18)',
-      padding: compact ? '2px 8px' : '3px 10px',
-      borderRadius: 20,
-      backdropFilter: 'blur(4px)',
-      whiteSpace: 'nowrap',
-    }}>
-      {certified ? '✓ 사주위원회 인증' : '◷ 사주위원회 검수 반영'}
-    </span>
-  );
-}
-
 const ELEM_BADGE = [
   { bg:'rgba(34,160,60,.20)',   border:'rgba(34,160,60,.50)',   text:'#5dce70' }, // 목
   { bg:'rgba(220,50,50,.20)',   border:'rgba(220,50,50,.50)',   text:'#ff7070' }, // 화
@@ -141,14 +139,14 @@ function ElemBadge({ idx }: { idx:number }) {
 }
 
 export default function Home() {
-  const [year,   setYear]   = useState('');
-  const [month,  setMonth]  = useState('');
-  const [day,    setDay]    = useState('');
-  const [hour,   setHour]   = useState('-1');
-  const [name,   setName]   = useState('');
-  const [gender, setGender] = useState<'남'|'여'>('남');
-  const [lunar,  setLunar]  = useState(false);
-  const [leapM,  setLeapM]  = useState(false);
+  const [year,   setYear]   = useState(() => initTossFormValue((f) => f.year, ''));
+  const [month,  setMonth]  = useState(() => initTossFormValue((f) => f.month, ''));
+  const [day,    setDay]    = useState(() => initTossFormValue((f) => f.day, ''));
+  const [hour,   setHour]   = useState(() => initTossFormValue((f) => f.hour, '-1'));
+  const [name,   setName]   = useState(() => initTossFormValue((f) => f.name, ''));
+  const [gender, setGender] = useState<'남'|'여'>(() => initTossFormValue((f) => f.gender, '남'));
+  const [lunar,  setLunar]  = useState(() => initTossFormValue((f) => f.lunar, false));
+  const [leapM,  setLeapM]  = useState(() => initTossFormValue((f) => f.leapM, false));
 
   const [result,        setResult]        = useState<SajuResult | null>(null);
   const [fortuneResult, setFortuneResult] = useState<DailyFortuneResult | null>(null);
@@ -156,55 +154,62 @@ export default function Home() {
   const [calcTick, setCalcTick] = useState(0);
   const [tab,      setTab]      = useState<TabName>('성격');
   const [aiText,   setAiText]   = useState('');
-  /** 스트림 수신 + 화면 타이핑 연출까지 끝난 뒤 true — 그때부터 AI 심층 상담 이용 */
+  /** 스트림 수신 + AI 풀이 화면 표시까지 끝난 뒤 true — 그때부터 AI 심층 상담 이용 */
   const [aiFortuneComplete, setAiFortuneComplete] = useState(false);
   const [aiLoading, setAiLoad] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [waitTick, setWaitTick] = useState(0);
-  const [revealSecondsLeft, setRevealSecondsLeft] = useState(0);
-  const [, setCooldownPulse] = useState(0);
-  const aiRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const aiCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const AI_REVEAL_DELAY_MS = 5000;
   const steps = [
-    SAJU_WAITING_LABEL,
-    SAJU_WAITING_LABEL,
-    SAJU_WAITING_LABEL,
-    SAJU_WAITING_LABEL,
+    "운명의 기운을 읽는 중...", 
+    "AI 분석 초안을 작성하는 중...", 
+    "내용의 정확도를 최종 검토 중...", 
+    "전문적인 조언을 정성껏 작성 중..."
   ];
+  /** API 응답 완료 후 풀이 본문을 한 번에 표시하기까지 대기 */
+  const AI_RESULT_REVEAL_DELAY_MS = 5000;
+  const WAIT_FACT_INTERVAL_MS = 1200;
+  const TTS_AFTER_REVEAL_MS = 2000;
   const [showFb,   setShowFb]   = useState(false);
   const [fbDone,   setFbDone]   = useState(false);
   const [comment,  setComment]  = useState('');
   const [copied,        setCopied]        = useState(false);
-  const [aiCooldownUntil, setAiCooldownUntil] = useState(0);
-  const [aiCouncilBadge, setAiCouncilBadge] = useState<SajuCouncilBadgeLevel>('none');
-  const [aiFortuneMode, setAiFortuneMode] = useState<SajuFortuneMode>('none');
-  const aiOnCooldown = Date.now() < aiCooldownUntil;
+  const [formError,     setFormError]     = useState('');
+  const lastResult = useRef<SajuResult | null>(null);
+  const aiTypeTimerRef = useRef<number | null>(null);
+  const aiSpeakDelayRef = useRef<number | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const doAnalyzeRef = useRef<() => void>(() => {});
+  const analyzeBusyRef = useRef(false);
 
   useEffect(() => {
-    if (!aiOnCooldown) return;
-    const id = setInterval(() => {
-      if (Date.now() >= aiCooldownUntil) {
-        setAiCooldownUntil(0);
-        return;
-      }
-      setCooldownPulse((t) => t + 1);
-    }, 1000);
-    return () => clearInterval(id);
-  }, [aiCooldownUntil, aiOnCooldown]);
+    doAnalyzeRef.current = doAnalyze;
+  });
 
-  const lastResult = useRef<SajuResult | null>(null);
-  const resultsRef = useRef<HTMLDivElement>(null);
-  const aiResultRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!APPS_IN_TOSS) return;
+    const dom = readSajuFormFromDom();
+    if (!dom?.year || !dom.month || !dom.day) return;
+    setYear(dom.year);
+    setMonth(dom.month);
+    setDay(dom.day);
+    setHour(dom.hour);
+    setName(dom.name);
+    setGender(dom.gender);
+    setLunar(dom.lunar);
+    setLeapM(dom.leapM);
+  }, []);
 
-  function clearAiRevealTimers() {
-    if (aiRevealTimerRef.current) clearTimeout(aiRevealTimerRef.current);
-    if (aiCountdownRef.current) clearInterval(aiCountdownRef.current);
-    aiRevealTimerRef.current = null;
-    aiCountdownRef.current = null;
-  }
-
-  useEffect(() => () => clearAiRevealTimers(), []);
+  useEffect(() => {
+    if (!APPS_IN_TOSS) return;
+    const w = window as Window & { __SAJU_ANALYZE__?: () => void; __SAJU_JS_OK__?: boolean };
+    w.__SAJU_ANALYZE__ = () => doAnalyzeRef.current();
+    w.__SAJU_JS_OK__ = true;
+    const wait = document.getElementById('saju-js-wait');
+    if (wait) wait.style.display = 'none';
+    return () => {
+      delete w.__SAJU_ANALYZE__;
+    };
+  }, []);
 
   useEffect(() => {
     if (!loading) {
@@ -220,11 +225,12 @@ export default function Home() {
       setWaitTick(0);
       return;
     }
-    const id = setInterval(() => setWaitTick((t) => t + 1), 1200);
+    const id = setInterval(() => setWaitTick(t => t + 1), 1200);
     return () => clearInterval(id);
   }, [aiLoading]);
 
   useEffect(() => {
+    if (APPS_IN_TOSS) return;
     localStorage.removeItem('saju_year');
     localStorage.removeItem('saju_month');
     localStorage.removeItem('saju_day');
@@ -235,24 +241,110 @@ export default function Home() {
   }, []);
 
   function save() {
-    localStorage.setItem('saju_year',  year);
-    localStorage.setItem('saju_month', month);
-    localStorage.setItem('saju_day',   day);
-    localStorage.setItem('saju_hour',  hour);
-    localStorage.setItem('saju_name',  name);
-    localStorage.setItem('saju_gender',gender);
-    localStorage.setItem('saju_lunar', lunar?'1':'0');
+    try {
+      localStorage.setItem('saju_year',  year);
+      localStorage.setItem('saju_month', month);
+      localStorage.setItem('saju_day',   day);
+      localStorage.setItem('saju_hour',  hour);
+      localStorage.setItem('saju_name',  name);
+      localStorage.setItem('saju_gender',gender);
+      localStorage.setItem('saju_lunar', lunar?'1':'0');
+    } catch {
+      /* WebView 저장소 제한 시 무시 */
+    }
   }
 
+  function applyPendingResult() {
+    const form = consumePendingForm();
+    if (form) {
+      setYear(form.year);
+      setMonth(form.month);
+      setDay(form.day);
+      setHour(form.hour);
+      setName(form.name);
+      setGender(form.gender);
+      setLunar(form.lunar);
+      setLeapM(form.leapM);
+    }
+    const pending = consumePendingResult();
+    if (!pending) return;
+    lastResult.current = pending;
+    setResult(pending);
+    setLoading(false);
+    setFormError('');
+    try { setFortuneResult(dailyFortune(pending)); } catch { setFortuneResult(null); }
+    setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+  }
+
+  useEffect(() => {
+    if (!APPS_IN_TOSS) return;
+    applyPendingResult();
+    const onPending = () => applyPendingResult();
+    window.addEventListener('saju:pending-result', onPending);
+    return () => window.removeEventListener('saju:pending-result', onPending);
+  }, []);
+
   function doAnalyze() {
-    const y = parseInt(year), m = parseInt(month), d = parseInt(day);
-    if (!y||!m||!d) { alert('생년월일을 모두 입력해주세요.'); return; }
-    if (y < 1900 || y > THIS_YEAR) { alert(`년도는 1900~${THIS_YEAR} 사이로 입력해주세요.`); return; }
-    let sy=y, sm=m, sd=d;
-    if (lunar) {
-      if (!_ms) { alert('음력 변환 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
-      try { const sol=_ms.lunarToSolar(y,m,d,leapM); sy=sol.year; sm=sol.month; sd=sol.day; }
-      catch { alert('음력 날짜 변환 실패. 날짜를 다시 확인해주세요.'); return; }
+    if (analyzeBusyRef.current) return;
+    analyzeBusyRef.current = true;
+    setFormError('');
+    let yStr = year;
+    let mStr = month;
+    let dStr = day;
+    let hStr = hour;
+    let g: '남' | '여' = gender;
+    let isLunar = lunar;
+    let isLeap = leapM;
+
+    if (APPS_IN_TOSS) {
+      const dom = readSajuFormFromDom();
+      if (dom) {
+        yStr = dom.year;
+        mStr = dom.month;
+        dStr = dom.day;
+        hStr = dom.hour;
+        g = dom.gender;
+        isLunar = dom.lunar;
+        isLeap = dom.leapM;
+        setYear(yStr);
+        setMonth(mStr);
+        setDay(dStr);
+        setHour(hStr);
+        setName(dom.name);
+        setGender(g);
+        setLunar(isLunar);
+        setLeapM(isLeap);
+      }
+    }
+
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10);
+    const d = parseInt(dStr, 10);
+    if (!y || !m || !d) {
+      showFormError(setFormError, '생년월일을 모두 입력해주세요.');
+      analyzeBusyRef.current = false;
+      return;
+    }
+    if (y < 1900 || y > THIS_YEAR) {
+      showFormError(setFormError, `년도는 1900~${THIS_YEAR} 사이로 입력해주세요.`);
+      analyzeBusyRef.current = false;
+      return;
+    }
+    let sy = y, sm = m, sd = d;
+    if (isLunar) {
+      if (!_ms) {
+        showFormError(setFormError, '음력 변환 로딩 중입니다. 잠시 후 다시 시도해주세요.');
+        analyzeBusyRef.current = false;
+        return;
+      }
+      try {
+        const sol = _ms.lunarToSolar(y, m, d, isLeap);
+        sy = sol.year; sm = sol.month; sd = sol.day;
+      } catch {
+        showFormError(setFormError, '음력 날짜 변환 실패. 날짜를 다시 확인해주세요.');
+        analyzeBusyRef.current = false;
+        return;
+      }
     }
     save();
     setLoading(true);
@@ -260,102 +352,167 @@ export default function Home() {
     setFortuneResult(null);
     setAiText('');
     setAiFortuneComplete(false);
-    setAiCouncilBadge('none');
-    setAiFortuneMode('none');
-    clearAiRevealTimers();
-    setRevealSecondsLeft(0);
-    setAiLoad(false);
-    setLoadingStep(0);
     setShowFb(false);
     setFbDone(false);
     setTimeout(() => {
-      const r = calculate({ year:sy, month:sm, day:sd, hourTotalMin:parseInt(hour), gender });
-      lastResult.current = r;
-      setResult(r);
-      try { setFortuneResult(dailyFortune(r)); } catch { setFortuneResult(null); }
-      setLoading(false);
-      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior:'smooth' }), 100);
+      try {
+        const r = calculate({ year: sy, month: sm, day: sd, hourTotalMin: parseInt(hStr, 10), gender: g });
+        lastResult.current = r;
+        setResult(r);
+        try { setFortuneResult(dailyFortune(r)); } catch { setFortuneResult(null); }
+        setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '사주 계산 중 오류가 발생했습니다.';
+        showFormError(setFormError, msg);
+      } finally {
+        setLoading(false);
+        analyzeBusyRef.current = false;
+      }
     }, 600);
   }
 
 
+  async function speakAiFortune(text: string) {
+    if (!text.trim()) return;
+    stopKoreanSpeech();
+    await primeSpeechAudio();
+
+    const units = buildNaturalTtsUnits(text, { counselAnswer: false });
+    if (!units.length) return;
+
+    if (APPS_IN_TOSS) {
+      let allOk = true;
+      for (let ui = 0; ui < units.length; ui++) {
+        const unit = units[ui];
+        const apiChunks = splitUnitForApi(unit.text);
+        for (const chunk of apiChunks) {
+          let bridged = await tossTts(chunk, '도화');
+          if (!bridged.ok) {
+            await new Promise<void>((r) => window.setTimeout(r, 400));
+            bridged = await tossTts(chunk, '도화');
+          }
+          if (!bridged.ok) {
+            allOk = false;
+            break;
+          }
+          const ok = await playServerTtsAudio(
+            { mimeType: bridged.mimeType, audioBase64: bridged.audioBase64 },
+            { playbackRate: SERVER_TTS_PLAYBACK_RATE },
+          );
+          if (!ok) {
+            allOk = false;
+            break;
+          }
+        }
+        if (!allOk) break;
+        if (unit.pauseAfterMs > 0 && ui < units.length - 1) {
+          await new Promise<void>((r) => window.setTimeout(r, unit.pauseAfterMs));
+        }
+      }
+      if (allOk) return;
+    }
+
+    const prepared = units.map((u) => u.text).join('\n\n');
+    speakKoreanQueued(prepared, {
+      counselorName: '도화',
+      onChunkError: () => {},
+    });
+  }
+
+  function clearAiTypeTimer() {
+    if (aiTypeTimerRef.current) {
+      clearInterval(aiTypeTimerRef.current);
+      aiTypeTimerRef.current = null;
+    }
+  }
+
+  function clearAiSpeakDelay() {
+    if (aiSpeakDelayRef.current) {
+      clearTimeout(aiSpeakDelayRef.current);
+      aiSpeakDelayRef.current = null;
+    }
+  }
+
+  function clearAiTypingTimers() {
+    clearAiTypeTimer();
+    clearAiSpeakDelay();
+  }
+
   function askAI() {
     if (!lastResult.current) return;
-    if (aiLoading) return;
-    if (Date.now() < aiCooldownUntil) return;
-    clearAiRevealTimers();
-    setRevealSecondsLeft(0);
+    clearAiTypingTimers();
+    stopKoreanSpeech();
+    void primeSpeechAudio();
     setAiLoad(true);
     setAiText('');
     setAiFortuneComplete(false);
-    setAiCouncilBadge('none');
-    setAiFortuneMode('none');
     setShowFb(false);
     setFbDone(false);
     setLoadingStep(1); // 기운 읽는 중
-    
+
     let fullText = '';
     let isFinished = false;
+    let reviewTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const enterStep3 = () => {
+      if (isFinished) return;
+      setLoadingStep(3);
+    };
+
+    /** 응답 수신 후 5초 뒤 풀이 전체 표시 */
+    const scheduleRevealFortune = (show: () => void) => {
+      enterStep3();
+      reviewTimer = setTimeout(show, AI_RESULT_REVEAL_DELAY_MS);
+    };
 
     // 단계별 메시지 연출 (AI가 깊이 분석하는 느낌)
     const t1 = setTimeout(() => { if (!isFinished) setLoadingStep(2); }, 3000); // 초안 작성 중
-    const t2 = setTimeout(() => { if (!isFinished) setLoadingStep(3); }, 7000); // 검토 중
+    const t2 = setTimeout(() => { if (!isFinished) enterStep3(); }, 7000); // 검토 중
+    const tSlow = setTimeout(() => {
+      if (!isFinished) setFormError('AI 응답 생성 중입니다. 최대 1~2분 걸릴 수 있어요.');
+    }, 25_000);
+
+    const finishAi = (text: string, complete: boolean) => {
+      isFinished = true;
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(tSlow);
+      if (reviewTimer) clearTimeout(reviewTimer);
+      setFormError('');
+      revealAiFortune(text, complete);
+    };
 
     fetchStream(buildPrompt(lastResult.current), {
-      onMeta: ({ councilBadge, fortuneMode }) => {
-        setAiCouncilBadge(councilBadge);
-        setAiFortuneMode(fortuneMode ?? 'none');
-      },
       onChunk: t => {
         fullText += t;
-        if (fullText.length >= 400) setLoadingStep((s) => (s < 2 ? 2 : s));
-        if (fullText.length >= 1200) setLoadingStep((s) => (s < 3 ? 3 : s));
+        // 작성 중 단계에서는 진행률만 표시하거나 아주 가끔 업데이트 (사용자 안심용)
+        if (fullText.length % 500 === 0) {
+           setLoadingStep(2); 
+        }
       },
       onDone: () => {
-        isFinished = true;
-        clearTimeout(t1);
-        clearTimeout(t2);
-        setLoadingStep(4);
-        setWaitTick(99);
-
-        const rateLimited = isLlmUserOverloadText(fullText);
-        const reveal = () => {
-          clearAiRevealTimers();
-          setRevealSecondsLeft(0);
-          if (rateLimited) {
-            setAiCooldownUntil(Date.now() + 90_000);
-            setAiFortuneComplete(false);
-          } else {
-            setAiFortuneComplete(true);
-          }
-          setAiText(
-            rateLimited
-              ? SAJU_WAITING_LABEL
-              : fullText.trim() || SAJU_WAITING_LABEL,
-          );
-          setAiLoad(false);
-          setShowFb(!rateLimited && Boolean(fullText.trim()));
-          setLoadingStep(0);
-          window.setTimeout(() => {
-            aiResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 120);
-        };
-
-        setRevealSecondsLeft(5);
-        aiCountdownRef.current = setInterval(() => {
-          setRevealSecondsLeft((s) => (s > 0 ? s - 1 : 0));
-        }, 1000);
-        aiRevealTimerRef.current = setTimeout(reveal, AI_REVEAL_DELAY_MS);
+        const trimmed = fullText.trim();
+        const overload = /확인중입니다|잠시만 기다리세요|한도 초과|혼잡/.test(trimmed);
+        if (overload || !trimmed) {
+          scheduleRevealFortune(() => {
+            finishAi(
+              'AI 서버가 혼잡합니다. 1~2분 후 「✦ AI 풀이 받기」를 다시 눌러 주세요.',
+              false,
+            );
+          });
+          return;
+        }
+        scheduleRevealFortune(() => finishAi(trimmed, true));
       },
-      onError: (err) => { 
-        console.error("AI Stream Error:", err);
-        clearAiRevealTimers();
-        setRevealSecondsLeft(0);
-        setAiLoad(false);
-        setLoadingStep(0);
-        setAiText(fullText.trim() || SAJU_WAITING_LABEL);
-        setShowFb(true);
-        setAiFortuneComplete(true);
+      onError: (err) => {
+        console.error('AI Stream Error:', err);
+        const errMsg = err.message || '';
+        const msg = fullText.trim()
+          ? `AI 분석 중 연결이 끊겼습니다. 작성된 내용까지 보여드릴게요.\n\n${fullText}`
+          : errMsg.includes('초과') || errMsg.includes('혼잡') || errMsg.includes('받지 못')
+            ? `${errMsg}\n\n잠시 후 「✦ AI 풀이 받기」를 다시 눌러 주세요.`
+            : 'AI 분석 중 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.';
+        scheduleRevealFortune(() => finishAi(msg, Boolean(fullText.trim())));
       },
     });
   }
@@ -374,15 +531,15 @@ export default function Home() {
     const gisin = cls.gisin.length ? cls.gisin.map(elemName).join(' · ') : '없음';
     const dom = result.ohaeng.counts
       .map((c, i) => ({ c, i }))
-      .filter((x) => x.c >= 2)
+      .filter(x => x.c >= 2)
       .sort((a, b) => b.c - a.c)
       .slice(0, 2)
-      .map((x) => `${elemName(x.i)} ${x.c}개`)
+      .map(x => `${elemName(x.i)} ${x.c}개`)
       .join(', ') || '없음';
     const lack = result.ohaeng.counts
       .map((c, i) => ({ c, i }))
-      .filter((x) => x.c === 0)
-      .map((x) => elemName(x.i))
+      .filter(x => x.c === 0)
+      .map(x => elemName(x.i))
       .join(', ') || '없음';
 
     return [
@@ -400,6 +557,24 @@ export default function Home() {
     '용신·희신·기신 분류 규칙을 적용하는 중...',
     '신살과 대운 흐름을 매핑하는 중...',
   ]), []);
+
+  /** 완료 후 대기가 끝나면 풀이 전체를 한 번에 표시 */
+  function revealAiFortune(text: string, complete: boolean) {
+    clearAiTypingTimers();
+    setAiLoad(false);
+    setShowFb(true);
+    setLoadingStep(0);
+    setAiText(text);
+    setAiFortuneComplete(complete);
+
+    if (text.trim()) {
+      aiSpeakDelayRef.current = window.setTimeout(() => {
+        aiSpeakDelayRef.current = null;
+        void speakAiFortune(text);
+      }, TTS_AFTER_REVEAL_MS);
+    }
+  }
+
 
   function copyResult() {
     if (!result) return;
@@ -522,7 +697,7 @@ export default function Home() {
         </p>
 
         <div className="form-card" style={{ background:'var(--card2)', border:'1px solid var(--border)',
-          borderRadius:16, backdropFilter:'blur(20px)', textAlign:'left' }}>
+          borderRadius:16, ...(process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1' ? {} : { backdropFilter:'blur(20px)' }), textAlign:'left' }}>
           <div style={{ fontSize:'.9rem', fontWeight:700, color:'var(--gold)', marginBottom:20 }}>☽ 생년월일 입력</div>
 
           <div className="form-grid">
@@ -595,10 +770,29 @@ export default function Home() {
             </div>
           </div>
 
-          <button onClick={doAnalyze} style={{
-            width:'100%', marginTop:20, padding:15,
+          {APPS_IN_TOSS && (
+            <p id="saju-js-wait" style={{
+              display: 'none', marginTop: 12, padding: '10px 12px', borderRadius: 10,
+              background: 'rgba(232,201,126,.12)', border: '1px solid rgba(232,201,126,.35)',
+              color: '#f4d889', fontSize: '.85rem', fontWeight: 600,
+            }}>
+              앱을 불러오는 중이에요. 잠시 후 다시 눌러주세요.
+            </p>
+          )}
+          {formError && (
+            <p role="alert" style={{
+              marginTop: 12, padding: '10px 12px', borderRadius: 10,
+              background: 'rgba(224,85,85,.15)', border: '1px solid rgba(224,85,85,.4)',
+              color: '#ff8a8a', fontSize: '.88rem', fontWeight: 600,
+            }}>
+              {formError}
+            </p>
+          )}
+          <button type="button" data-saju-analyze onClick={APPS_IN_TOSS ? undefined : doAnalyze} disabled={loading} style={{
+            width:'100%', marginTop: formError ? 12 : 20, padding:15,
             background:'linear-gradient(135deg,#7c4fc4,#4a9eff)', border:'none',
-            borderRadius:10, color:'#fff', fontSize:'.98rem', fontWeight:700, cursor:'pointer',
+            borderRadius:10, color:'#fff', fontSize:'.98rem', fontWeight:700,
+            cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1,
           }}>✦ 사주팔자 정밀 분석하기</button>
         </div>
       </section>
@@ -750,25 +944,6 @@ export default function Home() {
           </div>
 
           <div style={cardStyle}>
-            {/* 탭별 상단 이미지 */}
-            {tab==='성격' && (
-              <div style={{ width:'100%', height:100, borderRadius:10, overflow:'hidden', marginBottom:16, position:'relative' }}>
-                <img src="/saju-personality-visual.png" alt="성격 분석" style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.75 }} />
-                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 40%, var(--card) 100%)' }} />
-              </div>
-            )}
-            {tab==='대운' && (
-              <div style={{ width:'100%', height:100, borderRadius:10, overflow:'hidden', marginBottom:16, position:'relative' }}>
-                <img src="/saju-daeun-visual.png" alt="대운 흐름" style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.75 }} />
-                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 40%, var(--card) 100%)' }} />
-              </div>
-            )}
-            {tab==='월별' && (
-              <div style={{ width:'100%', height:100, borderRadius:10, overflow:'hidden', marginBottom:16, position:'relative' }}>
-                <img src="/saju-monthly-visual.png" alt="월별 운세" style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.75 }} />
-                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 40%, var(--card) 100%)' }} />
-              </div>
-            )}
             {tab==='성격'&&dp&&<TabSung ds={ds} dp={dp} />}
             {tab==='운세'&&<TabFortune ds={ds} />}
             {tab==='신살'&&<TabShinsal shinsal={result.shinsal} />}
@@ -781,24 +956,12 @@ export default function Home() {
           {/* AI 풀이 */}
           <div style={{ margin:'28px 0', background:'rgba(139,111,198,.1)',
             border:'1px solid rgba(139,111,198,.3)', borderRadius:16, padding:28 }}>
-            {/* AI 풀이 배너 이미지 */}
-            <div style={{
-              width:'100%', height:120, borderRadius:12, overflow:'hidden',
-              marginBottom:18, position:'relative',
-            }}>
-              <img src="/saju-ai-reading-banner.png" alt="AI 심층 풀이"
-                style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.85 }} />
-              <div style={{
-                position:'absolute', inset:0,
-                background:'linear-gradient(90deg, rgba(10,8,30,.7) 0%, transparent 40%, transparent 60%, rgba(10,8,30,.7) 100%)',
-              }} />
-              <div style={{
-                position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', gap:10,
-              }}>
-                <span style={{ fontSize:'1.5rem' }}>✦</span>
-                <span style={{ fontWeight:900, fontSize:'1.1rem', color:'#fff', textShadow:'0 0 20px rgba(196,168,255,.8)' }}>AI 심층 풀이</span>
-                <SajuCouncilBadge level={aiCouncilBadge !== 'none' ? aiCouncilBadge : 'reviewed'} compact />
-              </div>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+              <span style={{ fontSize:'1.3rem' }}>✦</span>
+              <span style={{ fontWeight:800, fontSize:'1rem', color:'var(--gold)' }}>AI 심층 풀이</span>
+              <span style={{ fontSize:'.72rem', color:'var(--muted)', background:'rgba(255,255,255,.07)', padding:'2px 8px', borderRadius:20 }}>
+                Gemini 2.5 Flash
+              </span>
             </div>
 
             {/* 사주 도표 */}
@@ -813,10 +976,10 @@ export default function Home() {
             </div>
 
             <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', position: 'relative' }}>
-              <button onClick={askAI} disabled={aiLoading || aiOnCooldown} className={aiLoading ? "analyzing-btn" : ""} style={{
+              <button onClick={askAI} disabled={aiLoading} className={aiLoading ? "analyzing-btn" : ""} style={{
                 background:'linear-gradient(135deg,#6b4fa0,#3a7bd5)', border:'none',
                 borderRadius:10, color:'#fff', fontSize:'.92rem', fontWeight:700,
-                padding:'12px 24px', cursor:(aiLoading || aiOnCooldown)?'not-allowed':'pointer', opacity:(aiLoading || aiOnCooldown)?.7:1,
+                padding:'12px 24px', cursor:aiLoading?'not-allowed':'pointer', opacity:aiLoading?.7:1,
                 position: 'relative', overflow: 'hidden'
               }}>
                 {aiLoading && <div className="btn-shine" />}
@@ -825,9 +988,9 @@ export default function Home() {
                     <svg className="rotating-star" width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="white"/>
                     </svg>
-                    {steps[loadingStep - 1] || SAJU_WAITING_LABEL}
+                    {steps[loadingStep - 1] || '분석 중...'}
                   </span>
-                ) : aiOnCooldown ? `⏳ ${Math.max(1, Math.ceil((aiCooldownUntil - Date.now()) / 1000))}초 후 재시도` : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
+                ) : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
               </button>
             </div>
 
@@ -845,7 +1008,7 @@ export default function Home() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
                   <div style={{ fontWeight: 800, fontSize: '.88rem' }}>지금 AI가 사주를 풀이하는 중이에요</div>
                   <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>
-                    {steps[loadingStep - 1] || SAJU_WAITING_LABEL}
+                    {steps[loadingStep - 1] || '초안 작성 준비 중...'}
                   </div>
                 </div>
 
@@ -869,7 +1032,7 @@ export default function Home() {
                     </div>
                   ))}
 
-                  {waitTick < waitFacts.length && revealSecondsLeft === 0 && (
+                  {waitTick < waitFacts.length && (
                     <div className="ai-wait-skeleton" style={{
                       height: 44,
                       borderRadius: 12,
@@ -878,40 +1041,15 @@ export default function Home() {
                       overflow: 'hidden',
                     }} />
                   )}
-
-                  {revealSecondsLeft > 0 && (
-                    <div style={{
-                      marginTop: 4,
-                      padding: '12px 14px',
-                      borderRadius: 12,
-                      background: 'rgba(107,79,160,0.22)',
-                      border: '1px solid rgba(196,168,255,0.25)',
-                      textAlign: 'center',
-                      fontSize: '.86rem',
-                      fontWeight: 700,
-                      color: '#e0cfff',
-                    }}>
-                      초안 작성이 끝났어요 · {revealSecondsLeft}초 후 심층 풀이를 보여드릴게요
-                    </div>
-                  )}
                 </div>
               </div>
             )}
 
             {/* 프리미엄 게이트 모달 */}
 
-            <div ref={aiResultRef}>
-              {aiText && !aiLoading && (
-                <>
-                  {aiCouncilBadge !== 'none' && (
-                    <div style={{ display:'flex', justifyContent:'center', marginTop:14 }}>
-                      <SajuCouncilBadge level={aiCouncilBadge} />
-                    </div>
-                  )}
-                  <AiRenderer text={aiText} loading={false} result={result} fortuneMode={aiFortuneMode} />
-                </>
-              )}
-            </div>
+            {aiText && !aiLoading && (
+              <AiRenderer text={aiText} loading={false} result={result} />
+            )}
 
             {showFb&&!fbDone&&(
               <div style={{ marginTop:16 }}>
@@ -1553,21 +1691,12 @@ function OhaengRadar({ counts }: { counts: number[] }) {
 
 // ─── AI 풀이 렌더러 ───
 function renderInline(text: string): React.ReactNode {
-  // **굵게** + 👉 하이라이트 처리
-  const parts = text.split(/(\*\*[^*]+\*\*|👉[^\n]*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**'))
-      return <strong key={i} style={{ color:'#ffffff', fontWeight:800 }}>{part.slice(2,-2)}</strong>;
-    if (part.startsWith('👉'))
-      return (
-        <span key={i} style={{
-          display:'inline-block', background:'rgba(232,196,106,.15)',
-          border:'1px solid rgba(232,196,106,.35)', borderRadius:6,
-          padding:'1px 8px', color:'#f5d67a', fontWeight:700, margin:'0 2px',
-        }}>{part}</span>
-      );
-    return part;
-  });
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={i} style={{ color:'#ffffff', fontWeight:700 }}>{part.slice(2,-2)}</strong>
+      : part
+  );
 }
 
 // ─── 월별 운세 막대 차트 ───
@@ -1621,12 +1750,11 @@ function MonthlyChart({ briefs }: { briefs: MonthlyBrief[] }) {
   );
 }
 
-function AiRenderer({ text, loading, result, fortuneMode }: {
+function AiRenderer({ text, loading, result }: {
   text: string; loading: boolean; result?: SajuResult | null;
-  fortuneMode?: SajuFortuneMode;
 }) {
   const ds = result?.pillars[2]?.s ?? 0;
-  const isCouncil = fortuneMode?.startsWith('council') ?? text.includes('사주위원회 인증');
+  const isCouncil = text.includes('사주위원회 인증');
   const [openSections, setOpenSections] = useState<Set<string>>(
     () => new Set(['1', '2', '4', '3', '5', '9', '8', '7', '6', '10']),
   );
@@ -1638,61 +1766,34 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
     return buildMonthlyBriefs(result, cls, new Date().getFullYear());
   }, [result, ds]);
 
-  // 섹션별 이미지 배너 헬퍼
-  function SectionBanner({ src, alt, height=90 }: { src:string; alt:string; height?:number }) {
-    return (
-      <div style={{ width:'100%', height, borderRadius:10, overflow:'hidden', marginBottom:14, position:'relative' }}>
-        <img src={src} alt={alt} style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.75 }} />
-        <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 30%, rgba(0,0,0,.5) 100%)' }} />
-      </div>
-    );
-  }
-
-  /** 섹션 배너 — result 없어도 인증 카드 풀이에 표시 */
-  const SECTION_BANNERS: Record<string, React.ReactNode> = {
-    '1': <SectionBanner key="img1" src="/saju-pillars-visual.png" alt="사주 핵심 구조" />,
-    '2': <SectionBanner key="img2" src="/saju-personality-visual.png" alt="실생활 패턴" />,
-    '3': <SectionBanner key="img3" src="/saju-hero-mandala.png" alt="격국과 기질" height={88} />,
-    '4': <SectionBanner key="img4" src="/saju-ohaeng-visual.png" alt="오행 분포" height={80} />,
-    '5': <SectionBanner key="img5" src="/saju-ohaeng-visual.png" alt="용신 희신" height={80} />,
-    '6': <SectionBanner key="img6" src="/saju-career-visual.png" alt="직업과 적성" />,
-    '7': <SectionBanner key="img7" src="/saju-relations-visual.png" alt="인간관계" />,
-    '8': <SectionBanner key="img8" src="/saju-wealth-visual.png" alt="돈과 재물" />,
-    '9': <SectionBanner key="img9" src="/saju-monthly-visual.png" alt="월별 흐름" height={80} />,
-    '10': <SectionBanner key="img10" src="/saju-daeun-visual.png" alt="대운과 인생 전략" />,
-  };
-
-  /** 사주 결과가 있을 때만 차트·게이지 */
   const SECTION_EXTRAS: Record<string, React.ReactNode> = result ? {
     '1': <div key="c1" style={{ margin:'8px 0 16px' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div>,
     '4': <div key="c4" style={{ margin:'4px 0 12px', display:'flex', justifyContent:'center' }}><OhaengRadar counts={result.ohaeng.counts} /></div>,
     '9': monthlyBriefs ? <MonthlyChart key="c9" briefs={monthlyBriefs} /> : null,
-    '10': <SectionBanner key="img10b" src="/saju-strategy-visual.png" alt="인생 전략" height={72} />,
   } : {};
 
-  // 섹션 레이블 매핑
-  const SECTION_LABELS: Record<string, {emoji: string; color: string}> = {
-    '1':  { emoji:'🔮', color:'#c4a8ff' },
-    '2':  { emoji:'💡', color:'#90b8f0' },
-    '3':  { emoji:'🌟', color:'#f5d67a' },
-    '4':  { emoji:'⚖️', color:'#5dce70' },
-    '5':  { emoji:'✨', color:'#c4a8ff' },
-    '6':  { emoji:'💼', color:'#f5d67a' },
-    '7':  { emoji:'🤝', color:'#90b8f0' },
-    '8':  { emoji:'💰', color:'#5dce70' },
-    '9':  { emoji:'📅', color:'#ff9a7a' },
+  const SECTION_LABELS: Record<string, { emoji: string; color: string }> = {
+    '1': { emoji:'🔮', color:'#c4a8ff' },
+    '2': { emoji:'💡', color:'#90b8f0' },
+    '3': { emoji:'🌟', color:'#f5d67a' },
+    '4': { emoji:'⚖️', color:'#5dce70' },
+    '5': { emoji:'✨', color:'#c4a8ff' },
+    '6': { emoji:'💼', color:'#f5d67a' },
+    '7': { emoji:'🤝', color:'#90b8f0' },
+    '8': { emoji:'💰', color:'#5dce70' },
+    '9': { emoji:'📅', color:'#ff9a7a' },
     '10': { emoji:'🗺️', color:'#c4a8ff' },
   };
 
   function toggleSection(id: string) {
-    setOpenSections(prev => {
+    setOpenSections((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
-  // 텍스트를 섹션 단위로 파싱
   type Section = { id: string; title: string; lines: string[] };
   const sections: Section[] = [];
   let current: Section | null = null;
@@ -1701,21 +1802,19 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
   for (const raw of text.split('\n')) {
     const line = raw.trimEnd();
     const trimmed = line.trim();
-    // [N] 또는 [N] 제목 형태 모두 지원
     const sec = trimmed.match(/^\[(\d+)\]\s*(.*)/);
     if (sec) {
       if (current) sections.push(current);
       current = { id: sec[1], title: sec[2].trim(), lines: [] };
       continue;
     }
-    // [N] 없이 "3. 오행 균형" 만 있는 경우 (표시 번호 → 본문 id)
     const dotted = trimmed.match(/^(\d{1,2})\.\s+(.+)/);
     if (dotted) {
       const displayNum = Number.parseInt(dotted[1]!, 10);
-      const id = FORTUNE_DISPLAY_ORDER[displayNum - 1];
-      if (id) {
+      const idFromOrder = ['1', '2', '4', '3', '5', '9', '8', '7', '6', '10'][displayNum - 1];
+      if (idFromOrder) {
         if (current) sections.push(current);
-        current = { id, title: dotted[2]!.trim(), lines: [] };
+        current = { id: idFromOrder, title: dotted[2]!.trim(), lines: [] };
         continue;
       }
     }
@@ -1727,80 +1826,52 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
   function renderLines(lines: string[]) {
     const nodes: React.ReactNode[] = [];
     let k = 0;
-    // 연속 빈줄 압축
-    const compressed = lines.reduce<string[]>((acc, l) => {
-      if (l.trim() === '' && acc[acc.length-1]?.trim() === '') return acc;
-      return [...acc, l];
-    }, []);
-
-    for (const line of compressed) {
-      // ━━━ 구분선
+    for (const line of lines) {
       if (/^━{3,}/.test(line)) {
         nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.08)', margin:'14px 0' }} />);
         continue;
       }
-      // 1. 인사 성향 — 섹션 소제목 강조
-      if (/^\d+\.\s+\S/.test(line.trim()) && line.trim().length < 48) {
-        nodes.push(
-          <p key={k++} style={{
-            fontSize: '1.08rem',
-            fontWeight: 900,
-            color: '#fff',
-            marginTop: 16,
-            marginBottom: 10,
-            lineHeight: 1.4,
-            letterSpacing: '-0.02em',
-          }}>
-            {renderInline(line.trim())}
-          </p>
-        );
-        continue;
-      }
-      // ◆ 소제목
       if (line.includes('◆')) {
         const parts = line.split(/(◆[^◆\n]+)/g);
-        parts.forEach(part => {
+        parts.forEach((part) => {
           if (part.startsWith('◆')) {
             nodes.push(
               <div key={k++} style={{ marginTop:18, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ width:3, height:16, background:'var(--gold)', borderRadius:2, flexShrink:0, display:'inline-block' }} />
+                <span style={{ width:3, height:16, background:'var(--gold)', borderRadius:2, flexShrink:0 }} />
                 <h3 style={{ fontSize:'.9rem', fontWeight:800, color:'var(--gold)', margin:0 }}>
-                  {renderInline(part.replace('◆','').trim())}
+                  {renderInline(part.replace('◆', '').trim())}
                 </h3>
-              </div>
+              </div>,
             );
           } else if (part.trim()) {
             nodes.push(
               <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.85, marginBottom:10, paddingLeft:11 }}>
                 {renderInline(part.trim())}
-              </p>
+              </p>,
             );
           }
         });
         continue;
       }
-      // — • 불릿
       if (/^[—•]\s/.test(line)) {
         nodes.push(
           <div key={k++} style={{ display:'flex', gap:8, marginBottom:6, paddingLeft:8 }}>
             <span style={{ color:'var(--purple)', flexShrink:0, fontSize:'.85rem', marginTop:2 }}>▸</span>
             <span style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.85 }}>
-              {renderInline(line.replace(/^[—•]\s/,''))}
+              {renderInline(line.replace(/^[—•]\s/, ''))}
             </span>
-          </div>
+          </div>,
         );
         continue;
       }
-      // 빈줄
       if (!line.trim()) {
         nodes.push(<div key={k++} style={{ height:8 }} />);
         continue;
       }
-      // 일반 텍스트
       nodes.push(
         <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.9, marginBottom:8 }}>
           {renderInline(line)}
-        </p>
+        </p>,
       );
     }
     return nodes;
@@ -1808,88 +1879,64 @@ function AiRenderer({ text, loading, result, fortuneMode }: {
 
   return (
     <div style={{ marginTop:20 }}>
-      {/* 섹션 없는 서두 텍스트 */}
-      {headerlessPre.filter(l=>l.trim()).length > 0 && (
-        <div style={{ padding:'16px 20px', marginBottom:12,
-          background:'rgba(0,0,0,.2)', borderRadius:12,
-          border:'1px solid rgba(255,255,255,.07)' }}>
+      {headerlessPre.filter((l) => l.trim()).length > 0 && (
+        <div style={{ padding:'16px 20px', marginBottom:12, background:'rgba(0,0,0,.2)', borderRadius:12, border:'1px solid rgba(255,255,255,.07)' }}>
           {isCouncil && (
-            <SectionBanner src="/saju-ai-reading-banner.png" alt="AI 심층 풀이" height={72} />
+            <p style={{ fontSize:'.78rem', color:'var(--gold)', fontWeight:700, marginBottom:10 }}>사주위원회 인증 풀이</p>
           )}
           {renderLines(headerlessPre)}
         </div>
       )}
 
-      {isCouncil && sections.length === 0 && !loading && (
-        <SectionBanner src="/saju-pillars-visual.png" alt="사주 구조" height={80} />
-      )}
-
-      {/* 섹션 카드들 — 표시 순서 1~10 */}
       {[...sections]
         .sort((a, b) => fortuneSectionSortIndex(a.id) - fortuneSectionSortIndex(b.id))
-        .map(sec => {
-        const isOpen = openSections.has(sec.id);
-        const meta = SECTION_LABELS[sec.id] ?? { emoji:'✦', color:'#c4a8ff' };
-        return (
-          <div key={sec.id} style={{
-            marginBottom:10, borderRadius:14, overflow:'hidden',
-            border:`1px solid rgba(255,255,255,.08)`,
-            background:'rgba(0,0,0,.22)',
-          }}>
-            {/* 섹션 헤더 — 클릭으로 열고 닫기 */}
-            <button
-              onClick={() => toggleSection(sec.id)}
-              style={{
-                width:'100%', display:'flex', alignItems:'center', gap:12,
-                padding:'16px 20px', background:'rgba(255,255,255,.03)',
-                border:'none', borderBottom: isOpen ? '1px solid rgba(255,255,255,.07)' : 'none',
-                cursor:'pointer', textAlign:'left',
-              }}
-            >
-              <span style={{
-                background: `rgba(${meta.color === '#c4a8ff' ? '196,168,255' : meta.color === '#f5d67a' ? '245,214,122' : meta.color === '#5dce70' ? '93,206,112' : '144,184,240'},.2)`,
-                color: meta.color, fontWeight:900, fontSize:'.85rem',
-                padding:'4px 10px', borderRadius:100, flexShrink:0, letterSpacing:'.04em',
-              }}>
-                {meta.emoji}
-              </span>
-              <span style={{
-                flex: 1,
-                fontWeight: 900,
-                fontSize: '1.12rem',
-                lineHeight: 1.35,
-                letterSpacing: '-0.02em',
-                color: '#fff',
-                textShadow: '0 1px 12px rgba(196,168,255,.25)',
-              }}>
-                {fortuneSectionNumberedLabel(sec.id, sec.title)}
-              </span>
-              <span style={{ color:'var(--muted)', fontSize:'.75rem', transition:'transform .2s',
-                transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', display:'inline-block' }}>▾</span>
-            </button>
+        .map((sec) => {
+          const isOpen = openSections.has(sec.id);
+          const meta = SECTION_LABELS[sec.id] ?? { emoji:'✦', color:'#c4a8ff' };
+          return (
+            <div key={sec.id} style={{
+              marginBottom:10, borderRadius:14, overflow:'hidden',
+              border:'1px solid rgba(255,255,255,.08)', background:'rgba(0,0,0,.22)',
+            }}>
+              <button
+                type="button"
+                onClick={() => toggleSection(sec.id)}
+                style={{
+                  width:'100%', display:'flex', alignItems:'center', gap:12,
+                  padding:'16px 20px', background:'rgba(255,255,255,.03)',
+                  border:'none', borderBottom: isOpen ? '1px solid rgba(255,255,255,.07)' : 'none',
+                  cursor:'pointer', textAlign:'left',
+                }}
+              >
+                <span style={{
+                  background:'rgba(196,168,255,.2)', color: meta.color, fontWeight:900,
+                  fontSize:'.85rem', padding:'4px 10px', borderRadius:100, flexShrink:0,
+                }}>
+                  {meta.emoji}
+                </span>
+                <span style={{ flex:1, fontWeight:900, fontSize:'1.05rem', color:'#fff', lineHeight:1.35 }}>
+                  {fortuneSectionNumberedLabel(sec.id, sec.title)}
+                </span>
+                <span style={{ color:'var(--muted)', fontSize:'.75rem', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+              </button>
+              {isOpen && (
+                <div style={{ padding:'16px 20px' }}>
+                  {SECTION_EXTRAS[sec.id]}
+                  {renderLines(sec.lines)}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
-            {/* 섹션 본문 */}
-            {isOpen && (
-              <div style={{ padding:'16px 20px' }}>
-                {SECTION_BANNERS[sec.id]}
-                {SECTION_EXTRAS[sec.id]}
-                {renderLines(sec.lines)}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
+      {loading && (
+        <div style={{ padding:'12px 20px', color:'var(--gold)' }}>
+          <span className="typing-cursor">▌</span>
+        </div>
+      )}
       <style>{`
-        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(0.98); } }
-        @keyframes glow { 0%, 100% { box-shadow: 0 0 5px rgba(139,111,198,0.4), 0 0 10px rgba(139,111,198,0.2); } 50% { box-shadow: 0 0 20px rgba(139,111,198,0.6), 0 0 30px rgba(74,158,255,0.4); } }
-        @keyframes shine { to { left: 100%; } }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-        .analyzing-btn { animation: pulse 2s infinite, glow 3s infinite; }
-        .rotating-star { display: inline-block; animation: rotate 2s linear infinite; filter: drop-shadow(0 0 5px #fff); }
-        .btn-shine { position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent); animation: shine 1.5s infinite; }
-        .typing-cursor { color: var(--gold); fontWeight: 700; animation: blink 0.8s infinite; margin-left: 2px; }
+        .typing-cursor { font-weight: 700; animation: blink 0.8s infinite; }
       `}</style>
     </div>
   );

@@ -15,6 +15,8 @@ import { isSajuWaitingMessage } from '../../core/user-messages';
 import { useCounselChat } from './use-counsel-chat';
 import { renderCounselContent } from './render-counsel-content';
 
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+
 function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
 }
@@ -24,7 +26,7 @@ const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
 function buildIntro(counselor: string, result: SajuResult): string {
   return (
     `${INTRO_PREFIX}.\n이번 세션의 배정 상담사는 「${counselor}」입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n\n사주나 운세에 관해 궁금한 점을 편하게 물어보세요.`
-    + `\n\n💛 운영 후원 안내\n서버비·운영비 명목으로 소액 후원을 받습니다.\n후원 여부와 관계없이 서비스 이용에는 제한이 없습니다.\n(토스뱅크 100091449133)`
+    + (APPS_IN_TOSS ? '' : `\n\n💛 운영 후원 안내\n서버비·운영비 명목으로 소액 후원을 받습니다.\n후원 여부와 관계없이 서비스 이용에는 제한이 없습니다.\n(토스뱅크 100091449133)`)
   );
 }
 
@@ -380,58 +382,60 @@ export default function CounselPanel({
                         <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>잠시만 기다리세요.. 확인중입니다</span>
                       </span>
                       {/* 후원 안내 배너 — 로딩 중 노출 */}
-                      <div style={{
-                        marginTop: 4,
-                        padding: '8px 10px',
-                        borderRadius: 8,
-                        background: 'rgba(232,201,126,.08)',
-                        border: '1px solid rgba(232,201,126,.2)',
-                        fontSize: '.74rem',
-                        lineHeight: 1.6,
-                        color: 'rgba(232,201,126,.8)',
-                      }}>
-                        💛 <strong>운영 후원 안내</strong><br />
-                        서버비·운영비 명목으로 소액 후원을 받습니다.<br />
-                        후원 여부와 관계없이 서비스 이용에는 제한이 없습니다.
-                        <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
-                          <a
-                            href="https://toss.me/coupax"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              display: 'inline-block',
-                              padding: '3px 10px',
-                              borderRadius: 6,
-                              background: 'rgba(232,201,126,.15)',
-                              border: '1px solid rgba(232,201,126,.3)',
-                              color: '#e8c97e',
-                              fontSize: '.72rem',
-                              fontWeight: 700,
-                              textDecoration: 'none',
-                            }}
-                          >
-                            💸 토스 후원
-                          </a>
-                          <a
-                            href="https://qr.kakaopay.com/FfbMJbXMZ"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              display: 'inline-block',
-                              padding: '3px 10px',
-                              borderRadius: 6,
-                              background: 'rgba(232,201,126,.15)',
-                              border: '1px solid rgba(232,201,126,.3)',
-                              color: '#e8c97e',
-                              fontSize: '.72rem',
-                              fontWeight: 700,
-                              textDecoration: 'none',
-                            }}
-                          >
-                            💛 카카오페이
-                          </a>
+                      {!APPS_IN_TOSS && (
+                        <div style={{
+                          marginTop: 4,
+                          padding: '8px 10px',
+                          borderRadius: 8,
+                          background: 'rgba(232,201,126,.08)',
+                          border: '1px solid rgba(232,201,126,.2)',
+                          fontSize: '.74rem',
+                          lineHeight: 1.6,
+                          color: 'rgba(232,201,126,.8)',
+                        }}>
+                          💛 <strong>운영 후원 안내</strong><br />
+                          서버비·운영비 명목으로 소액 후원을 받습니다.<br />
+                          후원 여부와 관계없이 서비스 이용에는 제한이 없습니다.
+                          <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+                            <a
+                              href="https://toss.me/coupax"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-block',
+                                padding: '3px 10px',
+                                borderRadius: 6,
+                                background: 'rgba(232,201,126,.15)',
+                                border: '1px solid rgba(232,201,126,.3)',
+                                color: '#e8c97e',
+                                fontSize: '.72rem',
+                                fontWeight: 700,
+                                textDecoration: 'none',
+                              }}
+                            >
+                              💸 토스 후원
+                            </a>
+                            <a
+                              href="https://qr.kakaopay.com/FfbMJbXMZ"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-block',
+                                padding: '3px 10px',
+                                borderRadius: 6,
+                                background: 'rgba(232,201,126,.15)',
+                                border: '1px solid rgba(232,201,126,.3)',
+                                color: '#e8c97e',
+                                fontSize: '.72rem',
+                                fontWeight: 700,
+                                textDecoration: 'none',
+                              }}
+                            >
+                              💛 카카오페이
+                            </a>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   ) : (
                     <>

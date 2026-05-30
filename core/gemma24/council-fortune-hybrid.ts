@@ -65,7 +65,10 @@ function parseFortuneSectionBlocks(text: string, query = ''): Map<string, string
       .replace(/^\d{1,2}\.\s*[^\n]*\n?/, '')
       .trim();
     const pruned = pruneFortuneSectionBody(body, { hasHourPillar: promptHasHourPillar(query) });
-    if (!pruned || isLowQualityFortuneBody(pruned, query)) continue;
+    
+    // 오프라인 규칙 기반 초안이 품질 검사에서 짧아서 필터링되는 문제 방지 (N자 이하 필터링 바이패스)
+    const isOfflineFallback = pruned.includes('◆') && pruned.length < 200;
+    if (!pruned || (!isOfflineFallback && isLowQualityFortuneBody(pruned, query))) continue;
 
     blocks.set(
       id,
@@ -218,7 +221,8 @@ export type CouncilHybridResult = {
 
 export function tryCouncilHybridBase(query: string): CouncilHybridResult | null {
   const displayCards = searchCouncilDisplayCards(query);
-  if (!canComposeCouncilFreeFortune(displayCards)) return null;
+  // 카드 개수나 인증 여부와 관계없이 싱글 프롬프트 스트리밍 시 중간 잘림/타임아웃 현상을 방지하기 위해
+  // 개별 섹션 쪼개기(Parallel LLM/Offline) 하이브리드 엔진을 항상 활성화합니다.
   const composed = composeCouncilFreeFortune(displayCards, query);
   const missingSections = hybridGroqEnabled() ? getGroqSupplementSections(composed) : [];
   return { composed, missingSections, contextCards: searchCouncilContextCards(query) };
@@ -239,45 +243,67 @@ export async function buildCouncilHybridFortune(
     };
   }
 
-  const sectionBrief = formatSupplementSectionBrief(composed);
   const frameHint = (contextCards ?? [])
     .filter((c) => cardKind(c) === 'foundation')
     .map((c) => c.title)
     .join(', ');
 
-  const userBlock = [
-    '【이미 제공된 인증 지식 — 반복·요약 금지】',
-    composed.text.slice(0, 5000),
-    frameHint ? `(참고 프레임만: ${frameHint})` : '',
-    '',
-    '【원본 사주 데이터 — 아래만 근거로 보충 작성】',
-    query.slice(0, 10000),
-    '',
-    '【작성할 섹션】',
-    sectionBrief,
-    '',
-    FORTUNE_DISPLAY_ORDER_HINT,
-    '',
-    '각 섹션 300~500자. 월별·대운 데이터가 프롬프트에 있으면 반드시 반영.',
-  ].join('\n');
+  // 쪼개기(Split) 적용: 각 미채움 섹션을 개별 LLM 병렬 호출로 처리하여 잘림과 한도 초과 근본 해결
+  let usedLlmCount = 0;
+  const supplementTasks = composed.needsSupplementIds.map(async (id) => {
+    const note = composed.filledSectionIds.includes(id)
+      ? '(인증 카드만 있어 짧음 — 맞춤 확장)'
+      : '(본문 없음 — 새로 작성)';
+    const singleSectionBrief = `${formatFortuneSectionHeader(id)} ${note}`;
 
-  const supplement = await fetchLlmCompletionText(
-    {
-      max_tokens: 2800,
-      temperature: 0.65,
-      messages: [
-        { role: 'system', content: SUPPLEMENT_SYSTEM },
-        { role: 'user', content: userBlock },
-      ],
-    },
-    { geminiFirst: true },
-  );
+    const userBlock = [
+      '【이미 제공된 인증 지식 — 반복·요약 금지】',
+      composed.text.slice(0, 5000),
+      frameHint ? `(참고 프레임만: ${frameHint})` : '',
+      '',
+      '【원본 사주 데이터 — 아래만 근거로 보충 작성】',
+      query.slice(0, 10000),
+      '',
+      '【작성할 섹션】',
+      singleSectionBrief,
+      '',
+      FORTUNE_DISPLAY_ORDER_HINT,
+      '',
+      '지정된 단 하나의 섹션만 300~500자 내외로 정성을 담아 완성도 높은 평어체(~해요)로 작성해 주세요. 월별·대운 데이터가 프롬프트에 있으면 반드시 반영.',
+    ].join('\n');
 
-  const supplementRaw = !supplement || isOverloadText(supplement)
-    ? ''
-    : humanizeDeepSectionText(sortSupplementBlocks(supplement));
+    try {
+      const singleSupplement = await fetchLlmCompletionText(
+        {
+          max_tokens: 1000,
+          temperature: 0.65,
+          messages: [
+            { role: 'system', content: SUPPLEMENT_SYSTEM },
+            { role: 'user', content: userBlock },
+          ],
+        },
+        { geminiFirst: true },
+      );
 
-  const supplementMerged = pickSupplementText(query, supplementRaw, composed.needsSupplementIds);
+      if (singleSupplement && !isOverloadText(singleSupplement)) {
+        const cleaned = humanizeDeepSectionText(singleSupplement.trim());
+        const bodyOnly = cleaned.replace(/^\[\d+\][^\n]*\n?/, '').trim();
+        // 개별 품질 및 결함 체크 통과 시 실시간 풀이로 적용
+        if (!fortuneOutputHasDefects(cleaned) && !isLowQualityFortuneBody(bodyOnly, query)) {
+          usedLlmCount++;
+          return cleaned;
+        }
+      }
+    } catch (e) {
+      console.error(`[buildCouncilHybridFortune] Section ${id} LLM failed:`, e);
+    }
+
+    // 실패 혹은 결함 발견 시 안전한 규칙 기반 오프라인 초안으로 1차 백업
+    return buildOfflineFortuneSection(query, id) ?? '';
+  });
+
+  const supplements = await Promise.all(supplementTasks);
+  const supplementMerged = supplements.filter(Boolean).join('\n\n');
 
   const merged = mergeFortuneWithSupplement(
     composed.text.replace(baseFooter, '').trim(),
@@ -286,10 +312,7 @@ export async function buildCouncilHybridFortune(
   );
 
   const text = finalizeCouncilFortuneText(query, merged);
-  const mode =
-    !supplement || isOverloadText(supplement) || fortuneOutputHasDefects(supplementRaw)
-      ? 'council-hybrid-pending'
-      : 'council-hybrid';
+  const mode = usedLlmCount > 0 ? 'council-hybrid' : 'council-hybrid-pending';
 
   return { text, mode, cardCount: composed.cardCount };
 }
@@ -306,6 +329,36 @@ function filterOfflineToNeeded(offline: string, neededIds: string[]): string {
     return id && need.has(id);
   });
   return picked.length ? sortFortuneSectionBlocks(picked).join('\n\n') : '';
+}
+
+/** LLM 보충 없이 규칙 기반으로 6~10번 등 빈 섹션을 채움 (토스 브릿지 타임아웃 폴백) */
+export function buildCouncilHybridFortuneOfflineOnly(
+  query: string,
+  base: CouncilHybridResult,
+): { text: string; mode: 'council-hybrid-pending'; cardCount: number } {
+  const { composed } = base;
+  const baseFooter = '참고용 풀이이며 전문 상담을 대체하지 않습니다.';
+
+  if (!composed.needsSupplementIds.length) {
+    return {
+      text: finalizeCouncilFortuneText(query, composed.text),
+      mode: 'council-hybrid-pending',
+      cardCount: composed.cardCount,
+    };
+  }
+
+  const supplementMerged = pickSupplementText(query, '', composed.needsSupplementIds);
+  const merged = mergeFortuneWithSupplement(
+    composed.text.replace(baseFooter, '').trim(),
+    supplementMerged,
+    composed.needsSupplementIds,
+  );
+
+  return {
+    text: finalizeCouncilFortuneText(query, merged),
+    mode: 'council-hybrid-pending',
+    cardCount: composed.cardCount,
+  };
 }
 
 export async function tryCouncilHybridFortune(

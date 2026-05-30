@@ -32,7 +32,6 @@ function flattenBullets(text: string): string {
     .join('\n');
 }
 
-/** ◆ 소제목 + 본문 → "소제목. 본문" (음성용) */
 function bodyFromCardBlock(block: string): string {
   const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return '';
@@ -48,7 +47,6 @@ function bodyFromCardBlock(block: string): string {
   return flattenBullets(block.replace(/^◆\s*[^\n]+\n?/, ''));
 }
 
-/** 화면용 상담 답변 → 음성으로 읽을 본문만 */
 export function extractCounselVoiceAnswer(content: string): string {
   const trimmed = content.trim();
   if (!trimmed) return '';
@@ -58,7 +56,6 @@ export function extractCounselVoiceAnswer(content: string): string {
   const kept: string[] = [];
 
   for (const block of blocks) {
-    const flat = block.replace(/\*\*/g, '').trim();
     const firstLine = block.split('\n')[0]?.replace(/\*\*/g, '').trim() ?? '';
 
     if (isIntroBlock(block) || isIntroBlock(firstLine)) continue;

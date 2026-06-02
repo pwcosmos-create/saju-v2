@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI사주 — 토스 앱에서 열기</title>
+  <script>
+    window.onload = function () {
+      var ua = navigator.userAgent.toLowerCase();
+      var targetUrl = 'intoss-private://saju-coupax';
+      var appPath = targetUrl.replace(/^[a-z]+:\/\//, '');
+      var tossPackage = 'viva.republica.toss';
+
+      if (ua.indexOf('android') > -1) {
+        location.href = 'intent://' + appPath + '#Intent;scheme=intoss-private;package=' + tossPackage + ';end';
+        return;
+      }
+      if (ua.indexOf('kakaotalk') > -1) {
+        location.href = 'kakaotalk://web/openExternalApp?url=' + encodeURIComponent(window.location.href);
+        return;
+      }
+      location.href = targetUrl;
+    };
+  </script>
+</head>
+<body style="background:#0d0b1e; text-align:center; padding-top:100px; font-family:sans-serif; color:#e8e8e8;">
+  <div style="max-width:400px; margin:0 auto; padding:20px;">
+    <h2 style="font-size:24px; margin-bottom:10px; color:#e8c97e;">✦ AI사주</h2>
+    <p style="color:rgba(255,255,255,.7); margin-bottom:30px;">토스 앱으로 이동 중입니다…</p>
+    <p style="font-size:14px; color:rgba(255,255,255,.45);">페이지가 멈춰 있으면 아래 버튼을 눌러 주세요.</p>
+    <a href="intoss-private://saju-coupax" style="display:inline-block; padding:15px 30px; background:#3182f6; color:#fff; text-decoration:none; border-radius:10px; font-weight:bold; margin-top:20px;">토스 앱 열기</a>
+    <p style="font-size:13px; color:rgba(255,255,255,.4); margin-top:24px;">
+      토스 앱이 없다면
+      <a href="https://play.google.com/store/apps/details?id=viva.republica.toss" style="color:#7bbfff;">Play Store에서 설치</a>
+    </p>
+  </div>
+</body>
+</html>

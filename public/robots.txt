@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://saju.coupax.co.kr/sitemap.xml
+Host: https://saju.coupax.co.kr

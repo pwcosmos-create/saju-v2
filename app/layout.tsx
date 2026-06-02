@@ -1,0 +1,173 @@
+import type { Metadata, Viewport } from 'next';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#0d0b1e',
+};
+import './globals.css';
+import { Analytics } from '@vercel/analytics/react';
+import Script from 'next/script';
+
+const SITE_URL = 'https://saju.coupax.co.kr';
+const THIS_YEAR = new Date().getFullYear();
+const TITLE = `✦ AI사주 — ${THIS_YEAR}년 사주팔자 무료 분석 · AI 심층 풀이`;
+const DESC = `${THIS_YEAR}년 AI사주. 생년월일 입력으로 오행·용신·신살·대운·AI 심층 풀이까지 무료 제공. 풀이 후 텍스트·음성 AI 상담도 이용 가능합니다.`;
+
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: TITLE,
+    template: `%s | ✦ AI사주`,
+  },
+  description: DESC,
+  keywords: [
+    '사주', '사주팔자', '무료사주', '사주보기', '사주풀이', '사주분석',
+    '내사주', '사주팔자무료', '사주팔자보기', '무료사주풀이', '사주무료보기',
+    `${THIS_YEAR}년운세`, `${THIS_YEAR}운세`, '올해운세', '토정비결',
+    '만세력', '진짜만세력', '사주만세력', '사주계산',
+    '일주', '일주분석', '60갑자', '갑자일주', '경금일주',
+    '오행', '오행분석', '용신', '신강신약',
+    '신살', '천을귀인', '화개살', '대운', '세운',
+    '사주AI', 'AI사주', '사주인공지능', 'AI운세',
+    '운세', '오늘의운세', '2026운세', '연간운세', '월별운세',
+    '사주보는법', '사주공부', '명리학',
+  ],
+  authors: [{ name: 'saju.coupax.co.kr' }],
+  creator: 'saju.coupax.co.kr',
+  publisher: 'saju.coupax.co.kr',
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' },
+  },
+  openGraph: {
+    type: 'website',
+    title: TITLE,
+    description: DESC,
+    siteName: '✦ AI사주',
+    locale: 'ko_KR',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESC,
+  },
+};
+
+const FAQ_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    {
+      '@type': 'Question',
+      name: '사주팔자란 무엇인가요?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: '사주팔자(四柱八字)는 태어난 연·월·일·시를 각각 천간(天干)과 지지(地支)로 나타낸 여덟 글자(8자)입니다. 이를 통해 타고난 기질·적성·운세를 분석하는 동양 철학 체계입니다.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: '사주팔자는 어떻게 보나요?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: '생년월일과 태어난 시간을 입력하면 연주·월주·일주·시주 네 기둥(四柱)과 오행 분포를 자동 계산합니다. 이 사이트에서는 무료로 일주 분석, 오행, 신살, 대운, AI 심층 풀이까지 제공합니다. 풀이 후 텍스트·음성 AI 상담도 이용할 수 있습니다.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: '일주(日柱)란 무엇인가요?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: '일주는 사주팔자에서 태어난 날을 나타내는 두 글자(천간+지지)입니다. 60갑자 중 하나로, 그 사람의 자아·성격·배우자 인연 등 삶의 핵심을 상징합니다.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: '용신(用神)이란 무엇인가요?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: '용신은 사주팔자에서 일간(日干)을 가장 이롭게 돕는 오행입니다. 신강(身强)한 사람과 신약(身弱)한 사람의 용신이 다르며, 용신 오행의 색·방위·직업 등을 활용하면 운이 좋아집니다.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: '무료로 사주풀이를 받을 수 있나요?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: `네, saju.coupax.co.kr에서는 생년월일 입력만으로 사주팔자 분석을 완전 무료로 제공합니다. ${THIS_YEAR}년 운세, 대운, 신살, AI 심층 풀이까지 무료입니다.`,
+      },
+    },
+  ],
+};
+
+const WEBAPP_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'AI사주',
+  url: SITE_URL,
+  description: DESC,
+  applicationCategory: 'LifestyleApplication',
+  operatingSystem: 'All',
+  inLanguage: 'ko',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'KRW' },
+};
+
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+const ADS_ID = process.env.NEXT_PUBLIC_ADS_ID;
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+const PAYPAL_CLIENT_ID = APPS_IN_TOSS
+  ? ''
+  : (process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
+    'AagriM6wPC0OV-teas4BeZ0rX8G6d-FxAG5H4WisfPMNcabwvMy3Ofdc-iArr91vfin9bFaY4wIhJ1mZ');
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="ko">
+      <head>
+        <meta name="naver-site-verification" content="b5a4069102b997a4c8f1463c8231793e29e5eaf0" />
+        {/* Google Analytics & Ads */}
+        {(GA_ID || ADS_ID) && <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID || ADS_ID}`} />}
+        {(GA_ID || ADS_ID) && <script dangerouslySetInnerHTML={{ __html: `
+          window.dataLayer=window.dataLayer||[];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js',new Date());
+          ${GA_ID ? `gtag('config','${GA_ID}',{page_path:window.location.pathname});` : ''}
+          ${ADS_ID ? `gtag('config','${ADS_ID}');` : ''}
+        `}} />}
+        {/* RSS 자동 발견 — 네이버/구글 크롤러 RSS 인식용 */}
+        <link rel="alternate" type="application/rss+xml" title="사주팔자 무료 분석 RSS" href="https://saju.coupax.co.kr/rss.xml" />
+        {!APPS_IN_TOSS && (
+          <>
+            <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+            <link rel="stylesheet" crossOrigin="anonymous"
+              href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+          </>
+        )}
+        <script type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBAPP_SCHEMA) }} />
+        <script type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }} />
+        {APPS_IN_TOSS && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function(){var p=location.pathname||"";if(/\\/saju\\/?$/i.test(p)||/saju\\/index\\.html$/i.test(p))return;function resolve(el){var raw=el.getAttribute("data-saju-href")||el.getAttribute("href")||"/saju/index.html";try{return new URL(raw,document.baseURI||location.href).href;}catch(e){return raw;}}function onTap(e){var el=e.target&&e.target.closest&&e.target.closest("[data-saju-go]");if(!el)return;e.preventDefault();e.stopPropagation();location.href=resolve(el);}document.addEventListener("click",onTap,true);document.addEventListener("touchend",onTap,true);})();`,
+            }}
+          />
+        )}
+      </head>
+      <body>
+        {!APPS_IN_TOSS && PAYPAL_CLIENT_ID && (
+          <Script
+            src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=KRW`}
+            strategy="beforeInteractive"
+          />
+        )}
+        {children}
+        {!APPS_IN_TOSS && <Analytics />}
+      </body>
+    </html>
+  );
+}

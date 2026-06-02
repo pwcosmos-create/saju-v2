@@ -1,0 +1,64 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# 서버에서 sync:cards 로 받은 live cards (커밋하지 않음)
+/core/data/cards.live.json
+
+# misc
+.DS_Store
+*.pem
+
+# 로컬 피드백 덤프 (커밋하지 않음)
+feedback.jsonl
+council-card-requests.jsonl
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.local.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+.granite
+
+# 토스 미니앱 빌드/인증서
+*.ait
+*.pdf
+*.py
+
+# 로고/스크린샷 에셋
+logo*.png
+logo*.svg
+screenshot*.png
+screenshot*.svg
+thumbnail*.png
+thumbnail*.svg

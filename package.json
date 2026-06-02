@@ -1,0 +1,50 @@
+{
+  "name": "saju-v2",
+  "version": "2.0.3",
+  "private": true,
+  "scripts": {
+    "predev": "node scripts/ensure-cards-live.mjs",
+    "dev": "next dev",
+    "prebuild": "node scripts/ensure-cards-live.mjs",
+    "build": "next build",
+    "build:toss": "node scripts/build-toss.mjs",
+    "toss:exposure": "node scripts/generate-toss-exposure.mjs",
+    "prestart": "node scripts/ensure-cards-live.mjs",
+    "start": "next start",
+    "ait:build": "ait build",
+    "lint": "tsc --noEmit --pretty false",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint",
+    "lint:staged": "lint-staged",
+    "release": "standard-version",
+    "release:patch": "standard-version --release-as patch",
+    "release:minor": "standard-version --release-as minor",
+    "release:major": "standard-version --release-as major",
+    "prepare": "husky",
+    "sync:cards": "node scripts/sync-cards-from-server.mjs"
+  },
+  "dependencies": {
+    "@apps-in-toss/web-framework": "^2.4.7",
+    "@orrery/core": "^0.4.2",
+    "@vercel/analytics": "^1.2.2",
+    "groq-sdk": "^1.1.2",
+    "manseryeok": "^1.0.1",
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.2",
+    "sharp": "^0.34.5",
+    "standard-version": "^9.5.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

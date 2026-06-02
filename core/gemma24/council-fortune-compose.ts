@@ -50,7 +50,8 @@ function pickSectionCards(cards: Gemma24SajuCard[], kinds: string[]): Gemma24Saj
 
 export { sanitizeCardBody };
 
-const MIN_SECTION_BODY_CHARS = Number(process.env.GEMMA24_SECTION_MIN_CHARS ?? 220);
+/** 짧은 섹션은 LLM으로 쉽고 자세히 보충 */
+const MIN_SECTION_BODY_CHARS = Number(process.env.GEMMA24_SECTION_MIN_CHARS ?? 380);
 
 export type CouncilFreeFortuneResult = {
   text: string;

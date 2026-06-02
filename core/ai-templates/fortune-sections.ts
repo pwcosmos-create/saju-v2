@@ -34,7 +34,7 @@ export function splitFortunePromptIntoSections(fullPrompt: string): string[] | n
       + `━━━ 작성 범위 (이번 요청) ━━━\n`
       + `${rangeLabel} 번 주제만 작성하세요. 다른 번호([1]~[10])는 절대 쓰지 마세요.\n`
       + `섹션 제목([${nums[0]}] 등)은 그대로 포함하고, ◆ 소제목 규칙을 지키세요.\n`
-      + `분량은 해당 구간에 맞게 충분히(약 ${blocks.length * 400}~${blocks.length * 700}자) 작성하세요.\n\n`
+      + `분량은 해당 구간에 맞게 쉽고 자세히(약 ${blocks.length * 500}~${blocks.length * 800}자) 작성하세요. 전문 용어는 쉬운 말 먼저, ◆마다 2문단 이상.\n\n`
       + blocks.join('\n\n'),
     );
   }

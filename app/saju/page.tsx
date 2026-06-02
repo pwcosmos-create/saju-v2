@@ -284,7 +284,7 @@ export default function Home() {
     return () => window.removeEventListener('saju:pending-result', onPending);
   }, []);
 
-  function doAnalyze() {
+  async function doAnalyze() {
     if (analyzeBusyRef.current) return;
     analyzeBusyRef.current = true;
     setFormError('');
@@ -354,6 +354,23 @@ export default function Home() {
     setAiFortuneComplete(false);
     setShowFb(false);
     setFbDone(false);
+
+    // [Toss AIT 보상형 광고 호출]
+    const adGroupId = 'ait.v2.live.6e873e2eea174a0d';
+    if (APPS_IN_TOSS) {
+      try {
+        const tossObj = (window as any).Toss;
+        if (tossObj && typeof tossObj.showRewardedAd === 'function') {
+          await tossObj.showRewardedAd({ adGroupId });
+        } else if ((window as any).ait && typeof (window as any).ait.showRewardedAd === 'function') {
+          await (window as any).ait.showRewardedAd({ adGroupId });
+        }
+      } catch (err) {
+        console.warn('Toss rewarded ad failed or closed:', err);
+        // 광고 시청 실패(또는 닫기) 시 그냥 넘어가도록 처리합니다 (필요시 여기서 중단 가능)
+      }
+    }
+
     setTimeout(() => {
       try {
         const r = calculate({ year: sy, month: sm, day: sd, hourTotalMin: parseInt(hStr, 10), gender: g });
@@ -568,10 +585,11 @@ export default function Home() {
     setAiFortuneComplete(complete);
 
     if (text.trim()) {
-      aiSpeakDelayRef.current = window.setTimeout(() => {
-        aiSpeakDelayRef.current = null;
-        void speakAiFortune(text);
-      }, TTS_AFTER_REVEAL_MS);
+      // 음성으로 읽어 주는 기능 끄기 (사용자 요청)
+      // aiSpeakDelayRef.current = window.setTimeout(() => {
+      //   aiSpeakDelayRef.current = null;
+      //   void speakAiFortune(text);
+      // }, TTS_AFTER_REVEAL_MS);
     }
   }
 
@@ -1689,6 +1707,283 @@ function OhaengRadar({ counts }: { counts: number[] }) {
   );
 }
 
+// ─── AI 풀이 섹션 시각 배너 SVG ───
+function SectionBanner({ sectionId }: { sectionId: string }) {
+  const configs: Record<string, { gradient: string; svgContent: React.ReactNode; label: string; labelColor: string }> = {
+    '1': {
+      gradient: 'linear-gradient(135deg, #1a0e3a 0%, #2d1b5e 50%, #0e1a3a 100%)',
+      label: '일주 분석', labelColor: '#c4a8ff',
+      svgContent: (
+        <>
+          <style>{`
+            @keyframes sec1rotate { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+            @keyframes sec1pulse { 0%,100%{opacity:.6;r:36} 50%{opacity:1;r:40} }
+            @keyframes sec1line { 0%,100%{opacity:.3} 50%{opacity:.9} }
+          `}</style>
+          <defs>
+            <radialGradient id="sg1a" cx="50%" cy="50%">
+              <stop offset="0%" stopColor="#c4a8ff" stopOpacity="0.5"/>
+              <stop offset="100%" stopColor="#4a1e8a" stopOpacity="0"/>
+            </radialGradient>
+          </defs>
+          <circle cx="200" cy="55" r="90" fill="url(#sg1a)" style={{animation:'sec1pulse 3s ease-in-out infinite'}}/>
+          {[0,36,72,108,144,180,216,252,288,324].map((deg,i)=>{
+            const r1=28, r2=55, cx2=200, cy2=55;
+            const a=deg*Math.PI/180;
+            return <line key={i} x1={cx2+r1*Math.cos(a)} y1={cy2+r1*Math.sin(a)} x2={cx2+r2*Math.cos(a)} y2={cy2+r2*Math.sin(a)} stroke="#c4a8ff" strokeWidth="1" strokeOpacity="0.5" style={{animation:`sec1line 2s ${i*0.2}s ease-in-out infinite`}}/>;
+          })}
+          {['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'].map((c,i)=>{
+            const a=(i*36-90)*Math.PI/180;
+            return <text key={i} x={200+68*Math.cos(a)} y={55+68*Math.sin(a)+4} textAnchor="middle" fontSize="10" fill="#c4a8ff" fillOpacity="0.8" fontWeight="700">{c}</text>;
+          })}
+          <g style={{animation:'sec1rotate 18s linear infinite',transformOrigin:'200px 55px'}}>
+            {[0,45,90,135,180,225,270,315].map((deg,i)=>{
+              const a=deg*Math.PI/180;
+              return <line key={i} x1={200+22*Math.cos(a)} y1={55+22*Math.sin(a)} x2={200+52*Math.cos(a)} y2={55+52*Math.sin(a)} stroke="#8b6fc6" strokeWidth="0.8" strokeOpacity="0.6"/>;
+            })}
+          </g>
+          <circle cx="200" cy="55" r="12" fill="none" stroke="#e8c97e" strokeWidth="2"/>
+          <text x="200" y="59" textAnchor="middle" fontSize="12" fill="#e8c97e" fontWeight="900">日</text>
+          <line x1="10" y1="55" x2="140" y2="55" stroke="#4a1e8a" strokeWidth="0.6" strokeOpacity="0.5"/>
+          <line x1="260" y1="55" x2="390" y2="55" stroke="#4a1e8a" strokeWidth="0.6" strokeOpacity="0.5"/>
+        </>
+      ),
+    },
+    '2': {
+      gradient: 'linear-gradient(135deg, #0a1e3a 0%, #0e2d4a 50%, #061428 100%)',
+      label: '운세 흐름', labelColor: '#90b8f0',
+      svgContent: (
+        <>
+          <style>{`
+            @keyframes sec2wave { 0%{d:path("M0,55 Q50,35 100,55 Q150,75 200,55 Q250,35 300,55 Q350,75 400,55")} 50%{d:path("M0,55 Q50,75 100,55 Q150,35 200,55 Q250,75 300,55 Q350,35 400,55")} 100%{d:path("M0,55 Q50,35 100,55 Q150,75 200,55 Q250,35 300,55 Q350,75 400,55")} }
+            @keyframes sec2glow { 0%,100%{opacity:.4;r:3} 50%{opacity:1;r:5} }
+          `}</style>
+          <defs>
+            <linearGradient id="sg2a" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#90b8f0" stopOpacity="0"/>
+              <stop offset="30%" stopColor="#90b8f0" stopOpacity="0.8"/>
+              <stop offset="70%" stopColor="#4a9eff" stopOpacity="0.8"/>
+              <stop offset="100%" stopColor="#4a9eff" stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0,55 Q50,35 100,55 Q150,75 200,55 Q250,35 300,55 Q350,75 400,55" fill="none" stroke="url(#sg2a)" strokeWidth="2.5" style={{animation:'sec2wave 4s ease-in-out infinite'}}/>
+          <path d="M0,55 Q50,75 100,55 Q150,35 200,55 Q250,75 300,55 Q350,35 400,55" fill="none" stroke="#4a9eff" strokeWidth="1" strokeOpacity="0.3"/>
+          {[0,1,2,3,4,5,6,7].map(i=>(
+            <circle key={i} cx={50*i+25} cy={i%2===0?40:70} r="3.5" fill="#90b8f0" fillOpacity="0.7" style={{animation:`sec2glow 2s ${i*0.25}s ease-in-out infinite`}}/>
+          ))}
+          {['大運','歲運','月運','日運'].map((t,i)=>(
+            <text key={i} x={50+i*90} y="20" textAnchor="middle" fontSize="9" fill="#90b8f0" fillOpacity="0.6" fontWeight="700">{t}</text>
+          ))}
+        </>
+      ),
+    },
+    '3': {
+      gradient: 'linear-gradient(135deg, #1e1a0a 0%, #3a2e0a 50%, #1a1400 100%)',
+      label: '오행 분석', labelColor: '#f5d67a',
+      svgContent: (
+        <>
+          <style>{`@keyframes sec3spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes sec3pop{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}`}</style>
+          <defs>
+            <radialGradient id="sg3a" cx="50%" cy="50%">
+              <stop offset="0%" stopColor="#f5d67a" stopOpacity="0.25"/>
+              <stop offset="100%" stopColor="#c09030" stopOpacity="0"/>
+            </radialGradient>
+          </defs>
+          <circle cx="200" cy="55" r="80" fill="url(#sg3a)"/>
+          {(['木','火','土','金','水'] as const).map((c,i)=>{
+            const a=(i*72-90)*Math.PI/180;
+            const cols=['#3db550','#e03030','#d4a800','#c0c0c0','#4488cc'];
+            const cx2=200+60*Math.cos(a), cy2=55+60*Math.sin(a);
+            return (
+              <g key={i} style={{animation:`sec3pop 3s ${i*0.6}s ease-in-out infinite`,transformOrigin:`${cx2}px ${cy2}px`}}>
+                <circle cx={cx2} cy={cy2} r="18" fill={cols[i]} fillOpacity="0.2" stroke={cols[i]} strokeWidth="1.5" strokeOpacity="0.7"/>
+                <text x={cx2} y={cy2+5} textAnchor="middle" fontSize="13" fill={cols[i]} fontWeight="900">{c}</text>
+              </g>
+            );
+          })}
+          <g style={{animation:'sec3spin 20s linear infinite',transformOrigin:'200px 55px'}}>
+            {[0,72,144,216,288].map((deg,i)=>{
+              const a1=(deg-90)*Math.PI/180, a2=((deg+72)-90)*Math.PI/180;
+              return <line key={i} x1={200+42*Math.cos(a1)} y1={55+42*Math.sin(a1)} x2={200+42*Math.cos(a2)} y2={55+42*Math.sin(a2)} stroke="#f5d67a" strokeWidth="0.8" strokeOpacity="0.4"/>;
+            })}
+          </g>
+        </>
+      ),
+    },
+    '4': {
+      gradient: 'linear-gradient(135deg, #0a1e12 0%, #0e2d1a 50%, #061408 100%)',
+      label: '오행 균형', labelColor: '#5dce70',
+      svgContent: (
+        <>
+          <style>{`@keyframes sec4radar{0%,100%{opacity:.5}50%{opacity:1}} @keyframes sec4dot{0%,100%{r:3}50%{r:6}}`}</style>
+          <defs>
+            <radialGradient id="sg4a" cx="50%" cy="50%">
+              <stop offset="0%" stopColor="#5dce70" stopOpacity="0.3"/>
+              <stop offset="100%" stopColor="#2a8c40" stopOpacity="0"/>
+            </radialGradient>
+          </defs>
+          {[0.25,0.5,0.75,1].map(r=>{
+            const pts=[[-90,-18,54,126,198].map(d=>d*Math.PI/180).map(a=>`${200+60*r*Math.cos(a)},${55+55*r*Math.sin(a)}`).join(' ')];
+            return <polygon key={r} points={pts[0]} fill="none" stroke="#5dce70" strokeWidth="0.8" strokeOpacity={r*0.4}/>;
+          })}
+          {[-90,-18,54,126,198].map((deg,i)=>{
+            const a=deg*Math.PI/180;
+            return <line key={i} x1="200" y1="55" x2={200+60*Math.cos(a)} y2={55+55*Math.sin(a)} stroke="#5dce70" strokeWidth="0.6" strokeOpacity="0.3"/>;
+          })}
+          <polygon points={[-90,-18,54,126,198].map(d=>d*Math.PI/180).map((a,i)=>{const r=[0.8,0.5,0.7,0.9,0.4][i];return `${200+60*r*Math.cos(a)},${55+55*r*Math.sin(a)}`;}).join(' ')} fill="#5dce70" fillOpacity="0.25" stroke="#5dce70" strokeWidth="1.5" style={{animation:'sec4radar 3s ease-in-out infinite'}}/>
+          {[-90,-18,54,126,198].map((deg,i)=>{
+            const a=deg*Math.PI/180, cols=['#3db550','#e03030','#d4a800','#c0c0c0','#4488cc'], r=[0.8,0.5,0.7,0.9,0.4][i];
+            return <circle key={i} cx={200+60*r*Math.cos(a)} cy={55+55*r*Math.sin(a)} r="4" fill={cols[i]} style={{animation:`sec4dot 2s ${i*0.4}s ease-in-out infinite`}}/>;
+          })}
+        </>
+      ),
+    },
+    '5': {
+      gradient: 'linear-gradient(135deg, #1a0e2e 0%, #2a1a4a 50%, #0e0a1e 100%)',
+      label: '신살 분석', labelColor: '#c4a8ff',
+      svgContent: (
+        <>
+          <style>{`@keyframes sec5star{0%,100%{transform:scale(1) rotate(0deg);opacity:.7}50%{transform:scale(1.3) rotate(15deg);opacity:1}} @keyframes sec5orbit{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+          <defs>
+            <radialGradient id="sg5a" cx="50%" cy="50%">
+              <stop offset="0%" stopColor="#c4a8ff" stopOpacity="0.35"/>
+              <stop offset="100%" stopColor="#4a1e8a" stopOpacity="0"/>
+            </radialGradient>
+          </defs>
+          <circle cx="200" cy="55" r="70" fill="url(#sg5a)"/>
+          {[0,45,90,135,180,225,270,315].map((deg,i)=>{
+            const a=deg*Math.PI/180, r=50;
+            return <circle key={i} cx={200+r*Math.cos(a)} cy={55+r*Math.sin(a)} r="2.5" fill="#c4a8ff" fillOpacity="0.6" style={{animation:`sec5star 2.5s ${i*0.3}s ease-in-out infinite`,transformOrigin:`${200+r*Math.cos(a)}px ${55+r*Math.sin(a)}px`}}/>;
+          })}
+          <g style={{animation:'sec5orbit 12s linear infinite',transformOrigin:'200px 55px'}}>
+            <ellipse cx="200" cy="55" rx="35" ry="18" fill="none" stroke="#8b6fc6" strokeWidth="1" strokeOpacity="0.7" strokeDasharray="4 3"/>
+          </g>
+          <text x="200" y="51" textAnchor="middle" fontSize="11" fill="#e8c97e" fontWeight="900">天</text>
+          <text x="200" y="66" textAnchor="middle" fontSize="11" fill="#e8c97e" fontWeight="900">乙</text>
+          <text x="200" y="82" textAnchor="middle" fontSize="8" fill="#c4a8ff" fontWeight="700">귀인</text>
+        </>
+      ),
+    },
+    '6': {
+      gradient: 'linear-gradient(135deg, #1e1400 0%, #3a2800 50%, #1a1000 100%)',
+      label: '직업·적성', labelColor: '#f5d67a',
+      svgContent: (
+        <>
+          <style>{`@keyframes sec6bar{0%{width:0}100%{width:var(--tw)}} @keyframes sec6shine{0%,100%{opacity:.3}50%{opacity:.8}}`}</style>
+          {[{y:20,w:220,c:'#f5d67a'},{y:36,w:170,c:'#e8a054'},{y:52,w:240,c:'#4cbe82'},{y:68,w:150,c:'#90b8f0'},{y:84,w:200,c:'#c4a8ff'}].map((b,i)=>(
+            <g key={i}>
+              <rect x="30" y={b.y} width="340" height="12" rx="6" fill="rgba(255,255,255,0.05)"/>
+              <rect x="30" y={b.y} width={b.w} height="12" rx="6" fill={b.c} fillOpacity="0.7" style={{animation:`sec6shine 2s ${i*0.4}s ease-in-out infinite`}}/>
+            </g>
+          ))}
+          {['재물','명예','직업','건강','대인'].map((t,i)=>(
+            <text key={i} x="18" y={26+i*16} textAnchor="end" fontSize="8" fill="rgba(255,255,255,0.5)">{t}</text>
+          ))}
+        </>
+      ),
+    },
+    '7': {
+      gradient: 'linear-gradient(135deg, #0a1e2e 0%, #0e2840 50%, #060e20 100%)',
+      label: '인간관계', labelColor: '#90b8f0',
+      svgContent: (
+        <>
+          <style>{`@keyframes sec7node{0%,100%{r:8;opacity:.7}50%{r:11;opacity:1}} @keyframes sec7line{0%,100%{strokeOpacity:.2}50%{strokeOpacity:.8}}`}</style>
+          {[[200,55],[130,25],[270,25],[100,70],[300,70],[150,90],[250,90]].map(([x,y],i)=>(
+            <circle key={i} cx={x} cy={y} r={i===0?14:9} fill={i===0?'#e8c97e':'#90b8f0'} fillOpacity={i===0?0.8:0.5} style={{animation:`sec7node 2s ${i*0.3}s ease-in-out infinite`}}/>
+          ))}
+          {[[200,55,130,25],[200,55,270,25],[200,55,100,70],[200,55,300,70],[200,55,150,90],[200,55,250,90]].map(([x1,y1,x2,y2],i)=>(
+            <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#90b8f0" strokeWidth="1.5" strokeOpacity="0.4" style={{animation:`sec7line 2.5s ${i*0.25}s ease-in-out infinite`}}/>
+          ))}
+        </>
+      ),
+    },
+    '8': {
+      gradient: 'linear-gradient(135deg, #0a1e0e 0%, #0e2a14 50%, #061008 100%)',
+      label: '재물·금전', labelColor: '#5dce70',
+      svgContent: (
+        <>
+          <style>{`@keyframes sec8rise{0%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-6px) scaleY(1.1)}100%{transform:translateY(0) scaleY(1)}} @keyframes sec8glow{0%,100%{filter:brightness(1)}50%{filter:brightness(1.5)}}`}</style>
+          <defs>
+            <linearGradient id="sg8a" x1="0%" y1="100%" x2="0%" y2="0%">
+              <stop offset="0%" stopColor="#4cbe82" stopOpacity="0.1"/>
+              <stop offset="100%" stopColor="#4cbe82" stopOpacity="0.8"/>
+            </linearGradient>
+          </defs>
+          {[{x:40,h:35,d:'0s'},{x:80,h:55,d:'0.2s'},{x:120,h:45,d:'0.4s'},{x:160,h:70,d:'0.6s'},{x:200,h:50,d:'0.8s'},{x:240,h:80,d:'1s'},{x:280,h:60,d:'1.2s'},{x:320,h:90,d:'1.4s'}].map((b,i)=>(
+            <rect key={i} x={b.x} y={105-b.h} width="24" height={b.h} rx="4" fill="url(#sg8a)" style={{animation:`sec8rise 3s ${b.d} ease-in-out infinite`,transformOrigin:`${b.x+12}px 105px`}}/>
+          ))}
+          <path d="M40,80 Q80,70 120,75 Q160,60 200,65 Q240,55 280,48 Q320,42 360,30" fill="none" stroke="#5dce70" strokeWidth="2" strokeOpacity="0.8"/>
+          <circle cx="360" cy="30" r="5" fill="#5dce70"/>
+        </>
+      ),
+    },
+    '9': {
+      gradient: 'linear-gradient(135deg, #1e0a0e 0%, #3a0e18 50%, #1a0608 100%)',
+      label: '월별 운세', labelColor: '#ff9a7a',
+      svgContent: (
+        <>
+          <style>{`@keyframes sec9wave2{0%,100%{d:path("M0,65 Q33,45 66,65 Q100,85 133,65 Q167,45 200,65 Q233,85 267,65 Q300,45 333,65 Q367,85 400,65")}50%{d:path("M0,65 Q33,85 66,65 Q100,45 133,65 Q167,85 200,65 Q233,45 267,65 Q300,85 333,65 Q367,45 400,65")}}`}</style>
+          <defs>
+            <linearGradient id="sg9a" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#ff9a7a" stopOpacity="0"/>
+              <stop offset="50%" stopColor="#ff9a7a" stopOpacity="0.7"/>
+              <stop offset="100%" stopColor="#ff9a7a" stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0,65 Q33,45 66,65 Q100,85 133,65 Q167,45 200,65 Q233,85 267,65 Q300,45 333,65 Q367,85 400,65" fill="none" stroke="url(#sg9a)" strokeWidth="2.5" style={{animation:'sec9wave2 5s ease-in-out infinite'}}/>
+          {Array.from({length:12},(_,i)=>(
+            <g key={i}>
+              <circle cx={16+i*32} cy={i%2===0?50:80} r="4" fill="#ff9a7a" fillOpacity="0.7"/>
+              <text x={16+i*32} y={i%2===0?42:95} textAnchor="middle" fontSize="7.5" fill="rgba(255,255,255,0.5)">{i+1}월</text>
+            </g>
+          ))}
+        </>
+      ),
+    },
+    '10': {
+      gradient: 'linear-gradient(135deg, #0e0e1e 0%, #1a1a3a 50%, #080818 100%)',
+      label: '인생 흐름', labelColor: '#c4a8ff',
+      svgContent: (
+        <>
+          <style>{`@keyframes sec10flow{0%{strokeDashoffset:400}100%{strokeDashoffset:0}}`}</style>
+          <defs>
+            <linearGradient id="sg10a" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#4a9eff" stopOpacity="0.2"/>
+              <stop offset="50%" stopColor="#c4a8ff" stopOpacity="0.9"/>
+              <stop offset="100%" stopColor="#e8c97e" stopOpacity="0.5"/>
+            </linearGradient>
+          </defs>
+          <path d="M20,80 Q60,30 100,55 Q140,80 180,40 Q220,10 260,45 Q300,80 340,35 Q365,15 385,30" fill="none" stroke="url(#sg10a)" strokeWidth="3" strokeDasharray="400" strokeDashoffset="0" style={{animation:'sec10flow 6s linear infinite'}}/>
+          {[[20,80],[100,55],[180,40],[260,45],[340,35],[385,30]].map(([x,y],i)=>(
+            <circle key={i} cx={x} cy={y} r="5" fill={i===5?'#e8c97e':'#c4a8ff'} fillOpacity={i===5?1:0.7}/>
+          ))}
+          {['청년기','장년기','중년기','노년기'].map((t,i)=>(
+            <text key={i} x={60+i*90} y={108} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)">{t}</text>
+          ))}
+        </>
+      ),
+    },
+  };
+  const cfg = configs[sectionId] ?? configs['1'];
+  return (
+    <div style={{
+      width:'100%', height:110, borderRadius:'12px 12px 0 0', overflow:'hidden',
+      background: cfg.gradient, position:'relative', marginBottom:0,
+      boxShadow:'inset 0 -1px 0 rgba(255,255,255,0.06)',
+    }}>
+      <svg width="400" height="110" viewBox="0 0 400 110" style={{width:'100%',height:'100%',display:'block'}}>
+        {cfg.svgContent}
+      </svg>
+      <div style={{
+        position:'absolute', bottom:8, left:16,
+        fontSize:'.68rem', fontWeight:700,
+        color: cfg.labelColor, letterSpacing:'.06em', opacity:0.85,
+        textTransform:'uppercase',
+      }}>{cfg.label}</div>
+    </div>
+  );
+}
+
 // ─── AI 풀이 렌더러 ───
 function renderInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -1891,40 +2186,40 @@ function AiRenderer({ text, loading, result }: {
       {[...sections]
         .sort((a, b) => fortuneSectionSortIndex(a.id) - fortuneSectionSortIndex(b.id))
         .map((sec) => {
-          const isOpen = openSections.has(sec.id);
           const meta = SECTION_LABELS[sec.id] ?? { emoji:'✦', color:'#c4a8ff' };
           return (
             <div key={sec.id} style={{
-              marginBottom:10, borderRadius:14, overflow:'hidden',
-              border:'1px solid rgba(255,255,255,.08)', background:'rgba(0,0,0,.22)',
+              marginBottom:16, borderRadius:16, overflow:'hidden',
+              border:'1px solid rgba(255,255,255,.10)',
+              boxShadow:'0 4px 24px rgba(0,0,0,.3)',
             }}>
-              <button
-                type="button"
-                onClick={() => toggleSection(sec.id)}
-                style={{
-                  width:'100%', display:'flex', alignItems:'center', gap:12,
-                  padding:'16px 20px', background:'rgba(255,255,255,.03)',
-                  border:'none', borderBottom: isOpen ? '1px solid rgba(255,255,255,.07)' : 'none',
-                  cursor:'pointer', textAlign:'left',
-                }}
-              >
+              {/* 섹션 비주얼 배너 */}
+              <SectionBanner sectionId={sec.id} />
+
+              {/* 섹션 제목 헤더 */}
+              <div style={{
+                display:'flex', alignItems:'center', gap:12,
+                padding:'14px 20px 12px',
+                background:'rgba(255,255,255,.03)',
+                borderBottom:'1px solid rgba(255,255,255,.07)',
+              }}>
                 <span style={{
-                  background:'rgba(196,168,255,.2)', color: meta.color, fontWeight:900,
+                  background:`${meta.color}22`, color: meta.color, fontWeight:900,
                   fontSize:'.85rem', padding:'4px 10px', borderRadius:100, flexShrink:0,
+                  border:`1px solid ${meta.color}44`,
                 }}>
                   {meta.emoji}
                 </span>
-                <span style={{ flex:1, fontWeight:900, fontSize:'1.05rem', color:'#fff', lineHeight:1.35 }}>
+                <span style={{ flex:1, fontWeight:900, fontSize:'1.02rem', color:'#fff', lineHeight:1.35 }}>
                   {fortuneSectionNumberedLabel(sec.id, sec.title)}
                 </span>
-                <span style={{ color:'var(--muted)', fontSize:'.75rem', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
-              </button>
-              {isOpen && (
-                <div style={{ padding:'16px 20px' }}>
-                  {SECTION_EXTRAS[sec.id]}
-                  {renderLines(sec.lines)}
-                </div>
-              )}
+              </div>
+
+              {/* 섹션 내용 */}
+              <div style={{ padding:'16px 20px', background:'rgba(0,0,0,.15)' }}>
+                {SECTION_EXTRAS[sec.id]}
+                {renderLines(sec.lines)}
+              </div>
             </div>
           );
         })}

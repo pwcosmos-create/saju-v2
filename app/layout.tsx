@@ -116,6 +116,7 @@ const WEBAPP_SCHEMA = {
 };
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+const ADS_ID = process.env.NEXT_PUBLIC_ADS_ID;
 const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 const PAYPAL_CLIENT_ID = APPS_IN_TOSS
   ? ''
@@ -127,13 +128,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <head>
         <meta name="naver-site-verification" content="b5a4069102b997a4c8f1463c8231793e29e5eaf0" />
-        {/* Google Analytics — GA_ID를 .env.local의 NEXT_PUBLIC_GA_ID로 설정하세요 */}
-        {GA_ID && <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} />}
-        {GA_ID && <script dangerouslySetInnerHTML={{ __html: `
+        {/* Google Analytics & Ads */}
+        {(GA_ID || ADS_ID) && <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID || ADS_ID}`} />}
+        {(GA_ID || ADS_ID) && <script dangerouslySetInnerHTML={{ __html: `
           window.dataLayer=window.dataLayer||[];
           function gtag(){dataLayer.push(arguments);}
           gtag('js',new Date());
-          gtag('config','${GA_ID}',{page_path:window.location.pathname});
+          ${GA_ID ? `gtag('config','${GA_ID}',{page_path:window.location.pathname});` : ''}
+          ${ADS_ID ? `gtag('config','${ADS_ID}');` : ''}
         `}} />}
         {/* RSS 자동 발견 — 네이버/구글 크롤러 RSS 인식용 */}
         <link rel="alternate" type="application/rss+xml" title="사주팔자 무료 분석 RSS" href="https://saju.coupax.co.kr/rss.xml" />
@@ -151,7 +153,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {APPS_IN_TOSS && (
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){var p=location.pathname||"";if(/\\/saju\\/?$/i.test(p)||/saju\\/index\\.html$/i.test(p))return;function resolve(el){var raw=el.getAttribute("data-saju-href")||el.getAttribute("href")||"saju/index.html";try{return new URL(raw,document.baseURI||location.href).href;}catch(e){return raw;}}function onTap(e){var el=e.target&&e.target.closest&&e.target.closest("[data-saju-go]");if(!el)return;e.preventDefault();e.stopPropagation();location.href=resolve(el);}document.addEventListener("click",onTap,true);document.addEventListener("touchend",onTap,true);})();`,
+              __html: `(function(){var p=location.pathname||"";if(/\\/saju\\/?$/i.test(p)||/saju\\/index\\.html$/i.test(p))return;function resolve(el){var raw=el.getAttribute("data-saju-href")||el.getAttribute("href")||"/saju/index.html";try{return new URL(raw,document.baseURI||location.href).href;}catch(e){return raw;}}function onTap(e){var el=e.target&&e.target.closest&&e.target.closest("[data-saju-go]");if(!el)return;e.preventDefault();e.stopPropagation();location.href=resolve(el);}document.addEventListener("click",onTap,true);document.addEventListener("touchend",onTap,true);})();`,
             }}
           />
         )}

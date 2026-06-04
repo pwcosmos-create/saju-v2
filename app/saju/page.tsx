@@ -195,8 +195,6 @@ export default function Home() {
 
   async function runWithTossRewardedAd(kind: AdNoticeKind): Promise<boolean> {
     if (!APPS_IN_TOSS) return true;
-    const proceed = await requestAdNoticeConfirm(kind);
-    if (!proceed) return false;
     try {
       const { showSajuRewardedAd } = await import('../../lib/toss-rewarded-ad');
       await showSajuRewardedAd();

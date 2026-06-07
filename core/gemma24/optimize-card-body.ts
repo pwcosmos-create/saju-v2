@@ -11,10 +11,67 @@ import {
   pruneFortuneSectionBody,
 } from './fortune-text-quality';
 
-const MAX_CARD_CHARS = 520;
-const MAX_VARIABLE_CARD_CHARS = 720;
-const MAX_SECTION_CHARS = 1100;
-const MAX_PARAS = 4;
+const DEFAULT_CARD_MIN = 520;
+const DEFAULT_CARD_MAX = 2400;
+const DEFAULT_VARIABLE_MIN = 720;
+const DEFAULT_VARIABLE_MAX = 3200;
+const DEFAULT_SECTION_MIN = 1100;
+const DEFAULT_SECTION_MAX = 5200;
+const DEFAULT_MAX_PARAS = 4;
+const DEFAULT_MAX_PARAS_CAP = 10;
+
+function readLimit(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function cardCharBounds(isVariable: boolean): { min: number; max: number } {
+  if (isVariable) {
+    return {
+      min: readLimit('GEMMA24_VARIABLE_CARD_CHARS_MIN', DEFAULT_VARIABLE_MIN),
+      max: readLimit('GEMMA24_VARIABLE_CARD_CHARS_MAX', DEFAULT_VARIABLE_MAX),
+    };
+  }
+  return {
+    min: readLimit('GEMMA24_CARD_CHARS_MIN', DEFAULT_CARD_MIN),
+    max: readLimit('GEMMA24_CARD_CHARS_MAX', DEFAULT_CARD_MAX),
+  };
+}
+
+function sectionCharBounds(): { min: number; max: number } {
+  return {
+    min: readLimit('GEMMA24_SECTION_CHARS_MIN', DEFAULT_SECTION_MIN),
+    max: readLimit('GEMMA24_SECTION_CHARS_MAX', DEFAULT_SECTION_MAX),
+  };
+}
+
+/** 원본 본문 길이에 비례해 표시 상한을 올림 (짧은 카드는 기존 min 유지) */
+function dynamicCharLimit(rawLen: number, min: number, max: number): number {
+  if (rawLen <= min) return min;
+  return Math.min(Math.max(rawLen, min), max);
+}
+
+function dynamicMaxParagraphs(rawLen: number): number {
+  const base = readLimit('GEMMA24_CARD_PARAS_MIN', DEFAULT_MAX_PARAS);
+  const cap = readLimit('GEMMA24_CARD_PARAS_MAX', DEFAULT_MAX_PARAS_CAP);
+  const scaled = Math.ceil(rawLen / 380);
+  return Math.min(cap, Math.max(base, scaled));
+}
+
+function dynamicSectionLimit(cards: Gemma24SajuCard[]): number {
+  const { min, max } = sectionCharBounds();
+  if (!cards.length) return min;
+  let budget = 0;
+  for (const card of cards) {
+    const rawLen = (sanitizeCardBody(card.body) || card.body).length;
+    const { min: cMin, max: cMax } = cardCharBounds(isVariableCard(card));
+    budget += dynamicCharLimit(rawLen, cMin, cMax);
+  }
+  budget += Math.max(0, cards.length - 1) * 2;
+  return dynamicCharLimit(budget, min, max);
+}
 
 const DISCLAIMER_RE =
   /본 내용은 명리 참고용이며[\s\S]*?달라질 수 있습니다\.?/g;
@@ -48,6 +105,7 @@ function isVariableCard(card: Gemma24SajuCard): boolean {
 export function shortCardSubtitle(title: string): string {
   let t = title
     .replace(/【[^】]+】/g, '')
+    .replace(/^해석·\s*/, '')
     .replace(/^변수·격\s+/, '')
     .replace(/^변수·지지관계\s+/, '')
     .replace(/^변수·천간\s+/, '')
@@ -76,6 +134,7 @@ export function sanitizeCardBody(body: string): string {
 
   return lines
     .join('\n')
+    .replace(/^◆\s*(?:테마\s*풀이|해석·)[^\n]*\n?/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -95,8 +154,9 @@ function formatVariableCardBody(body: string): string {
     const label = humanizeDeepSectionLabel(m[1].trim());
     let content = m[2].trim().replace(/\s+/g, ' ');
     if (!content || /^(PASS|FAIL|판정|검증)$/i.test(label)) continue;
-    if (/^개요$/.test(label) && /변수는 사주 풀이에서/.test(content) && content.length > 180) {
-      content = `${content.slice(0, 178)}…`;
+    if (/^개요$/.test(label) && /변수는 사주 풀이에서/.test(content)) {
+      const cap = Math.max(180, Math.min(480, Math.floor(cleaned.length * 0.35)));
+      if (content.length > cap) content = `${content.slice(0, cap - 1)}…`;
     }
     blocks.push(`◆ ${label}\n${content}`);
   }
@@ -150,7 +210,7 @@ function preferSummaryOrBody(card: Gemma24SajuCard): string {
   if (isVariableCard(card) || isTodayFortuneDisplayCard(card)) return card.body;
   const summary = card.summary?.trim();
   const body = sanitizeCardBody(card.body);
-  if (summary && summary.length >= 24 && summary.length <= 320) {
+  if (summary && summary.length >= 24 && summary.length <= 320 && body.length <= summary.length * 1.5) {
     const kw = extractKeywordLine(body);
     return kw ? `${summary}\n\n${kw}` : summary;
   }
@@ -168,8 +228,7 @@ function scoreParagraph(p: string): number {
   if (/키워드|핵심|특징|성향|격국|용신|기신|육합|충|합/.test(p)) s += 2;
   if (isMetaOnlyParagraph(p)) s -= 5;
   if (/참고용|위원회/.test(p)) s -= 3;
-  if (p.length > 20 && p.length < 220) s += 1;
-  if (p.length > 280) s -= 1;
+  if (p.length > 20 && p.length < 320) s += 1;
   return s;
 }
 
@@ -242,16 +301,22 @@ function formatReadableBody(body: string): string {
 
 /** 카드 1장 → 화면용 본문 */
 export function optimizeCardBodyForDisplay(card: Gemma24SajuCard): string {
-  if (isVariableCard(card) || isTodayFortuneDisplayCard(card)) {
+  const rawLen = (sanitizeCardBody(card.body) || card.body).length;
+  const variable = isVariableCard(card) || isTodayFortuneDisplayCard(card);
+  const { min, max } = cardCharBounds(variable);
+  const charLimit = dynamicCharLimit(rawLen, min, max);
+  const maxParas = dynamicMaxParagraphs(rawLen);
+
+  if (variable) {
     const sub = shortCardSubtitle(card.title);
     const body = formatVariableCardBody(card.body);
     const text = body.startsWith('◆') ? body : `◆ ${sub}\n${body}`;
-    return truncateAtSentence(text, MAX_VARIABLE_CARD_CHARS);
+    return truncateAtSentence(text, charLimit);
   }
 
   const raw = preferSummaryOrBody(card);
   const kwLine = extractKeywordLine(raw);
-  let core = stripKeywordBlock(raw);
+  const core = stripKeywordBlock(raw);
 
   const titleNorm = normalizeParagraph(card.title.replace(/【[^】]+】/g, ''));
   const paras = splitParagraphs(core).filter(
@@ -262,10 +327,17 @@ export function optimizeCardBodyForDisplay(card: Gemma24SajuCard): string {
   const pool = (substantive.length ? substantive : paras).filter(
     (p) => !/별도\s*(검토|확인)|학파·환경/.test(p),
   );
-  const picked = pickTopParagraphs(pool.length ? pool : [core], MAX_PARAS);
-  let text = picked.length ? formatAsBullets(picked) : formatReadableBody(core);
+  let text: string;
+  if (charLimit >= 1200 && core.length >= 800) {
+    text = formatReadableBody(core);
+  } else {
+    const picked = rawLen > 1200
+      ? (pool.length ? pool : [core]).slice(0, maxParas)
+      : pickTopParagraphs(pool.length ? pool : [core], maxParas);
+    text = picked.length ? formatAsBullets(picked) : formatReadableBody(core);
+  }
   if (kwLine) text = `${text}\n\n${kwLine}`;
-  return truncateAtSentence(text, MAX_CARD_CHARS);
+  return truncateAtSentence(text, charLimit);
 }
 
 function dedupeAcrossCards(blocks: string[]): string[] {
@@ -300,11 +372,11 @@ export function mergeOptimizedCardBodies(cards: Gemma24SajuCard[]): string {
     }),
   );
   const joined = parts.join('\n\n');
-  const capped = truncateAtSentence(joined, MAX_SECTION_CHARS);
+  const capped = truncateAtSentence(joined, dynamicSectionLimit(cards));
   const tailSafe = capped
     .split('\n')
     .filter((line) => !isTruncatedFortuneLine(line))
     .join('\n')
     .trim();
-  return pruneFortuneSectionBody(tailSafe || capped);
+  return pruneFortuneSectionBody(tailSafe || capped, { skipIntroDedupe: true });
 }

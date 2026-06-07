@@ -4,7 +4,9 @@ export const SAJU_REWARDED_AD_GROUP_ID = 'ait.v2.live.6e873e2eea174a0d';
 const AD_WAIT_MS = 12_000;
 
 let adLoaded = false;
+let loadStarted = false;
 let loadCleanup: (() => void) | null = null;
+const loadWaiters: Array<() => void> = [];
 
 type AdOutcome = 'shown' | 'skipped' | 'failed';
 
@@ -12,24 +14,53 @@ function getAdSdk() {
   return import('@apps-in-toss/web-framework');
 }
 
-/** 분석 화면 진입 시 광고를 미리 로드해 버튼 탭 시 바로 노출 */
-export function preloadSajuRewardedAd(): void {
+function flushLoadWaiters() {
+  while (loadWaiters.length) loadWaiters.shift()?.();
+}
+
+function resetLoadState() {
+  adLoaded = false;
+  loadStarted = false;
+}
+
+function startAdLoad(onLoaded?: () => void): void {
   if (typeof window === 'undefined') return;
+  if (onLoaded) loadWaiters.push(onLoaded);
+  if (adLoaded) {
+    flushLoadWaiters();
+    return;
+  }
+  if (loadStarted) return;
+
   void getAdSdk()
     .then(({ loadFullScreenAd }) => {
-      if (!loadFullScreenAd.isSupported?.() || adLoaded) return;
+      if (!loadFullScreenAd.isSupported?.()) {
+        flushLoadWaiters();
+        return;
+      }
+      if (loadStarted) return;
+      loadStarted = true;
       loadCleanup?.();
       loadCleanup = loadFullScreenAd({
         options: { adGroupId: SAJU_REWARDED_AD_GROUP_ID },
         onEvent: (event) => {
-          if (event.type === 'loaded') adLoaded = true;
+          if (event.type === 'loaded') {
+            adLoaded = true;
+            flushLoadWaiters();
+          }
         },
         onError: () => {
-          adLoaded = false;
+          resetLoadState();
+          flushLoadWaiters();
         },
       });
     })
-    .catch(() => {});
+    .catch(() => flushLoadWaiters());
+}
+
+/** 앱·분석 화면 진입 시 광고 preload — 버튼 탭 시 확인창 없이 바로 노출 */
+export function preloadSajuRewardedAd(): void {
+  startAdLoad();
 }
 
 /** 보상형 전면 광고 노출. 닫힘·보상·실패 시 resolve */
@@ -40,12 +71,15 @@ export function showSajuRewardedAd(): Promise<AdOutcome> {
     .then(({ loadFullScreenAd, showFullScreenAd }) =>
       new Promise<AdOutcome>((resolve) => {
         let settled = false;
+        let presented = false;
+
         const finish = (outcome: AdOutcome) => {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
-          adLoaded = false;
+          resetLoadState();
           resolve(outcome);
+          preloadSajuRewardedAd();
         };
 
         const timer = setTimeout(() => finish('failed'), AD_WAIT_MS);
@@ -56,6 +90,8 @@ export function showSajuRewardedAd(): Promise<AdOutcome> {
         }
 
         const present = () => {
+          if (presented || settled) return;
+          presented = true;
           showFullScreenAd({
             options: { adGroupId: SAJU_REWARDED_AD_GROUP_ID },
             onEvent: (event) => {
@@ -81,16 +117,8 @@ export function showSajuRewardedAd(): Promise<AdOutcome> {
           return;
         }
 
-        loadCleanup?.();
-        loadCleanup = loadFullScreenAd({
-          options: { adGroupId: SAJU_REWARDED_AD_GROUP_ID },
-          onEvent: (event) => {
-            if (event.type === 'loaded') {
-              adLoaded = true;
-              present();
-            }
-          },
-          onError: () => finish('failed'),
+        startAdLoad(() => {
+          if (adLoaded) present();
         });
       }),
     )

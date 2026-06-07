@@ -137,7 +137,7 @@ export function pruneFortuneSectionBody(
     if (trimmed.startsWith('◆')) {
       const lines = trimmed.split('\n');
       const header = lines[0]?.trim() ?? '';
-      if (/◆\s*(테마\s*풀이|해석·)/.test(header) || /【/.test(header)) continue;
+      if (/^◆\s*(?:테마\s*풀이|해석·)\s*$/.test(header) || /【/.test(header)) continue;
       const rest = lines.slice(1).map((l) => l.trim()).filter(Boolean);
       const goodLines = rest
         .map((l) => normalizeFortuneLine(l))

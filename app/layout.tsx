@@ -9,6 +9,7 @@ export const viewport: Viewport = {
 };
 import './globals.css';
 import { Analytics } from '@vercel/analytics/react';
+import TossAdPreload from './toss-ad-preload';
 import Script from 'next/script';
 
 const SITE_URL = 'https://saju.coupax.co.kr';
@@ -167,6 +168,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         )}
         {children}
+        {APPS_IN_TOSS && <TossAdPreload />}
         {!APPS_IN_TOSS && <Analytics />}
       </body>
     </html>

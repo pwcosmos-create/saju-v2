@@ -46,6 +46,7 @@ import type { MonthlyBrief } from '../../core/daily-fortune/monthly-brief';
 import type { OhaengResult } from '../../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
+import { preloadSajuRewardedAd, showSajuRewardedAd } from '../../lib/toss-rewarded-ad';
 
 // 음력 변환 (클라이언트 전용)
 type MsLib = { lunarToSolar: (y:number,m:number,d:number,leap:boolean)=>{year:number,month:number,day:number} };
@@ -180,35 +181,15 @@ export default function Home() {
   const resultsRef = useRef<HTMLDivElement>(null);
   const doAnalyzeRef = useRef<() => void>(() => {});
   const analyzeBusyRef = useRef(false);
-  type AdNoticeKind = 'analyze' | 'ai';
-  const [adNoticeOpen, setAdNoticeOpen] = useState(false);
-  const [adNoticeKind, setAdNoticeKind] = useState<AdNoticeKind>('analyze');
-  const adNoticeResolveRef = useRef<((ok: boolean) => void) | null>(null);
 
-  function requestAdNoticeConfirm(kind: AdNoticeKind): Promise<boolean> {
-    return new Promise((resolve) => {
-      adNoticeResolveRef.current = resolve;
-      setAdNoticeKind(kind);
-      setAdNoticeOpen(true);
-    });
-  }
-
-  async function runWithTossRewardedAd(kind: AdNoticeKind): Promise<boolean> {
+  async function runWithTossRewardedAd(): Promise<boolean> {
     if (!APPS_IN_TOSS) return true;
     try {
-      const { showSajuRewardedAd } = await import('../../lib/toss-rewarded-ad');
       await showSajuRewardedAd();
     } catch (err) {
       console.warn('Toss rewarded ad failed or closed:', err);
     }
     return true;
-  }
-
-  function closeAdNotice(ok: boolean) {
-    setAdNoticeOpen(false);
-    const resolve = adNoticeResolveRef.current;
-    adNoticeResolveRef.current = null;
-    resolve?.(ok);
   }
 
   useEffect(() => {
@@ -236,7 +217,7 @@ export default function Home() {
     w.__SAJU_JS_OK__ = true;
     const wait = document.getElementById('saju-js-wait');
     if (wait) wait.style.display = 'none';
-    void import('../../lib/toss-rewarded-ad').then(({ preloadSajuRewardedAd }) => preloadSajuRewardedAd());
+    void preloadSajuRewardedAd();
     return () => {
       delete w.__SAJU_ANALYZE__;
     };
@@ -377,7 +358,7 @@ export default function Home() {
         return;
       }
     }
-    if (!(await runWithTossRewardedAd('analyze'))) {
+    if (!(await runWithTossRewardedAd())) {
       analyzeBusyRef.current = false;
       return;
     }
@@ -476,7 +457,7 @@ export default function Home() {
 
   async function askAI() {
     if (!lastResult.current || aiLoading) return;
-    if (!(await runWithTossRewardedAd('ai'))) return;
+    if (!(await runWithTossRewardedAd())) return;
     clearAiTypingTimers();
     stopKoreanSpeech();
     void primeSpeechAudio();
@@ -667,96 +648,6 @@ export default function Home() {
 
   return (
     <div>
-      {adNoticeOpen && (
-        <div
-          role="dialog"
-          aria-modal
-          aria-labelledby="saju-ad-notice-title"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 10000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 20,
-            background: 'rgba(5, 4, 14, 0.72)',
-          }}
-          onClick={() => closeAdNotice(false)}
-        >
-          <div
-            style={{
-              width: 'min(100%, 340px)',
-              padding: '22px 20px 18px',
-              borderRadius: 16,
-              background: 'rgba(18, 14, 32, 0.98)',
-              border: '1px solid rgba(139, 111, 198, 0.45)',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div id="saju-ad-notice-title" style={{ fontSize: '1rem', fontWeight: 800, color: '#e8c97e', marginBottom: 12 }}>
-              {adNoticeKind === 'ai' ? '✦ AI 풀이 안내' : '✦ 정밀 분석 안내'}
-            </div>
-            <p style={{ margin: 0, fontSize: '.9rem', lineHeight: 1.65, color: 'rgba(248, 246, 255, 0.92)' }}>
-              {adNoticeKind === 'ai' ? (
-                <>
-                  AI 심층 풀이를 받으시려면
-                  <br />
-                  짧은 광고를 시청해 주세요.
-                </>
-              ) : (
-                <>
-                  사주팔자 정밀 분석을 이용하시려면
-                  <br />
-                  짧은 광고를 시청해 주세요.
-                </>
-              )}
-            </p>
-            <p style={{ margin: '10px 0 0', fontSize: '.8rem', lineHeight: 1.55, color: 'var(--muted)' }}>
-              {adNoticeKind === 'ai'
-                ? '광고가 끝나면 바로 풀이가 시작됩니다.'
-                : '광고가 끝나면 바로 분석이 시작됩니다.'}
-            </p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-              <button
-                type="button"
-                onClick={() => closeAdNotice(false)}
-                style={{
-                  flex: 1,
-                  padding: '12px 10px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  background: 'rgba(255,255,255,0.06)',
-                  color: 'var(--muted)',
-                  fontWeight: 700,
-                  fontSize: '.88rem',
-                  cursor: 'pointer',
-                }}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={() => closeAdNotice(true)}
-                style={{
-                  flex: 1.4,
-                  padding: '12px 10px',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: 'linear-gradient(135deg,#7c4fc4,#4a9eff)',
-                  color: '#fff',
-                  fontWeight: 700,
-                  fontSize: '.88rem',
-                  cursor: 'pointer',
-                }}
-              >
-                {adNoticeKind === 'ai' ? '광고 보고 풀이 받기' : '광고 보고 분석하기'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {result && !loading && <ZodiacBackground branch={yearBranch} />}
       <div style={{ position:'relative', zIndex:1 }}>
       {/* ── Header ── */}
@@ -1030,7 +921,7 @@ export default function Home() {
             </div>
 
             <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', position: 'relative' }}>
-              <button onClick={() => void askAI()} disabled={aiLoading || adNoticeOpen} className={aiLoading ? "analyzing-btn" : ""} style={{
+              <button onClick={() => void askAI()} disabled={aiLoading} className={aiLoading ? "analyzing-btn" : ""} style={{
                 background:'linear-gradient(135deg,#6b4fa0,#3a7bd5)', border:'none',
                 borderRadius:10, color:'#fff', fontSize:'.92rem', fontWeight:700,
                 padding:'12px 24px', cursor:aiLoading?'not-allowed':'pointer', opacity:aiLoading?.7:1,

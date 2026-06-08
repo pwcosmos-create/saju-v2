@@ -473,17 +473,44 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         formattedWarnings
       ].filter(Boolean).join('\n');
     }
-    case '2':
-      return ctx.pillars
-        ? [
-            header('2'),
-            '',
-            `◆ 사주 기둥 구성`,
-            `— 태어난 연도, 월, 일, 시간의 기운인 **${ctx.pillars}**이 모여 나만의 고유한 인생 지도를 만듭니다.`,
-            `— 네 개의 기둥(연주·월주·일주·시주)은 각각 유년기, 사회활동, 본인과 가정, 그리고 말년의 삶과 내면을 상징해요.`,
-            `— 이 기둥들을 바탕으로 분석한 격국, 오행 분포, 용신을 읽으며 나를 더 깊이 이해하는 시간을 가져보세요.`
-          ].join('\n')
-        : null;
+    case '2': {
+      if (!ctx.pillars) return null;
+
+      const yearPillar = ctx.pillars.match(/연주:\s*([^\s/|·]+)/)?.[1] || '';
+      const monthPillar = ctx.pillars.match(/월주:\s*([^\s/|·]+)/)?.[1] || '';
+      const dayPillar = ctx.pillars.match(/일주:\s*([^\s/|·]+)/)?.[1] || '';
+      const timePillar = ctx.pillars.match(/시주:\s*([^\s/|·]+)/)?.[1] || '';
+
+      const yearStr = yearPillar ? ` (${yearPillar})` : '';
+      const monthStr = monthPillar ? ` (${monthPillar})` : '';
+      const dayStr = dayPillar ? ` (${dayPillar})` : '';
+      const timeStr = timePillar ? ` (${timePillar})` : '';
+
+      return [
+        header('2'),
+        '',
+        `◆ 사주 구성과 의미`,
+        `안녕하세요! 귀하의 사주팔자를 통해 인생의 큰 그림을 알기 쉽게 설명해 드릴게요.`,
+        '',
+        `사주팔자(四柱八字)란 '네 개의 기둥(년·월·일·시)'과 '여덟 개의 글자'를 뜻하며, 귀하가 태어난 시간의 우주적 에너지를 한 눈에 보여주는 인생의 지도이자 내비게이션과 같습니다.`,
+        '',
+        `귀하의 사주 기둥은 **${ctx.pillars}**의 조합으로 이루어져 있으며, 각 기둥은 다음과 같은 의미를 품고 있습니다.`,
+        '',
+        `* **년주${yearStr} (조상·유년기):** 내가 태어난 해의 기운으로, 나의 뿌리와 조상, 가문, 그리고 유년 시절의 환경과 성격적 기틀을 상징합니다.`,
+        `* **월주${monthStr} (사회·청년기):** 내가 태어난 달의 기운으로, 내가 활동할 사회적 무대, 직업 적성, 부모·형제와의 관계 및 청년기 성장 과정을 나타냅니다.`,
+        `* **일주${dayStr} (본인·장년기):** 내가 태어난 날의 기운으로, 사주에서 가장 중요한 '진정한 내 자신(일간)'과 내면 심리, 배우자와의 관계 및 장년기의 중심 삶을 뜻합니다.`,
+        `* **시주${timeStr} (미래·노년기):** 내가 태어난 시간의 기운으로, 나의 은밀한 내면적 성향, 자녀운, 미래의 결과물, 그리고 인생 후반부인 노년기의 운을 의미합니다.`,
+        '',
+        `---`,
+        '',
+        `### 🔮 사주팔자를 읽는 첫걸음`,
+        `사주를 구성하는 여덟 글자는 하늘의 기운(천간)과 땅의 기운(지지)으로 나뉘어 서로 유기적으로 영향을 주고받습니다.`,
+        `* **천간(하늘의 기운):** 년·월·일·시의 윗글자들로, 나의 생각, 지향하는 가치관, 외부로 표출하고 싶은 정신적인 모습을 보여줍니다.`,
+        `* **지지(땅의 기운):** 년·월·일·시의 아랫글자들로, 현실적인 환경, 행동력, 삶의 실질적인 기반과 구체적인 결과를 뜻합니다.`,
+        '',
+        `이 여덟 글자가 톱니바퀴처럼 맞물려 귀하만의 특별하고 고유한 삶의 무대를 만들어 냅니다.`,
+      ].filter(Boolean).join('\n');
+    }
     case '4':
       return (ctx.dominant || ctx.lacking || ctx.ohaengSummary)
         ? [

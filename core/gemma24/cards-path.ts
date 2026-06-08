@@ -12,12 +12,12 @@ export function liveCardsPaths(): string[] {
   const fromEnv = process.env.GEMMA24_SAJU_CARDS_PATH?.trim();
   const paths: string[] = [];
   if (fromEnv) paths.push(fromEnv);
+  if (!paths.some((p) => pathNormalize(p) === pathNormalize(SERVER_CARDS_JSON_PATH))) {
+    paths.push(SERVER_CARDS_JSON_PATH);
+  }
   const bundled = path.join(process.cwd(), 'core', 'data', 'cards.live.json');
   if (!paths.some((p) => pathNormalize(p) === pathNormalize(bundled))) {
     paths.push(bundled);
-  }
-  if (!paths.some((p) => pathNormalize(p) === pathNormalize(SERVER_CARDS_JSON_PATH))) {
-    paths.push(SERVER_CARDS_JSON_PATH);
   }
   return paths;
 }

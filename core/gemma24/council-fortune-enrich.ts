@@ -511,20 +511,44 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         `이 여덟 글자가 톱니바퀴처럼 맞물려 귀하만의 특별하고 고유한 삶의 무대를 만들어 냅니다.`,
       ].filter(Boolean).join('\n');
     }
-    case '4':
-      return (ctx.dominant || ctx.lacking || ctx.ohaengSummary)
-        ? [
-            header('4'),
-            '',
-            '◆ 오행의 조화와 균형',
-            ctx.ohaengSummary ? `— 우리 몸과 마음의 조화를 이루는 다섯 가지 기운(목, 화, 토, 금, 수)의 분포는 **${ctx.ohaengSummary}**의 모습을 보이고 있네요.` : '',
-            ctx.dominant ? `— 상대적으로 기운이 뚜렷한 **${ctx.dominant}**은 귀하만의 훌륭한 재능이자 적극적인 추진력으로 활용하기 좋습니다.` : '',
-            ctx.lacking ? `— 에너지를 더해줄 보완 오행인 **${ctx.lacking}**은 일상 속에서 의식적으로 채워주면 삶의 리듬이 훨씬 부드러워질 거예요.` : '',
-            facts.stemKo
-              ? `— **${facts.stemKo}** 일간을 기준으로, 부족한 기운(특히 ${ctx.lacking?.replace(/.*?:\s*/, '') ?? '금·수'})에 어울리는 색상, 음식, 생활 습관을 곁들이면 전체적인 사주의 균형을 맞추는 데 긍정적인 도움이 됩니다.`
-              : '— 넘치는 기운은 과해지지 않도록 스스로 조율하고, 부족한 기운은 일상의 소소한 습관과 태도로 채워나가면 삶에 편안한 안정이 찾아옵니다.',
-          ].filter(Boolean).join('\n')
-        : null;
+    case '4': {
+      if (!ctx.dominant && !ctx.lacking && !ctx.ohaengSummary) return null;
+
+      const lackingRaw = ctx.lacking?.replace(/.*?:\s*/, '') ?? '';
+      const lackingClean = lackingRaw.replace(/\([^)]+\)/g, '').trim();
+
+      const dominantRaw = ctx.dominant?.replace(/.*?:\s*/, '') ?? '';
+      const dominantClean = dominantRaw.replace(/\([^)]+\)/g, '').trim();
+
+      return [
+        header('4'),
+        '',
+        `◆ 오행의 조화와 균형`,
+        `사주 명리학에서는 우리 몸과 마음에 작용하는 다섯 가지 기운, 즉 **목(木·나무), 화(火·불), 토(土·흙), 금(金·쇠), 수(水·물)**의 조화와 균형을 가장 중요하게 여깁니다.`,
+        '',
+        ctx.ohaengSummary ? `귀하의 사주 원국을 구성하는 다섯 가지 기운의 분포는 **${ctx.ohaengSummary}**의 모습을 보이고 있습니다.` : '',
+        '',
+        `이 오행의 기운들은 나의 타고난 재능이 되기도 하고, 때로는 채워주어야 할 숙제가 되기도 합니다.`,
+        '',
+        dominantClean ? `### 🌟 나를 이끄는 강한 기운: ${dominantClean}` : '',
+        dominantClean ? `* **특징:** 내 사주에서 기운이 뚜렷하게 발달한 **${dominantClean}**의 에너지는 귀하가 세상을 살아가는 데 있어 가장 강력한 무기이자 재능입니다.` : '',
+        dominantClean ? `* **활용:** 이 강점을 적극적으로 발휘할 때 직업적인 성취나 대인 관계에서 뚜렷한 두각을 나타낼 수 있습니다. 다만 기운이 한쪽으로 과하게 치우치지 않도록 조절하는 것이 중요합니다.` : '',
+        '',
+        lackingClean ? `### 🌾 나를 돕는 보완 기운: ${lackingClean}` : '',
+        lackingClean ? `* **특징:** 사주에서 상대적으로 약하거나 부족한 **${lackingClean}**의 에너지는 귀하의 삶을 한층 더 부드럽고 균형 있게 만들어 줄 보완점입니다.` : '',
+        lackingClean ? `* **조언:** 이 부족한 기운은 기죽을 필요 없이, 일상 속에서 의식적으로 채워주면 좋습니다. 나에게 필요한 오행의 색상(색깔), 추천 음식, 그리고 생활 속의 소소한 태도와 마음가짐을 곁들이면 사주의 전체적인 흐름이 몰라보게 편안해질 것입니다.` : '',
+        '',
+        `---`,
+        '',
+        `### 💡 부족한 기운을 채우는 생활 속 개운법(開運法)`,
+        `귀하의 타고난 **${facts.stemKo || '일간'}** 기운을 조화롭게 다스리기 위해 부족한 기운을 일상 속에서 채워보세요.`,
+        `* **목(木) 보완:** 녹색 계열의 옷이나 소품 활용, 숲길 산책, 아침 일찍 일어나는 습관`,
+        `* **화(火) 보완:** 붉은색 계열 활용, 햇볕 쬐기, 독서와 명상, 열정적인 취미 활동`,
+        `* **토(土) 보완:** 황토색·브라운 계열 활용, 흙을 밟는 맨발 걷기, 규칙적인 식사와 약속 이행`,
+        `* **금(金) 보완:** 흰색 계열·금속 장신구 활용, 주변 환경 정리정돈, 맺고 끊음이 확실한 마음가짐`,
+        `* **수(水) 보완:** 검은색 계열 활용, 반신욕이나 수영, 충분한 수분 섭취, 차분하게 생각 정리하기`,
+      ].filter(l => l !== '').join('\n');
+    }
     case '3':
       return [
         header('3'),

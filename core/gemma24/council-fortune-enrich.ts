@@ -1565,59 +1565,68 @@ export function buildOfflineHybridSupplement(query: string): string {
   const yTip = facts.yongsinElem ? ELEM_TIP[facts.yongsinElem] : '용신 방향으로 일·관계를 맞추면 흐름이 부드러워집니다.';
   const gyeok = cleanGyeokLabel(ctx.gyeokClean ?? ctx.gyeokLine ?? facts.gyeokguk);
 
-  const sections: { id: keyof typeof FORTUNE_SECTION_TITLES; lines: string[] }[] = [
+  const sections: { id: keyof typeof FORTUNE_SECTION_TITLES; body: string }[] = [
     {
       id: '9',
-      lines: (() => {
+      body: (() => {
         const daeun = parseDaeunFromQuery(query);
-        const body = buildDaeunFortuneBody({
+        const b = buildDaeunFortuneBody({
           ...daeun,
           yongsinElem: facts.yongsinElem,
           gisinElems: facts.gisinElems,
           stemKo: facts.stemKo,
           query,
         });
-        return body ? body.split('\n') : [
+        return b ?? [
+          formatFortuneSectionHeader('9', FORTUNE_SECTION_TITLES['9']),
+          '',
           '◆ 시기별 조언',
           '— 세운·월운은 확정 데이터와 함께 읽을 때 정확합니다.',
-        ];
+        ].join('\n');
       })(),
     },
     {
       id: '8',
-      lines: [
+      body: buildOfflineFortuneSection(query, '8') ?? [
+        formatFortuneSectionHeader('8', FORTUNE_SECTION_TITLES['8']),
+        '',
         '◆ 재물 흐름',
         `— ${ctx.dominant ? `지배 오행(${ctx.dominant})이 강한 만큼,` : ''} 익숙한 방식으로 수입을 만들 때 안정감이 큽니다.`,
         '— 지출·투자는 기신 방향(과한 욕심·무리한 레버리지)을 피하고, 용신 에너지에 맞는 속도로 쌓는 편이 유리합니다.',
-      ],
+      ].join('\n'),
     },
     {
       id: '7',
-      lines: [
+      body: buildOfflineFortuneSection(query, '7') ?? [
+        formatFortuneSectionHeader('7', FORTUNE_SECTION_TITLES['7']),
+        '',
         '◆ 인연·관계 흐름',
-        '— 지지 합·충은 특정 시기·상대와의 궁합 참고로 쓰면 좋습니다. 단정보다 「이럴 때 조심」 톤으로 읽어 주세요.',
-      ],
+        '— 지지 합·충은 특정 시기·상대와의 궁합 참고로 쓰면 좋습니다.',
+      ].join('\n'),
     },
     {
       id: '6',
-      lines: [
+      body: buildOfflineFortuneSection(query, '6') ?? [
+        formatFortuneSectionHeader('6', FORTUNE_SECTION_TITLES['6']),
+        '',
         `◆ ${gyeok}이 말하는 일의 방향`,
-        `— ${gyeok}은 타고난 일 처리 방식과 맞는 환경을 가리킵니다. ${ctx.strength ? `현재 ${ctx.strength}이므로,` : ''} 무리한 확장보다 강점이 드러나는 분야에 집중하면 좋습니다.`,
-        `— ${yTip}`,
-      ],
+        `— ${gyeok}은 타고난 일 처리 방식과 맞는 환경을 가리킵니다. ${yTip}`,
+      ].join('\n'),
     },
     {
       id: '10',
-      lines: [
+      body: buildOfflineFortuneSection(query, '10') ?? [
+        formatFortuneSectionHeader('10', FORTUNE_SECTION_TITLES['10']),
+        '',
         '◆ 평생 기억할 원칙',
-        `— ${facts.stemKo ? `${facts.stemKo} 일간의 강점을 살리되,` : ''} 용신(${ctx.yongsinLine ?? '확정 용신'})을 일상 습관으로 옮기는 것이 이 사주의 핵심 전략입니다.`,
-      ],
+        `— ${facts.stemKo ? `${facts.stemKo} 일간의 강점을 살리되,` : ''} 용신을 일상 습관으로 옮기는 것이 이 사주의 핵심 전략입니다.`,
+      ].join('\n'),
     },
   ];
 
   const blocks: string[] = [];
   for (const sec of sections) {
-    blocks.push(formatFortuneSectionHeader(sec.id, FORTUNE_SECTION_TITLES[sec.id]), '', ...sec.lines, '');
+    blocks.push(sec.body, '');
   }
   return blocks.join('\n').trim();
 }

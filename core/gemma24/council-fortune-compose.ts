@@ -89,7 +89,8 @@ export function composeCouncilFreeFortune(
 
     const rawBody = mergeOptimizedCardBodies(matched);
     const body = pruneFortuneSectionBody(rawBody, { hasHourPillar });
-    if (!body || isLowQualityFortuneBody(body, query)) continue;
+    const isDeep = matched.some((c) => cardKind(c).startsWith('deep-'));
+    if (!body || isLowQualityFortuneBody(body, query, { isDeepCard: isDeep })) continue;
 
     for (const c of matched) usedIds.push(c.id);
     filledIds.add(block.id);
@@ -113,7 +114,8 @@ export function composeCouncilFreeFortune(
     if (!block) return true;
     const bodyOnly = block.replace(/^\[\d+\][^\n]*\n?/, '').trim();
     if (sectionBlockHasBrokenFragments(block)) return true;
-    if (isLowQualityFortuneBody(bodyOnly, query)) return true;
+    const isDeep = displayCards.some((c) => cardKind(c) === `deep-${id}`);
+    if (isLowQualityFortuneBody(bodyOnly, query, { isDeepCard: isDeep })) return true;
     return false;
   });
 

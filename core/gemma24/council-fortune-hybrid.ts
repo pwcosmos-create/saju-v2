@@ -46,6 +46,8 @@ function parseFortuneSectionBlocks(text: string, query = ''): Map<string, string
     .map((p) => p.trim())
     .filter(Boolean);
 
+  const displayCards = query ? searchCouncilDisplayCards(query) : [];
+
   for (const part of parts) {
     let id: string | null = null;
     const bracket = part.match(/^\[(\d+)\]/);
@@ -68,7 +70,8 @@ function parseFortuneSectionBlocks(text: string, query = ''): Map<string, string
     
     // 오프라인 규칙 기반 초안이 품질 검사에서 짧아서 필터링되는 문제 방지 (N자 이하 필터링 바이패스)
     const isOfflineFallback = pruned.includes('◆') && pruned.length < 200;
-    if (!pruned || (!isOfflineFallback && isLowQualityFortuneBody(pruned, query))) continue;
+    const isDeep = displayCards.some((c) => cardKind(c) === `deep-${id}`);
+    if (!pruned || (!isOfflineFallback && isLowQualityFortuneBody(pruned, query, { isDeepCard: isDeep }))) continue;
 
     blocks.set(
       id,
@@ -108,25 +111,19 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
 
   const blocks = parseFortuneSectionBlocks(baseBody, query);
   const merged = new Map<string, string>();
+  const displayCards = searchCouncilDisplayCards(query);
 
   for (const id of FORTUNE_DISPLAY_ORDER) {
     const block = blocks.get(id);
     const bodyOnly = block ? extractSectionBody(block) : '';
     const hasTruncatedLine = bodyOnly.split('\n').some((line) => isTruncatedFortuneLine(line));
+    const isDeep = displayCards.some((c) => cardKind(c) === `deep-${id}`);
     const weak =
       !block
       || (id === '1' && isCardScaffoldBody(bodyOnly))
       || (id === '10' && hasTruncatedLine)
-      || isLowQualityFortuneBody(bodyOnly, query)
+      || isLowQualityFortuneBody(bodyOnly, query, { isDeepCard: isDeep })
       || fortuneOutputHasDefects(bodyOnly);
-
-    if (id === '9' || id === '10') {
-      const offline = buildOfflineFortuneSection(query, id);
-      if (offline) {
-        merged.set(id, offline);
-        continue;
-      }
-    }
 
     if (weak) {
       const offline = buildOfflineFortuneSection(query, id);

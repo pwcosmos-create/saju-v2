@@ -182,7 +182,11 @@ export function sectionBlockHasBrokenFragments(block: string): boolean {
 }
 
 /** 보충 LLM 필요 여부 (정리 후에도 짧거나 깨짐 잔존) */
-export function isLowQualityFortuneBody(body: string, query?: string): boolean {
+export function isLowQualityFortuneBody(
+  body: string,
+  query?: string,
+  options?: { isDeepCard?: boolean },
+): boolean {
   const t = body.trim();
   if (t.length < 80) return true;
   if (isBrokenPlaceholderText(t)) return true;
@@ -193,12 +197,15 @@ export function isLowQualityFortuneBody(body: string, query?: string): boolean {
     (l) => l.length >= 20 && !isAuthoringMetaText(l) && !isBrokenPlaceholderText(l),
   );
   if (substantive.length < 2) return true;
-  if (isGenericTemplateOnlyBody(t)) return true;
-  if (isCardScaffoldBody(t)) return true;
-  if (query && lacksChartPersonalization(t, query)) return true;
-  if (ENCYCLOPEDIC_JOB_RE.test(t)) return true;
-  if (GENERIC_OHAENG_RE.test(t) && !/목\s*\d+\s*개|지배 오행|넘치는 기운/.test(t)) return true;
-  if (GENERIC_DAEUN_RE.test(t) && !/\d+세\(|지금\(|구간별 흐름|10년 대운/.test(t)) return true;
+
+  if (!options?.isDeepCard) {
+    if (isGenericTemplateOnlyBody(t)) return true;
+    if (isCardScaffoldBody(t)) return true;
+    if (query && lacksChartPersonalization(t, query)) return true;
+    if (ENCYCLOPEDIC_JOB_RE.test(t)) return true;
+    if (GENERIC_OHAENG_RE.test(t) && !/목\s*\d+\s*개|지배 오행|넘치는 기운/.test(t)) return true;
+    if (GENERIC_DAEUN_RE.test(t) && !/\d+세\(|지금\(|구간별 흐름|10년 대운/.test(t)) return true;
+  }
 
   const brokenLines = lines.filter((l) => isBrokenDisplayLine(l));
   if (brokenLines.length >= 1) return true;

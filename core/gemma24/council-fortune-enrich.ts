@@ -77,7 +77,7 @@ function parsePromptContext(query: string) {
   const yongsinLine = query.match(/용신\(用神\)\s*=\s*([^\n]+)/)?.[1]?.trim() ?? null;
   const huisinLine = query.match(/희신\(喜神\)\s*=\s*([^\n]+)/)?.[1]?.trim() ?? null;
   const gisinLine = query.match(/기신\(忌神\)\s*=\s*([^\n]+)/)?.[1]?.trim() ?? null;
-  const pillars = query.match(/연주:[^\n]+/)?.[0]?.trim() ?? null;
+  const pillars = query.match(/[연년]주:[^\n]+/)?.[0]?.trim() ?? null;
   const gyeokLine = query.match(/▶ 격국[^]*?\n\s*([^\n※]+)/)?.[1]?.trim()
     ?? query.match(/격국:\s*([^\n]+)/)?.[1]?.trim()
     ?? facts.gyeokguk
@@ -476,7 +476,7 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
     case '2': {
       if (!ctx.pillars) return null;
 
-      const yearPillar = ctx.pillars.match(/연주:\s*([^\s/|·]+)/)?.[1] || '';
+      const yearPillar = ctx.pillars.match(/[연년]주:\s*([^\s/|·]+)/)?.[1] || '';
       const monthPillar = ctx.pillars.match(/월주:\s*([^\s/|·]+)/)?.[1] || '';
       const dayPillar = ctx.pillars.match(/일주:\s*([^\s/|·]+)/)?.[1] || '';
       const timePillar = ctx.pillars.match(/시주:\s*([^\s/|·]+)/)?.[1] || '';

@@ -29,6 +29,7 @@ import {
   promptHasHourPillar,
   sanitizeMixedScript,
   stripFortuneFooters,
+  GUIDE_TEMPLATE_RE,
 } from './fortune-text-quality';
 
 function splitFortuneIntro(text: string): { intro: string; body: string } {
@@ -123,6 +124,7 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
       !block
       || (id === '1' && !isDeep && isCardScaffoldBody(bodyOnly))
       || (id === '10' && hasTruncatedLine)
+      || GUIDE_TEMPLATE_RE.test(bodyOnly)
       || isLowQualityFortuneBody(bodyOnly, query, { isDeepCard: isDeep })
       || (!isDeep && fortuneOutputHasDefects(bodyOnly));
 

@@ -40,6 +40,9 @@ const GENERIC_INTRO_RE = /오늘은\s*귀하의\s*사주에서/;
 const CARD_SCAFFOLD_RE =
   /【[^】]+】|◆\s*테마\s*풀이|골라\s*말씀드립니다|일간\s*=\s*겉\s*성향|◆\s*해석·/;
 
+export const GUIDE_TEMPLATE_RE =
+  /으로만\s*서술|일간\s*=\s*겉\s*성향|일주\(日柱\)\s*성향|시주\(時柱\)를\s*모르시면|본\s*내용은\s*명리\s*참고용이며\s*확정\s*예언|학파·신강신약에\s*따라\s*달라질\s*수\s*있음/;
+
 const UNKNOWN_HOUR_RE = /시주\s*\(?時柱\)?\s*를\s*모르|시주를\s*모르/i;
 
 /** 인증 카드 제작 초안·메타 블록이 그대로 노출된 본문 */
@@ -197,6 +200,8 @@ export function isLowQualityFortuneBody(
     (l) => l.length >= 20 && !isAuthoringMetaText(l) && !isBrokenPlaceholderText(l),
   );
   if (substantive.length < 2) return true;
+
+  if (GUIDE_TEMPLATE_RE.test(t)) return true;
 
   if (!options?.isDeepCard) {
     if (isGenericTemplateOnlyBody(t)) return true;

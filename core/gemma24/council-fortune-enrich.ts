@@ -456,10 +456,6 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         `* **${w.title}:** ${w.desc}`
       ).join('\n');
 
-      const formattedVariants = stemDetails.iljuVariants.map(v => 
-        `* **${v.name}:** ${v.desc}`
-      ).join('\n');
-
       return [
         header('1'),
         '',
@@ -474,10 +470,7 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         formattedTraits,
         '',
         `⚠️ 조금 조심하면 좋은 점 (약점 및 보완점)`,
-        formattedWarnings,
-        '',
-        `💡 일지(일주의 두 번째 글자)에 따른 구체적 변화`,
-        formattedVariants
+        formattedWarnings
       ].filter(Boolean).join('\n');
     }
     case '2':

@@ -562,6 +562,70 @@ const GYEOK_DETAILS: Record<string, {
   }
 };
 
+const YONGSIN_DETAILS: Record<string, {
+  name: string;
+  role: string;
+  action: string;
+}> = {
+  목: {
+    name: "목(木·나무)",
+    role: "정체된 삶에 생명력과 활력을 불어넣고, 계획을 머릿속에서 꺼내 실행에 옮기며 새로운 기회를 창출하는 에너지입니다.",
+    action: "매일 새로운 지식을 배우거나 책을 읽으며 배움의 기쁨을 만끽하고, 아침 일찍 숲이나 공원을 걸으며 싱그러운 나무의 활발한 에너지를 곁에 두세요."
+  },
+  화: {
+    name: "화(火·불)",
+    role: "웅크려 있던 내면의 능력을 밖으로 환히 표출하고, 브랜딩을 강화하며, 대인관계에서 주목받게 돕는 활기찬 에너지입니다.",
+    action: "나의 재능이나 작업 결과물을 사람들에게 자신감 있게 보여주고, 대인관계에서도 솔직하고 유쾌하게 표현하며 긍정의 힘을 뿜어내세요."
+  },
+  토: {
+    name: "토(土·흙)",
+    role: "흔들리는 감정을 차분히 가라앉히고 매사 끝까지 완수할 수 있는 든든한 끈기와 사회적 신용을 부여하는 안정적인 에너지입니다.",
+    action: "감정의 조급함을 내려놓고 삶의 규칙적인 식사/수면 리듬을 지키며, 묵묵하고 정직하게 약속을 이행하여 단단한 신뢰를 형성하세요."
+  },
+  금: {
+    name: "금(金·쇠)",
+    role: "불필요한 인간관계나 나쁜 습관, 복잡한 잡념을 잘라내고 가장 핵심적인 목표에만 선택과 집중을 하도록 돕는 냉철한 에너지입니다.",
+    action: "내 일상과 공간을 미니멀하게 정리 정돈하고, 공사 구분을 명확히 하며, 거절해야 할 때에는 단호하게 선을 긋는 단단한 주관을 지키세요."
+  },
+  수: {
+    name: "수(水·물)",
+    role: "조급한 마음을 멈추고 내면을 깊이 성찰하게 만들며, 위기 상황에서도 유연한 판단력과 삶의 지혜를 길러주는 깊고 유연한 에너지입니다.",
+    action: "조용히 혼자 생각하거나 명상하는 차분한 시간을 확보하고, 평소 미지근한 물을 자주 마시며 충분한 휴식을 통해 감정을 조율하세요."
+  }
+};
+
+const GISIN_DETAILS: Record<string, {
+  name: string;
+  effect: string;
+  care: string;
+}> = {
+  목: {
+    name: "목(木·나무)",
+    effect: "의욕과 생각이 앞서 매사를 급하게 벌이지만 뒷심이 약해져 마무리가 흐지부지되고 에너지를 쉽게 소모하기 쉽습니다.",
+    care: "새로운 프로젝트를 성급히 확장하려 하지 말고, 현재 손에 쥔 일들의 완성도를 높이며 차분히 속도 조절을 하셔야 이롭습니다."
+  },
+  화: {
+    name: "화(火·불)",
+    effect: "감정이 쉽게 달아올라 순간의 욱하는 화나 직설적인 말실수를 범하기 쉽고, 심리적인 번아웃이 빠르게 찾아옵니다.",
+    care: "마음이 뜨거워질 때는 즉각적인 반응을 삼가고 한 템포 쉬어가며, 충분한 수분 섭취와 규칙적인 휴식으로 머리를 차갑게 식혀주세요."
+  },
+  토: {
+    name: "토(土·흙)",
+    effect: "생각의 감옥에 갇혀 행동이 굼뜨고 우유부단해지거나, 고집이 과해져 타인과의 소통을 거부하고 스스로를 단절시킬 수 있습니다.",
+    care: "지나친 걱정과 복잡한 계산을 과감히 멈추고, 가벼운 행동부터 즉각 실천에 옮기며 주변 조언에 귀를 열어 유연하게 수용하세요."
+  },
+  금: {
+    name: "금(金·쇠)",
+    effect: "지나치게 완벽주의적으로 변해 스스로를 고통스럽게 만들거나, 주변을 향해 차갑고 예리한 말로 상처를 주어 적을 만들기 쉽습니다.",
+    care: "모든 것을 완벽하게 통제하려는 욕심을 내려놓고 타인의 실수를 너그럽게 넘어가며, 나만의 잣대를 조금만 둥글게 깎아주세요."
+  },
+  수: {
+    name: "수(水·물)",
+    effect: "잡생각의 꼬리를 물어 쓸데없는 걱정과 우울감에 깊이 가라앉기 쉬우며, 마음을 닫고 혼자만의 깊은 동굴 속으로 들어갈 우려가 있습니다.",
+    care: "실내에만 머물지 말고 낮 시간에 밝은 햇볕을 받으며 가벼운 유산소 운동을 실천하고, 사람들과 소소한 대화를 자주 나누어 환기해 주십시오."
+  }
+};
+
 /** 절 id별 규칙 기반 초안 (LLM·카드 실패 시) */
 export function buildOfflineFortuneSection(query: string, sectionId: string): string | null {
   const ctx = parsePromptContext(query);
@@ -788,18 +852,61 @@ export function buildOfflineFortuneSection(query: string, sectionId: string): st
         formattedWarnings
       ].filter(Boolean).join('\n');
     }
-    case '5':
-      return (ctx.yongsinLine || ctx.gisinLine)
-        ? [
-            header('5'),
-            '',
-            '◆ 행운의 열쇠와 마음 조율',
-            ctx.yongsinLine ? `— 사주의 치우침을 바로잡아주고 긍정적인 변화를 불러오는 으뜸 기운(용신)은 **${ctx.yongsinLine}**이에요.` : '',
-            ctx.huisinLine ? `— 용신을 돕고 인생의 든든한 조력자 역할을 해주는 기운(희신)은 **${ctx.huisinLine}**이에요.` : '',
-            ctx.gisinLine ? `— 에너지가 과할 때 주의하고 조절해 주면 좋은 기운(기신)은 **${ctx.gisinLine}**입니다.` : '',
-            `— **실천 팁:** ${yTip}`,
-          ].filter(Boolean).join('\n')
-        : null;
+    case '5': {
+      if (!ctx.yongsinLine && !ctx.gisinLine) return null;
+
+      const yElem = facts.yongsinElem;
+      const yDetails = yElem ? YONGSIN_DETAILS[yElem] : null;
+
+      const gElem = facts.gisinElems[0];
+      const gDetails = gElem ? GISIN_DETAILS[gElem] : null;
+
+      const yongsinLabel = ctx.yongsinLine ? ctx.yongsinLine : (yElem ? `${yElem}(${ELEM_HANJA[yElem]})` : '확정 용신');
+      const huisinLabel = ctx.huisinLine ? ctx.huisinLine : '보조 희신';
+      const gisinLabel = ctx.gisinLine ? ctx.gisinLine : (gElem ? `${gElem}(${ELEM_HANJA[gElem]})` : '주의 기신');
+
+      const parts = [
+        header('5'),
+        '',
+        `◆ 행운의 열쇠와 마음 조율`,
+        `귀하의 사주 에너지를 조화롭고 이롭게 만드는 **행운의 기운(용신·희신)**과 에너지가 넘쳐 과해지지 않도록 다스려야 하는 **경계의 기운(기신)**의 처방전입니다.`,
+        '',
+        `* **으뜸 행운 기운 (용신):** **${yongsinLabel}**`,
+        ctx.huisinLine ? `* **보조 조력 기운 (희신):** **${huisinLabel}**` : '',
+        ctx.gisinLine ? `* **주의 경계 기운 (기신):** **${gisinLabel}**` : '',
+        '',
+        `---`,
+        ''
+      ];
+
+      if (yDetails) {
+        parts.push(
+          `### 🔑 행운을 부르는 으뜸 기운 (용신: ${yElem})`,
+          `오행 중 **${yDetails.name}** 기운은 귀하의 사주에서 가장 중요하게 쓰이는 에너지의 조율사입니다.`,
+          `* **핵심 역할:** ${yDetails.role}`,
+          `* **마음 조율법:** ${yDetails.action}`,
+          ''
+        );
+      }
+
+      if (gDetails) {
+        const gLabelCombined = facts.gisinElems.length > 0 ? facts.gisinElems.join('·') : gElem;
+        parts.push(
+          `### ⚠️ 경계해야 할 불균형 기운 (기신: ${gLabelCombined})`,
+          `오행 중 **${gDetails.name}**${facts.gisinElems.length > 1 ? ' 등의' : ''} 기운은 내 사주에서 힘이 과해지면 균형을 깨뜨리기 쉬운 에너지입니다.`,
+          `* **과해질 때의 모습:** ${gDetails.effect}`,
+          `* **주의할 점:** ${gDetails.care}`
+        );
+      } else if (ctx.gisinLine) {
+        parts.push(
+          `### ⚠️ 경계해야 할 불균형 기운 (기신)`,
+          `사주에서 기신으로 꼽히는 기운은 균형이 한쪽으로 쏠릴 때 과하게 작용하여 몸과 마음에 스트레스를 주기 쉬운 성향을 뜻합니다.`,
+          `* **주의할 점:** 무리한 확장이나 즉흥적인 투자 등을 피하고, 용신 기운의 차분하고 절제된 기운에 맞추어 평온한 리듬을 유지하시는 편이 안전합니다.`
+        );
+      }
+
+      return parts.filter(l => l !== '').join('\n');
+    }
     case '6':
       return [
         header('6'),

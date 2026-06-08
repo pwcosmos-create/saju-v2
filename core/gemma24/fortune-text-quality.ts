@@ -232,7 +232,7 @@ const FOOTER_RE = /\n*—\n*참고용\s*풀이[^\n]*(?=\n|$)/gi;
 const EMPTY_PARENS_AFTER_KO_RE = /([가-힣]{2,})[（(]\s*[）)]/g;
 const ANNOTATION_SUFFIX_RE = /\s*←[^\n]*/g;
 const DUPLICATE_DISCLAIMER_RE =
-  /◆\s*주의[^\n]*\n[\s\S]*?명리학적\s*경향[\s\S]*?(?=\n\n◆\s*주의|\n\n—|$)/g;
+  /◆\s*주의[^\n]*\n(?:(?!\[\d+\])[\s\S])*?명리학적\s*경향(?:(?!\[\d+\])[\s\S])*?(?=\n\n◆\s*주의|\n\n—|\n\n\[\d+\]|$)/g;
 
 /** 한 줄 — 카드 주석(←)·빈 괄호 제거 */
 export function normalizeFortuneLine(line: string): string {

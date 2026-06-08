@@ -85,11 +85,12 @@ function mergeFortuneWithSupplement(
   baseText: string,
   supplementText: string,
   replaceIds: string[],
+  query = '',
 ): string {
   const { intro, body: baseBody } = splitFortuneIntro(baseText);
 
-  const baseBlocks = parseFortuneSectionBlocks(baseBody);
-  const supBlocks = parseFortuneSectionBlocks(supplementText);
+  const baseBlocks = parseFortuneSectionBlocks(baseBody, query);
+  const supBlocks = parseFortuneSectionBlocks(supplementText, query);
   const replace = new Set(replaceIds);
 
   for (const id of replace) baseBlocks.delete(id);
@@ -120,10 +121,10 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
     const isDeep = displayCards.some((c) => cardKind(c) === `deep-${id}`);
     const weak =
       !block
-      || (id === '1' && isCardScaffoldBody(bodyOnly))
+      || (id === '1' && !isDeep && isCardScaffoldBody(bodyOnly))
       || (id === '10' && hasTruncatedLine)
       || isLowQualityFortuneBody(bodyOnly, query, { isDeepCard: isDeep })
-      || fortuneOutputHasDefects(bodyOnly);
+      || (!isDeep && fortuneOutputHasDefects(bodyOnly));
 
     if (weak) {
       const offline = buildOfflineFortuneSection(query, id);
@@ -307,6 +308,7 @@ export async function buildCouncilHybridFortune(
     composed.text.replace(baseFooter, '').trim(),
     supplementMerged,
     composed.needsSupplementIds,
+    query,
   );
 
   const text = finalizeCouncilFortuneText(query, merged);
@@ -350,6 +352,7 @@ export function buildCouncilHybridFortuneOfflineOnly(
     composed.text.replace(baseFooter, '').trim(),
     supplementMerged,
     composed.needsSupplementIds,
+    query,
   );
 
   return {

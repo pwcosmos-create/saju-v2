@@ -10,6 +10,7 @@ import {
   FORTUNE_SECTION_TITLES,
   formatFortuneSectionHeader,
   sortFortuneSectionBlocks,
+  type FortuneSectionId,
 } from './fortune-display-order';
 import { mergeOptimizedCardBodies, sanitizeCardBody } from './optimize-card-body';
 import {
@@ -114,7 +115,10 @@ export function composeCouncilFreeFortune(
     if (!block) return true;
     const bodyOnly = block.replace(/^\[\d+\][^\n]*\n?/, '').trim();
     if (sectionBlockHasBrokenFragments(block)) return true;
-    const isDeep = displayCards.some((c) => cardKind(c) === `deep-${id}`);
+    const isDeep = displayCards.some((c) => {
+      const k = cardKind(c);
+      return k.startsWith('deep-') && FORTUNE_SECTION_KINDS[id as FortuneSectionId]?.includes(k);
+    });
     if (isLowQualityFortuneBody(bodyOnly, query, { isDeepCard: isDeep })) return true;
     return false;
   });

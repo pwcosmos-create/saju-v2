@@ -1923,6 +1923,91 @@ function renderInline(text: string): React.ReactNode {
   );
 }
 
+function renderFortuneSubheader(title: string, key: number): React.ReactNode {
+  const clean = title.replace(/^#+\s*/, '').replace(/^[\d.]+\s*/, '').trim();
+  return (
+    <div key={key} style={{ marginTop:18, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+      <span style={{ width:3, height:16, background:'var(--gold)', borderRadius:2, flexShrink:0 }} />
+      <h3 style={{ fontSize:'.9rem', fontWeight:800, color:'var(--gold)', margin:0 }}>
+        {renderInline(clean)}
+      </h3>
+    </div>
+  );
+}
+
+function renderFortuneBullet(text: string, key: number): React.ReactNode {
+  const body = text.replace(/^\*\s+/, '').trim();
+  return (
+    <div key={key} style={{ display:'flex', gap:8, marginBottom:6, paddingLeft:8 }}>
+      <span style={{ color:'var(--purple)', flexShrink:0, fontSize:'.85rem', marginTop:2 }}>▸</span>
+      <span style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.85 }}>
+        {renderInline(body)}
+      </span>
+    </div>
+  );
+}
+
+function renderFortuneLines(lines: string[]): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let k = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^━{3,}|^---+$/.test(trimmed)) {
+      nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.08)', margin:'14px 0' }} />);
+      continue;
+    }
+    if (/^#{1,3}\s+/.test(trimmed)) {
+      nodes.push(renderFortuneSubheader(trimmed, k++));
+      continue;
+    }
+    if (trimmed.startsWith('>')) {
+      nodes.push(
+        <div key={k++} style={{
+          margin:'10px 0 12px', padding:'10px 14px', borderRadius:10,
+          background:'rgba(232,196,106,.08)', borderLeft:'3px solid var(--gold)',
+          fontSize:'.88rem', color:'rgba(248,246,255,.9)', lineHeight:1.8,
+        }}>
+          {renderInline(trimmed.replace(/^>\s*/, ''))}
+        </div>,
+      );
+      continue;
+    }
+    if (trimmed.startsWith('*')) {
+      nodes.push(renderFortuneBullet(trimmed, k++));
+      continue;
+    }
+    if (line.includes('◆')) {
+      const parts = line.split(/(◆[^◆\n]+)/g);
+      parts.forEach((part) => {
+        if (part.startsWith('◆')) {
+          nodes.push(renderFortuneSubheader(part.replace('◆', '').trim(), k++));
+        } else if (part.trim()) {
+          nodes.push(
+            <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.85, marginBottom:10, paddingLeft:11 }}>
+              {renderInline(part.trim())}
+            </p>,
+          );
+        }
+      });
+      continue;
+    }
+    if (/^[—•]\s/.test(line)) {
+      nodes.push(renderFortuneBullet(line.replace(/^[—•]\s/, ''), k++));
+      continue;
+    }
+    if (!trimmed) {
+      nodes.push(<div key={k++} style={{ height:8 }} />);
+      continue;
+    }
+    nodes.push(
+      <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.9, marginBottom:8 }}>
+        {renderInline(line)}
+      </p>,
+    );
+  }
+  return nodes;
+}
+
 // ─── 월별 운세 막대 차트 ───
 const LEVEL_COL: Record<string, string> = {
   '매우 좋음': '#4cbe82', '좋음': '#7ac87a',
@@ -1990,10 +2075,21 @@ function AiRenderer({ text, loading, result }: {
     return buildMonthlyBriefs(result, cls, new Date().getFullYear());
   }, [result, ds]);
 
+  const elemCls = useMemo(() => {
+    if (!result) return null;
+    const dayElem = STEM_ELEM[ds];
+    const { isWeak } = calcStrength(result.pillars, dayElem);
+    return classifyElements(ds, isWeak, result.ohaeng.counts);
+  }, [result, ds]);
+
   const SECTION_EXTRAS: Record<string, React.ReactNode> = result ? {
     '1': <div key="c1" style={{ margin:'8px 0 16px' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div>,
     '4': <div key="c4" style={{ margin:'4px 0 12px', display:'flex', justifyContent:'center' }}><OhaengRadar counts={result.ohaeng.counts} /></div>,
     '9': monthlyBriefs ? <MonthlyChart key="c9" briefs={monthlyBriefs} /> : null,
+    '8': <div key="c8" style={{ margin:'4px 0 14px' }}><WealthSipsinBar pillars={result.pillars} dayStemIdx={ds} /></div>,
+    '7': <div key="c7" style={{ margin:'4px 0 14px' }}><SpousePalaceCard pillars={result.pillars} dayStemIdx={ds} /></div>,
+    '6': <div key="c6" style={{ margin:'4px 0 14px' }}><SipsinGrid pillars={result.pillars} dayStemIdx={ds} /></div>,
+    '10': elemCls ? <div key="c10" style={{ margin:'4px 0 14px' }}><YongsinPracticeCard yongsin={elemCls.yongsin} dayStemIdx={ds} /></div> : null,
   } : {};
 
   const SECTION_LABELS: Record<string, { emoji: string; color: string }> = {
@@ -2048,57 +2144,7 @@ function AiRenderer({ text, loading, result }: {
   if (current) sections.push(current);
 
   function renderLines(lines: string[]) {
-    const nodes: React.ReactNode[] = [];
-    let k = 0;
-    for (const line of lines) {
-      if (/^━{3,}/.test(line)) {
-        nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.08)', margin:'14px 0' }} />);
-        continue;
-      }
-      if (line.includes('◆')) {
-        const parts = line.split(/(◆[^◆\n]+)/g);
-        parts.forEach((part) => {
-          if (part.startsWith('◆')) {
-            nodes.push(
-              <div key={k++} style={{ marginTop:18, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ width:3, height:16, background:'var(--gold)', borderRadius:2, flexShrink:0 }} />
-                <h3 style={{ fontSize:'.9rem', fontWeight:800, color:'var(--gold)', margin:0 }}>
-                  {renderInline(part.replace('◆', '').trim())}
-                </h3>
-              </div>,
-            );
-          } else if (part.trim()) {
-            nodes.push(
-              <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.85, marginBottom:10, paddingLeft:11 }}>
-                {renderInline(part.trim())}
-              </p>,
-            );
-          }
-        });
-        continue;
-      }
-      if (/^[—•]\s/.test(line)) {
-        nodes.push(
-          <div key={k++} style={{ display:'flex', gap:8, marginBottom:6, paddingLeft:8 }}>
-            <span style={{ color:'var(--purple)', flexShrink:0, fontSize:'.85rem', marginTop:2 }}>▸</span>
-            <span style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.85 }}>
-              {renderInline(line.replace(/^[—•]\s/, ''))}
-            </span>
-          </div>,
-        );
-        continue;
-      }
-      if (!line.trim()) {
-        nodes.push(<div key={k++} style={{ height:8 }} />);
-        continue;
-      }
-      nodes.push(
-        <p key={k++} style={{ fontSize:'.9rem', color:'rgba(248,246,255,.88)', lineHeight:1.9, marginBottom:8 }}>
-          {renderInline(line)}
-        </p>,
-      );
-    }
-    return nodes;
+    return renderFortuneLines(lines);
   }
 
   return (
@@ -2162,6 +2208,113 @@ function AiRenderer({ text, loading, result }: {
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .typing-cursor { font-weight: 700; animation: blink 0.8s infinite; }
       `}</style>
+    </div>
+  );
+}
+
+// ─── 7번 재물: 재성(편재·정재) 분포 ───
+function WealthSipsinBar({ pillars, dayStemIdx }: { pillars: (Pillar|null)[], dayStemIdx: number }) {
+  const labels = ['년','월','일','시'];
+  const wealthKinds = ['편재', '정재'] as const;
+  const slots = pillars.map((p, i) => {
+    if (!p || i === 2) return null;
+    const ss = getSipsin(dayStemIdx, p.s);
+    if (!wealthKinds.includes(ss as typeof wealthKinds[number])) return null;
+    return { label: labels[i], sipsin: ss, col: SIPSIN_COLORS[ss] ?? '#e8c46a' };
+  }).filter(Boolean) as { label: string; sipsin: string; col: string }[];
+
+  return (
+    <div style={{ textAlign:'center', padding:'12px 14px', background:'rgba(0,0,0,.18)',
+      borderRadius:10, border:'1px solid rgba(255,255,255,.07)' }}>
+      <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:10, fontWeight:700, letterSpacing:'.06em' }}>
+        💰 재성(財星) 배치
+      </div>
+      {slots.length ? (
+        <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
+          {slots.map((s) => (
+            <div key={s.label} style={{ padding:'8px 12px', borderRadius:8,
+              background:`${s.col}18`, border:`1px solid ${s.col}55` }}>
+              <div style={{ fontSize:'.62rem', color:'var(--muted)', marginBottom:3 }}>{s.label}주</div>
+              <div style={{ fontSize:'.82rem', fontWeight:800, color:s.col }}>{s.sipsin}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize:'.78rem', color:'rgba(248,246,255,.65)', lineHeight:1.6 }}>
+          사주 원국에 편재·정재가 직접 드러나지 않아, 격국·용신 흐름으로 재물을 읽습니다.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 8번 연애: 배우자궁(일지) ───
+function SpousePalaceCard({ pillars, dayStemIdx }: { pillars: (Pillar|null)[], dayStemIdx: number }) {
+  const dp = pillars[2];
+  if (!dp) return null;
+  const branch = BRANCHES[dp.b];
+  const branchH = BRANCHES_H[dp.b];
+  const elem = ELEM_NAMES[BRANCH_ELEM[dp.b]];
+  const stem = STEMS[dayStemIdx];
+  return (
+    <div style={{ textAlign:'center', padding:'12px 14px', background:'rgba(0,0,0,.18)',
+      borderRadius:10, border:'1px solid rgba(255,255,255,.07)' }}>
+      <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:10, fontWeight:700, letterSpacing:'.06em' }}>
+        🤝 배우자궁 (일지)
+      </div>
+      <div style={{ display:'inline-flex', alignItems:'center', gap:12 }}>
+        <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(144,184,240,.12)',
+          border:'1px solid rgba(144,184,240,.35)' }}>
+          <div style={{ fontSize:'.62rem', color:'var(--muted)', marginBottom:4 }}>일간</div>
+          <div style={{ fontSize:'1rem', fontWeight:900, color:'var(--gold)' }}>{stem}</div>
+        </div>
+        <span style={{ color:'rgba(255,255,255,.35)', fontSize:'1.1rem' }}>+</span>
+        <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(196,168,255,.12)',
+          border:'1px solid rgba(196,168,255,.35)' }}>
+          <div style={{ fontSize:'.62rem', color:'var(--muted)', marginBottom:4 }}>일지</div>
+          <div style={{ fontSize:'1rem', fontWeight:900, color:'#c4a8ff' }}>{branch}{branchH}</div>
+          <div style={{ fontSize:'.65rem', color:'var(--muted)', marginTop:4 }}>{elem}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 10번 실천: 용신 실천 카드 ───
+const YONGSIN_PRACTICE: Record<number, { color: string; tip: string }> = {
+  0: { color:'#5dce70', tip:'초록·식물, 아침 산책, 성장·학습 루틴' },
+  1: { color:'#ff7070', tip:'따뜻한 색, 햇볕, 적극적 표현·실행' },
+  2: { color:'#e8c840', tip:'규칙적 식사·수면, 안정적 루틴, 신뢰 쌓기' },
+  3: { color:'#e0e0e0', tip:'정리·정돈, 금속 소품, 결단 전 하루 숙성' },
+  4: { color:'#90b8f0', tip:'수분·휴식, 차분한 명상, 깊은 사고 시간' },
+};
+
+function YongsinPracticeCard({ yongsin, dayStemIdx }: { yongsin: number; dayStemIdx: number }) {
+  const elem = ELEM_NAMES[yongsin];
+  const guide = YONGSIN_PRACTICE[yongsin] ?? YONGSIN_PRACTICE[2]!;
+  const stem = STEMS[dayStemIdx];
+  return (
+    <div style={{ padding:'12px 14px', background:'rgba(0,0,0,.18)', borderRadius:10,
+      border:'1px solid rgba(255,255,255,.07)' }}>
+      <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:10, fontWeight:700, letterSpacing:'.06em' }}>
+        🗺️ 용신 실천 가이드
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+        <div style={{ width:44, height:44, borderRadius:12, flexShrink:0,
+          background:`${guide.color}22`, border:`2px solid ${guide.color}`,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize:'1.1rem', fontWeight:900, color:guide.color }}>
+          {elem}
+        </div>
+        <div style={{ flex:1, textAlign:'left' }}>
+          <div style={{ fontSize:'.85rem', fontWeight:800, color:'#fff', marginBottom:4 }}>
+            {stem} 일간 → 용신 <span style={{ color:guide.color }}>{elem}</span>
+          </div>
+          <div style={{ fontSize:'.78rem', color:'rgba(248,246,255,.75)', lineHeight:1.65 }}>
+            {guide.tip}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -17,6 +17,8 @@ import {
   fortuneSectionNumberedLabel,
   humanizeDeepSectionText,
   sortFortuneSectionBlocks,
+  FORTUNE_SECTION_KINDS,
+  type FortuneSectionId,
 } from './fortune-display-order';
 import {
   extractSectionBody,
@@ -71,7 +73,10 @@ function parseFortuneSectionBlocks(text: string, query = ''): Map<string, string
     
     // 오프라인 규칙 기반 초안이 품질 검사에서 짧아서 필터링되는 문제 방지 (N자 이하 필터링 바이패스)
     const isOfflineFallback = pruned.includes('◆') && pruned.length < 200;
-    const isDeep = displayCards.some((c) => cardKind(c) === `deep-${id}`);
+    const isDeep = displayCards.some((c) => {
+      const k = cardKind(c);
+      return k.startsWith('deep-') && FORTUNE_SECTION_KINDS[id as FortuneSectionId]?.includes(k);
+    });
     if (!pruned || (!isOfflineFallback && isLowQualityFortuneBody(pruned, query, { isDeepCard: isDeep }))) continue;
 
     blocks.set(
@@ -119,7 +124,10 @@ function finalizeCouncilFortuneText(query: string, text: string): string {
     const block = blocks.get(id);
     const bodyOnly = block ? extractSectionBody(block) : '';
     const hasTruncatedLine = bodyOnly.split('\n').some((line) => isTruncatedFortuneLine(line));
-    const isDeep = displayCards.some((c) => cardKind(c) === `deep-${id}`);
+    const isDeep = displayCards.some((c) => {
+      const k = cardKind(c);
+      return k.startsWith('deep-') && FORTUNE_SECTION_KINDS[id as FortuneSectionId]?.includes(k);
+    });
     const weak =
       !block
       || (id === '1' && !isDeep && isCardScaffoldBody(bodyOnly))

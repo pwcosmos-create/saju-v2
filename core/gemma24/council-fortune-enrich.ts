@@ -2,6 +2,7 @@
  * 인증 카드가 적을 때 프롬프트 확정 데이터로 섹션 보강 (LLM 없음)
  */
 import { buildDaeunFortuneBody, parseDaeunFromQuery } from './council-fortune-daeun';
+import { kstCalendarDatePlusDays } from '../daily-fortune/kst-date';
 import { extractPromptFacts } from './saju-knowledge';
 import { FORTUNE_SECTION_TITLES, formatFortuneSectionHeader } from './fortune-display-order';
 
@@ -1159,65 +1160,90 @@ const CAREER_BY_GYEOK: Record<string, {
 };
 
 const LUCKY_NUMBERS_BY_ELEM: Record<string, {
-  numbers: number[];
   direction: string;
   directionDetail: string;
   bestTime: string;
   timeDetail: string;
 }> = {
   목: {
-    numbers: [3, 8, 13, 23, 33, 38],
     direction: '동쪽(東)',
     directionDetail: '동쪽 방향이나 동쪽 출입구가 있는 곳에서 구입하면 목 기운이 활성화됩니다',
-    bestTime: '이른 아침 6시~9시 / 봄철(3~5월)',
-    timeDetail: '하루 중 기운이 솟아오르는 새벽·아침 시간대, 봄의 목(木) 기운이 강한 계절이 최적'
+    bestTime: '06시~09시',
+    timeDetail: '하루 중 기운이 솟아오르는 새벽·아침 시간대에 목(木) 에너지가 가장 잘 살아납니다',
   },
   화: {
-    numbers: [2, 7, 17, 22, 27, 37],
     direction: '남쪽(南)',
     directionDetail: '남향 매장이나 남쪽 방향으로 이동하며 구입하면 화 기운이 활성화됩니다',
-    bestTime: '낮 11시~14시 / 여름철(6~8월)',
-    timeDetail: '태양이 가장 높이 뜨는 한낮 시간대, 화(火) 기운이 절정인 여름이 길한 타이밍'
+    bestTime: '11시~14시',
+    timeDetail: '태양이 높이 뜨는 한낮 시간대에 화(火) 기운이 가장 선명하게 작동합니다',
   },
   토: {
-    numbers: [5, 10, 15, 25, 35, 45],
     direction: '중앙 또는 남서쪽(中·西南)',
     directionDetail: '중심부 위치나 남서쪽 방향의 매장에서 구입하면 토 기운이 안정적으로 받쳐줍니다',
-    bestTime: '이른 저녁 17시~20시 / 환절기(3·6·9·12월)',
-    timeDetail: '하루의 전환점인 저녁 무렵, 계절이 바뀌는 환절기의 토(土) 기운이 중심을 잡아주는 시기'
+    bestTime: '17시~20시',
+    timeDetail: '하루의 흐름이 정리되는 저녁 시간대에 토(土) 기운이 균형을 잡아줍니다',
   },
   금: {
-    numbers: [4, 9, 14, 19, 24, 29],
     direction: '서쪽(西)',
     directionDetail: '서쪽 방향 매장이나 서쪽을 바라보며 구입하면 금 기운이 집중력을 높여줍니다',
-    bestTime: '오후 15시~18시 / 가을철(9~11월)',
-    timeDetail: '결실을 맺는 오후 시간대, 금(金)·수확의 기운이 가장 강한 가을이 행운의 타이밍'
+    bestTime: '15시~18시',
+    timeDetail: '결실을 정리하는 오후 시간대에 금(金) 기운이 판단력을 또렷하게 합니다',
   },
   수: {
-    numbers: [1, 6, 11, 16, 21, 31],
     direction: '북쪽(北)',
     directionDetail: '북쪽 방향 매장이나 북향 출입구로 들어가 구입하면 수 기운의 지혜가 작동합니다',
-    bestTime: '밤 21시~24시 / 겨울철(12~2월)',
-    timeDetail: '고요하고 지혜로운 밤 시간대, 수(水) 기운이 깊어지는 겨울이 직관이 빛나는 시기'
-  }
+    bestTime: '21시~24시',
+    timeDetail: '고요해지는 밤 시간대에 수(水) 기운이 직관과 판단을 깊게 만듭니다',
+  },
 };
 
-function buildLuckyNumbersSection(yongsinElem: string | null, stemKo: string | null): string {
+const STEM_MICRO_SHIFT: Record<string, number> = {
+  갑목: 0, 을목: 1, 병화: 2, 정화: 1, 무토: 3,
+  기토: 2, 경금: 4, 신금: 1, 임수: 3, 계수: 5,
+};
+
+const ELEM_IDX: Record<string, number> = { 목: 0, 화: 1, 토: 2, 금: 3, 수: 4 };
+
+function formatKstDateLabel(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = date.getUTCMonth() + 1;
+  const d = date.getUTCDate();
+  return `${y}년 ${m}월 ${d}일`;
+}
+
+/** 운세를 보는 당일(KST) + 용신·일간 기반 행운 숫자 6개 (1~45) */
+function computeDailyLuckyNumbers(
+  yongsinElem: string,
+  stemKo: string | null,
+  viewDate: Date,
+): number[] {
+  const y = viewDate.getUTCFullYear();
+  const m = viewDate.getUTCMonth() + 1;
+  const d = viewDate.getUTCDate();
+  const elemIdx = ELEM_IDX[yongsinElem] ?? 0;
+  const shift = stemKo ? (STEM_MICRO_SHIFT[stemKo] ?? 0) : 0;
+  let seed = y * 10000 + m * 100 + d + elemIdx * 997 + shift * 37;
+
+  const out = new Set<number>();
+  let guard = 0;
+  while (out.size < 6 && guard < 120) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    out.add((seed % 45) + 1);
+    guard += 1;
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+function buildLuckyNumbersSection(
+  yongsinElem: string | null,
+  stemKo: string | null,
+  viewDate = kstCalendarDatePlusDays(0),
+): string {
   const base = yongsinElem ? LUCKY_NUMBERS_BY_ELEM[yongsinElem] : null;
   if (!base) return '';
 
-  // 일간(stem)에 따라 숫자를 1~2개 미세 조정하여 개인화
-  const STEM_MICRO_SHIFT: Record<string, number> = {
-    갑목: 0, 을목: 1, 병화: 2, 정화: 1, 무토: 3,
-    기토: 2, 경금: 4, 신금: 1, 임수: 3, 계수: 5
-  };
-  const shift = stemKo ? (STEM_MICRO_SHIFT[stemKo] ?? 0) : 0;
-  const nums = [...base.numbers];
-  // 마지막 두 숫자에 일간 미세 조정 적용 (1~45 범위 유지)
-  const adj4 = nums[4]! + shift;
-  const adj5 = nums[5]! + shift;
-  if (adj4 <= 45 && adj4 !== nums[3] && adj4 !== nums[2]) nums[4] = adj4;
-  if (adj5 <= 45 && adj5 !== nums[4] && adj5 !== nums[3]) nums[5] = adj5;
+  const dateLabel = formatKstDateLabel(viewDate);
+  const nums = computeDailyLuckyNumbers(yongsinElem!, stemKo, viewDate);
 
   const elemHanja: Record<string, string> = { 목: '木·나무', 화: '火·불', 토: '土·흙', 금: '金·쇠', 수: '水·물' };
 
@@ -1225,14 +1251,14 @@ function buildLuckyNumbersSection(yongsinElem: string | null, stemKo: string | n
     '',
     '---',
     '',
-    '### 🎱 사주가 말하는 나의 행운 숫자',
-    `귀하의 사주에서 가장 이로운 기운인 **${yongsinElem}(${elemHanja[yongsinElem ?? ''] ?? ''})** 에너지를 바탕으로, 나에게 공명하는 수리(數理)의 흐름을 분석하여 도출한 행운의 숫자입니다.${stemKo ? ` **${stemKo}** 일간의 고유한 에너지도 반영하여 귀하만을 위해 조합했습니다.` : ''}`,
+    `### 🎱 ${dateLabel} 행운의 숫자`,
+    `**${dateLabel}** 운세를 보는 오늘 날짜에 맞춰, 용신 **${yongsinElem}(${elemHanja[yongsinElem ?? ''] ?? ''})** 기운과${stemKo ? ` **${stemKo}** 일간` : ''} 에너지를 반영해 행운의 숫자를 산출했습니다.`,
     '',
-    `* 🔢 **행운의 숫자 6개:** ✨ **${nums.join(' · ')}** ✨`,
+    `* 🔢 **오늘의 행운 숫자 6개:** ✨ **${nums.join(' · ')}** ✨`,
     `* 🧭 **행운의 방향:** **${base.direction}** — ${base.directionDetail}`,
-    `* 🕐 **구입 적기:** **${base.bestTime}** — ${base.timeDetail}`,
+    `* 🕐 **구입 적기(시간):** **${base.bestTime}** — ${base.timeDetail}`,
     '',
-    `> 💡 **활용 팁:** 6개의 숫자를 모두 사용하기 어렵다면, 앞의 3개(${nums.slice(0, 3).join('·')})를 중심으로 선택하시고 나머지는 보조로 활용해 보세요. 구입 전 잠깐 눈을 감고 자신이 바라는 것을 마음속으로 선명하게 그려보는 시각화 명상도 함께 해보시길 권해 드립니다.`,
+    `> 💡 **활용 팁:** 6개를 모두 쓰기 어렵다면 앞의 3개(${nums.slice(0, 3).join('·')})를 중심으로 고르세요. **${base.bestTime}** 사이에 잠깐 눈을 감고 바라는 것을 떠올리며 선택하면 더 좋습니다.`,
   ].join('\n');
 }
 

@@ -17,6 +17,7 @@ import {
 } from '../lib/support-account';
 import { FooterBrandRow, SiteNav } from './site-chrome';
 import { BRAND } from './ui-brand';
+import KakaoAd from './components/kakao-ad';
 
 const APP_VERSION = packageJson.version;
 
@@ -563,6 +564,7 @@ export default function HomePageClient() {
           무료로 사주팔자 보기
         </Link>
       </section>
+      {!APPS_IN_TOSS && <KakaoAd />}
 
       {/* 푸터 */}
       <footer style={{

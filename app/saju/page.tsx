@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { SiteNav } from '../site-chrome';
 import CounselPanel from '../counsel/CounselPanel';
+import KakaoAd from '../components/kakao-ad';
 import { calculate, SajuResult } from '../../core/pillar-calc/main-calculator';
 import { readSajuFormFromDom, readInitialSajuForm } from '../../lib/toss-form-read';
 import { consumePendingResult, consumePendingForm } from '../../lib/toss-standalone-analyze';
@@ -813,6 +814,7 @@ export default function Home() {
             cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1,
           }}>✦ 사주팔자 정밀 분석하기</button>
         </div>
+        {!APPS_IN_TOSS && <KakaoAd />}
       </section>
 
       {/* ── Loading ── */}
@@ -948,6 +950,7 @@ export default function Home() {
           {fortuneResult && <DailyFortuneCard fortune={fortuneResult} />}
           {dp&&<IljooCard dp={dp} yearBranch={result.pillars[0]?.b ?? 0} />}
           <OhaengCard ohaeng={result.ohaeng} />
+          {!APPS_IN_TOSS && <KakaoAd />}
 
           {/* 탭 */}
           <div style={{ display:'flex', gap:7, marginBottom:16, flexWrap:'wrap' }}>

@@ -378,6 +378,7 @@ export default function Home() {
         setResult(r);
         try { setFortuneResult(dailyFortune(r)); } catch { setFortuneResult(null); }
         setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        askAI();
       } catch (e) {
         const msg = e instanceof Error ? e.message : '사주 계산 중 오류가 발생했습니다.';
         showFormError(setFormError, msg);
@@ -993,25 +994,6 @@ export default function Home() {
                 <SinGangGauge pillars={result.pillars} dayStemIdx={ds} />
                 <SipsinGrid   pillars={result.pillars} dayStemIdx={ds} />
               </div>
-            </div>
-
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', position: 'relative' }}>
-              <button onClick={askAI} disabled={aiLoading} className={aiLoading ? "analyzing-btn" : ""} style={{
-                background:'linear-gradient(135deg,#6b4fa0,#3a7bd5)', border:'none',
-                borderRadius:10, color:'#fff', fontSize:'.92rem', fontWeight:700,
-                padding:'12px 24px', cursor:aiLoading?'not-allowed':'pointer', opacity:aiLoading?.7:1,
-                position: 'relative', overflow: 'hidden'
-              }}>
-                {aiLoading && <div className="btn-shine" />}
-                {aiLoading ? (
-                  <span style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <svg className="rotating-star" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="white"/>
-                    </svg>
-                    {steps[loadingStep - 1] || '분석 중...'}
-                  </span>
-                ) : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
-              </button>
             </div>
 
             {aiLoading && (

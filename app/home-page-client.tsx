@@ -17,6 +17,7 @@ import {
 } from '../lib/support-account';
 import { FooterBrandRow, SiteNav } from './site-chrome';
 import { BRAND } from './ui-brand';
+import KakaoAd from './components/kakao-ad';
 
 const APP_VERSION = packageJson.version;
 
@@ -255,7 +256,7 @@ export default function HomePageClient() {
           color: '#8b6fc6', maxWidth: 520, lineHeight: 1.7, marginBottom: 48,
         }}>
           생년월일과 태어난 시간을 입력하면<br/>
-          AI 심층 풀이 후 텍스트·음성 맞춤 상담도 이용할 수 있습니다
+          AI 심층 풀이로 내 운세를 깊이 있게 분석해 드립니다
         </p>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 64 }}>
@@ -335,7 +336,7 @@ export default function HomePageClient() {
           fontWeight: 700,
           letterSpacing: '.01em',
         }}>
-          분석·심층 풀이·AI 상담은 무료입니다
+          분석·심층 풀이는 무료입니다
         </div>
 
         {false && !APPS_IN_TOSS && SUPPORT_BANK && SUPPORT_ACCOUNT_NO && (
@@ -551,7 +552,7 @@ export default function HomePageClient() {
           지금 바로 내 사주를<br/>확인해보세요
         </h2>
         <p style={{ color: '#6b6490', marginBottom: 40, fontSize: '.95rem' }}>
-          무료 분석 후 심층 풀이와 AI 상담까지 이어서 이용해 보세요
+          무료 분석 후 심층 풀이까지 상세하게 확인해 보세요
         </p>
         <Link href="/saju" data-saju-go="true" style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,
@@ -566,6 +567,7 @@ export default function HomePageClient() {
           무료로 사주팔자 보기
         </Link>
       </section>
+      {!APPS_IN_TOSS && <KakaoAd />}
 
       {/* 푸터 */}
       <footer style={{

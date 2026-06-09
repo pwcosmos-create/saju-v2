@@ -11,7 +11,7 @@
 import Link from 'next/link';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { SiteNav } from '../site-chrome';
-import CounselPanel from '../counsel/CounselPanel';
+import KakaoAd from '../components/kakao-ad';
 import { calculate, SajuResult } from '../../core/pillar-calc/main-calculator';
 import { readSajuFormFromDom, readInitialSajuForm } from '../../lib/toss-form-read';
 import { consumePendingResult, consumePendingForm } from '../../lib/toss-standalone-analyze';
@@ -378,6 +378,7 @@ export default function Home() {
         setResult(r);
         try { setFortuneResult(dailyFortune(r)); } catch { setFortuneResult(null); }
         setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        askAI();
       } catch (e) {
         const msg = e instanceof Error ? e.message : '사주 계산 중 오류가 발생했습니다.';
         showFormError(setFormError, msg);
@@ -770,6 +771,7 @@ export default function Home() {
             cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1,
           }}>✦ 사주팔자 정밀 분석하기</button>
         </div>
+        {!APPS_IN_TOSS && <KakaoAd />}
       </section>
 
       {/* ── Loading ── */}
@@ -875,6 +877,7 @@ export default function Home() {
           {fortuneResult && <DailyFortuneCard fortune={fortuneResult} />}
           {dp&&<IljooCard dp={dp} yearBranch={result.pillars[0]?.b ?? 0} />}
           <OhaengCard ohaeng={result.ohaeng} />
+          {!APPS_IN_TOSS && <KakaoAd />}
 
           {/* 탭 */}
           <div style={{ display:'flex', gap:7, marginBottom:16, flexWrap:'wrap' }}>
@@ -920,24 +923,6 @@ export default function Home() {
               </div>
             </div>
 
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', position: 'relative' }}>
-              <button onClick={() => void askAI()} disabled={aiLoading} className={aiLoading ? "analyzing-btn" : ""} style={{
-                background:'linear-gradient(135deg,#6b4fa0,#3a7bd5)', border:'none',
-                borderRadius:10, color:'#fff', fontSize:'.92rem', fontWeight:700,
-                padding:'12px 24px', cursor:aiLoading?'not-allowed':'pointer', opacity:aiLoading?.7:1,
-                position: 'relative', overflow: 'hidden'
-              }}>
-                {aiLoading && <div className="btn-shine" />}
-                {aiLoading ? (
-                  <span style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <svg className="rotating-star" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="white"/>
-                    </svg>
-                    {steps[loadingStep - 1] || '분석 중...'}
-                  </span>
-                ) : aiText ? '✦ 다시 분석하기' : '✦ AI 풀이 받기'}
-              </button>
-            </div>
 
             {aiLoading && (
               <div style={{
@@ -1029,9 +1014,6 @@ export default function Home() {
         </p>
       </footer>
       </div>{/* /z-index wrapper */}
-      {!APPS_IN_TOSS && (
-        <CounselPanel result={result} aiSummaryReady={aiFortuneComplete} />
-      )}
     </div>
   );
 }

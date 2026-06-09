@@ -22,7 +22,7 @@ export default function KakaoAd({ className }: KakaoAdProps) {
     const ins = document.createElement('ins');
     ins.className = 'kakao_ad_area';
     ins.style.display = 'none';
-    ins.setAttribute('data-ad-unit', 'DAN-5imUIY0kqoiwOXh3');
+    ins.setAttribute('data-ad-unit', 'DAN-JQne3FQbIyDWP3v');
     ins.setAttribute('data-ad-width', '300');
     ins.setAttribute('data-ad-height', '250');
 

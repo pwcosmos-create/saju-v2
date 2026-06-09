@@ -252,7 +252,7 @@ export default function HomePageClient() {
           color: '#8b6fc6', maxWidth: 520, lineHeight: 1.7, marginBottom: 48,
         }}>
           생년월일과 태어난 시간을 입력하면<br/>
-          AI 심층 풀이 후 텍스트·음성 맞춤 상담도 이용할 수 있습니다
+          AI 심층 풀이로 내 운세를 깊이 있게 분석해 드립니다
         </p>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 64 }}>
@@ -333,7 +333,7 @@ export default function HomePageClient() {
           fontWeight: 700,
           letterSpacing: '.01em',
         }}>
-          분석·심층 풀이·AI 상담은 무료입니다 · 서버·운영비는 선택 후원으로 보조합니다
+          분석·심층 풀이는 무료입니다 · 서버·운영비는 선택 후원으로 보조합니다
         </div>
 
         {!APPS_IN_TOSS && SUPPORT_BANK && SUPPORT_ACCOUNT_NO && (
@@ -549,7 +549,7 @@ export default function HomePageClient() {
           지금 바로 내 사주를<br/>확인해보세요
         </h2>
         <p style={{ color: '#6b6490', marginBottom: 40, fontSize: '.95rem' }}>
-          무료 분석 후 심층 풀이와 AI 상담까지 이어서 이용해 보세요 · 마음에 드셨다면 상단 후원 안내도 참고해 주세요
+          무료 분석 후 심층 풀이까지 상세하게 확인해 보세요 · 마음에 드셨다면 상단 후원 안내도 참고해 주세요
         </p>
         <Link href="/saju" style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,

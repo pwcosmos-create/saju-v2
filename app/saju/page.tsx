@@ -11,7 +11,6 @@
 import Link from 'next/link';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { SiteNav } from '../site-chrome';
-import CounselPanel from '../counsel/CounselPanel';
 import KakaoAd from '../components/kakao-ad';
 import { calculate, SajuResult } from '../../core/pillar-calc/main-calculator';
 import { readSajuFormFromDom, readInitialSajuForm } from '../../lib/toss-form-read';
@@ -1105,7 +1104,6 @@ export default function Home() {
         </p>
       </footer>
       </div>{/* /z-index wrapper */}
-      <CounselPanel result={result} aiSummaryReady={aiFortuneComplete} />
     </div>
   );
 }

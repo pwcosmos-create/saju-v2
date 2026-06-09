@@ -175,6 +175,18 @@ export default function Home() {
   const [comment,  setComment]  = useState('');
   const [copied,        setCopied]        = useState(false);
   const [formError,     setFormError]     = useState('');
+  const [showAdModal, setShowAdModal] = useState(false);
+  const [adTimer, setAdTimer] = useState(5);
+  const [pendingAnalysis, setPendingAnalysis] = useState<{
+    sy: number;
+    sm: number;
+    sd: number;
+    hStr: string;
+    g: '남' | '여';
+    name: string;
+    isLunar: boolean;
+    isLeap: boolean;
+  } | null>(null);
   const lastResult = useRef<SajuResult | null>(null);
   const aiTypeTimerRef = useRef<number | null>(null);
   const aiSpeakDelayRef = useRef<number | null>(null);
@@ -240,6 +252,13 @@ export default function Home() {
     const id = setInterval(() => setWaitTick(t => t + 1), 1200);
     return () => clearInterval(id);
   }, [aiLoading]);
+
+  useEffect(() => {
+    if (!showAdModal) return;
+    if (adTimer <= 0) return;
+    const id = setTimeout(() => setAdTimer(t => t - 1), 1000);
+    return () => clearTimeout(id);
+  }, [showAdModal, adTimer]);
 
   useEffect(() => {
     if (APPS_IN_TOSS) return;
@@ -362,6 +381,46 @@ export default function Home() {
       analyzeBusyRef.current = false;
       return;
     }
+    if (!APPS_IN_TOSS) {
+      setPendingAnalysis({ sy, sm, sd, hStr, g, name, isLunar, isLeap });
+      setAdTimer(5);
+      setShowAdModal(true);
+      return;
+    }
+
+    save();
+    setLoading(true);
+    setResult(null);
+    setFortuneResult(null);
+    setAiText('');
+    setAiFortuneComplete(false);
+    setShowFb(false);
+    setFbDone(false);
+
+    setTimeout(() => {
+      try {
+        const r = calculate({ year: sy, month: sm, day: sd, hourTotalMin: parseInt(hStr, 10), gender: g });
+        lastResult.current = r;
+        setResult(r);
+        try { setFortuneResult(dailyFortune(r)); } catch { setFortuneResult(null); }
+        setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        askAI();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '사주 계산 중 오류가 발생했습니다.';
+        showFormError(setFormError, msg);
+      } finally {
+        setLoading(false);
+        analyzeBusyRef.current = false;
+      }
+    }, 600);
+  }
+
+  function proceedWithAnalysis() {
+    if (!pendingAnalysis) return;
+    const { sy, sm, sd, hStr, g, name, isLunar, isLeap } = pendingAnalysis;
+    setShowAdModal(false);
+    setPendingAnalysis(null);
+
     save();
     setLoading(true);
     setResult(null);
@@ -1014,6 +1073,92 @@ export default function Home() {
         </p>
       </footer>
       </div>{/* /z-index wrapper */}
+
+      {/* Kakao AdFit Interstitial Modal */}
+      {showAdModal && pendingAnalysis && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(10, 8, 20, 0.88)',
+            backdropFilter: 'blur(16px)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 360,
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: 24,
+              padding: '28px 20px',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: '1.2rem', color: 'var(--gold)' }}>✦</span>
+              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>사주 분석 준비 중</span>
+            </div>
+            
+            <p style={{ fontSize: '0.88rem', color: 'var(--muted)', lineHeight: 1.6, margin: '0 0 20px 0' }}>
+              사주 원국 및 AI 심층 풀이를 분석하는 동안<br />
+              아래 광고가 표시됩니다.
+            </p>
+
+            {/* Ad Container */}
+            <div
+              style={{
+                width: 320,
+                height: 270,
+                background: 'rgba(0, 0, 0, 0.2)',
+                borderRadius: 16,
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 10,
+                marginBottom: 24,
+              }}
+            >
+              <KakaoAd />
+            </div>
+
+            {/* Action Button */}
+            <button
+              onClick={adTimer <= 0 ? proceedWithAnalysis : undefined}
+              disabled={adTimer > 0}
+              style={{
+                width: '100%',
+                padding: '14px 20px',
+                background: adTimer <= 0 
+                  ? 'linear-gradient(135deg, #7c4fc4, #4a9eff)' 
+                  : 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
+                color: adTimer <= 0 ? '#fff' : 'var(--muted)',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                cursor: adTimer <= 0 ? 'pointer' : 'not-allowed',
+                transition: 'all 0.3s ease',
+              }}
+            >
+              {adTimer > 0 ? `${adTimer}초 후 풀이 확인하기` : '✦ 사주 풀이 확인하기'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

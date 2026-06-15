@@ -45,6 +45,9 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
     container.appendChild(script);
   }, []);
 
+  const onProceedRef = useRef(onProceed);
+  onProceedRef.current = onProceed;
+
   // 카운트다운 타이머
   useEffect(() => {
     if (!open) {
@@ -67,6 +70,10 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
         if (prev <= 1) {
           if (timerRef.current) clearInterval(timerRef.current);
           setReady(true);
+          // 500ms 대기 후 자동으로 풀이 페이지로 진행
+          setTimeout(() => {
+            onProceedRef.current();
+          }, 500);
           return 0;
         }
         return prev - 1;

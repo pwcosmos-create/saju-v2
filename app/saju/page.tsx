@@ -766,6 +766,7 @@ export default function Home() {
               {formError}
             </p>
           )}
+          {!APPS_IN_TOSS && <KakaoAd />}
           <button type="button" data-saju-analyze onClick={APPS_IN_TOSS ? undefined : () => setAdGateOpen(true)} disabled={loading} style={{
             width:'100%', marginTop: formError ? 12 : 20, padding:15,
             background:'linear-gradient(135deg,#7c4fc4,#4a9eff)', border:'none',
@@ -773,7 +774,6 @@ export default function Home() {
             cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1,
           }}>✦ 사주팔자 정밀 분석하기</button>
         </div>
-        {!APPS_IN_TOSS && <KakaoAd />}
         {!APPS_IN_TOSS && (
           <AdGateModal
             open={adGateOpen}

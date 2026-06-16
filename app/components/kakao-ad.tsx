@@ -80,8 +80,6 @@ export default function KakaoAd({ className }: KakaoAdProps) {
           width: 300,
           height: 250,
           background: 'rgba(0, 0, 0, 0.2)',
-          borderRadius: 12,
-          overflow: 'hidden',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

@@ -237,8 +237,6 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
             <div style={{
               width: 300,
               height: 250,
-              borderRadius: 14,
-              overflow: 'hidden',
               background: 'rgba(0,0,0,0.3)',
               border: '1px solid rgba(255,255,255,0.06)',
               display: 'flex',

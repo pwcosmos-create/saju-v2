@@ -706,9 +706,18 @@ export default function Home() {
         <h1 style={{ fontSize:'clamp(1.8rem,5vw,2.8rem)', fontWeight:900, letterSpacing:-1, lineHeight:1.2, marginBottom:14 }}>
           나의 <span style={{ color:'var(--gold)' }}>사주팔자</span>를<br/>알아보세요
         </h1>
-        <p style={{ color:'var(--muted)', fontSize:'.95rem', marginBottom:40 }}>
+        <p style={{ color:'var(--muted)', fontSize:'.95rem', marginBottom:20 }}>
           생년월일·시간으로 60갑자 일주, 오행, 신살, 대운, {THIS_YEAR}년 운세를 상세하게 분석합니다.
         </p>
+
+        <button onClick={() => window.open('http://pf.kakao.com/_XMxdGb', '_blank')} style={{
+          padding:'9px 24px', marginBottom:40,
+          background: 'rgba(255,222,0,.15)', border: '1px solid rgba(255,222,0,.4)',
+          borderRadius:100, color: '#ffde00',
+          fontSize:'.9rem', fontWeight:800, cursor:'pointer', transition:'all .25s',
+        }}>
+          💛 카톡 채널 친구 추가하기
+        </button>
 
         <div className="form-card" style={{ background:'var(--card2)', border:'1px solid var(--border)',
           borderRadius:16, ...(process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1' ? {} : { backdropFilter:'blur(20px)' }), textAlign:'left' }}>
@@ -905,6 +914,15 @@ export default function Home() {
               {dp&&` — ${getIljooDesc(dp).split('.')[0]}`}
             </h2>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center', marginTop:14 }}>
+              <button onClick={() => window.open('http://pf.kakao.com/_XMxdGb', '_blank')} style={{
+                padding:'7px 18px',
+                background: 'rgba(255,222,0,.15)',
+                border: '1px solid rgba(255,222,0,.4)',
+                borderRadius:100, color: '#ffde00',
+                fontSize:'.8rem', fontWeight:700, cursor:'pointer', transition:'all .25s',
+              }}>
+                💛 카톡 채널 추가
+              </button>
               <button onClick={shareResult} style={{
                 padding:'7px 18px',
                 background: 'rgba(255,222,0,.15)',

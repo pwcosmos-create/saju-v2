@@ -628,6 +628,42 @@ export default function Home() {
     });
   }
 
+  async function shareResult() {
+    if (!result) return;
+    const r = result;
+    const dp = r.pillars[2];
+    const ds = dp?.s ?? 0;
+    const iljoo = dp ? `${STEMS[ds]}${BRANCHES[dp.b]}` : '';
+    const ohStr = r.ohaeng.counts.map((c,i)=>`${ELEM_NAMES[i]}${c}`).join('');
+    const params = new URLSearchParams({
+      name: name || '나의',
+      iljoo,
+      year: r.input.year.toString(),
+      oh: ohStr,
+      gender: r.input.gender
+    });
+    const shareUrl = `https://saju.coupax.co.kr/saju?${params.toString()}`;
+    const shareText = `[✦ AI 사주] ${name||'나'}의 사주 정밀 분석 결과!\n\n일주: ${iljoo}일주\n\n지금 바로 소름돋는 상세 풀이를 확인해보세요 👇`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: '✦ AI 사주 정밀 분석',
+          text: shareText,
+          url: shareUrl
+        });
+      } catch (err) {
+        console.warn('Share failed:', err);
+      }
+    } else {
+      navigator.clipboard.writeText(`${shareText}\n${shareUrl}`).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        alert('링크가 복사되었습니다. 카카오톡이나 원하는 곳에 붙여넣기 해주세요!');
+      });
+    }
+  }
+
   function sendFeedback(rating:number) {
     if (!lastResult.current) return;
     const r = lastResult.current;
@@ -869,6 +905,15 @@ export default function Home() {
               {dp&&` — ${getIljooDesc(dp).split('.')[0]}`}
             </h2>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center', marginTop:14 }}>
+              <button onClick={shareResult} style={{
+                padding:'7px 18px',
+                background: 'rgba(255,222,0,.15)',
+                border: '1px solid rgba(255,222,0,.4)',
+                borderRadius:100, color: '#ffde00',
+                fontSize:'.8rem', fontWeight:700, cursor:'pointer', transition:'all .25s',
+              }}>
+                💬 카톡 공유하기
+              </button>
               <button onClick={copyResult} style={{
                 padding:'7px 18px',
                 background: copied ? 'rgba(76,190,130,.2)' : 'rgba(255,255,255,.07)',
@@ -876,7 +921,7 @@ export default function Home() {
                 borderRadius:100, color: copied ? '#4cbe82' : 'var(--muted)',
                 fontSize:'.8rem', fontWeight:700, cursor:'pointer', transition:'all .25s',
               }}>
-                {copied ? '✓ 복사됨!' : '📋 결과 복사'}
+                {copied ? '✓ 복사됨!' : '📋 내용 복사'}
               </button>
             </div>
           </div>

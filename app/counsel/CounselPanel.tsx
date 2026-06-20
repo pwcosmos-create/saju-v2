@@ -21,6 +21,7 @@ import {
 import { isSajuWaitingMessage } from '../../core/user-messages';
 import { useCounselChat } from './use-counsel-chat';
 import { renderCounselContent } from './render-counsel-content';
+import PaymentModal from '../components/payment-modal';
 
 function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
@@ -42,10 +43,12 @@ export default function CounselPanel({
   aiSummaryReady: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [purchasedMinutes, setPurchasedMinutes] = useState(10);
   const [input, setInput] = useState('');
   const [counselor] = useState(pickCounselor);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState(counselSessionLimitSecs());
+  const [timeLeft, setTimeLeft] = useState(counselSessionLimitSecs(purchasedMinutes));
   const [sessionExpired, setSessionExpired] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -145,9 +148,9 @@ export default function CounselPanel({
 
   useEffect(() => {
     if (!aiSummaryReady) {
-      stop(); reset(); setOpen(false);
+      stop(); reset(); setOpen(false); setShowPaymentModal(false);
       setSessionStartedAt(null);
-      setTimeLeft(counselSessionLimitSecs());
+      setTimeLeft(counselSessionLimitSecs(purchasedMinutes));
       setSessionExpired(false);
     }
   }, [aiSummaryReady, reset, stop]);
@@ -155,23 +158,23 @@ export default function CounselPanel({
   useEffect(() => {
     if (!open) {
       setSessionStartedAt(null);
-      setTimeLeft(counselSessionLimitSecs());
+      setTimeLeft(counselSessionLimitSecs(purchasedMinutes));
       setSessionExpired(false);
       return;
     }
     if (aiSummaryReady && !sessionStartedAt) {
       setSessionStartedAt(Date.now());
       setSessionExpired(false);
-      setTimeLeft(counselSessionLimitSecs());
+      setTimeLeft(counselSessionLimitSecs(purchasedMinutes));
     }
-  }, [open, aiSummaryReady, sessionStartedAt]);
+  }, [open, aiSummaryReady, sessionStartedAt, purchasedMinutes]);
 
   useEffect(() => {
     if (!open || !sessionStartedAt || sessionExpired) return;
     const timer = window.setInterval(() => {
       const remainingSecs = Math.max(
         0,
-        Math.floor((sessionStartedAt + counselSessionLimitMs() - Date.now()) / 1000),
+        Math.floor((sessionStartedAt + counselSessionLimitMs(purchasedMinutes) - Date.now()) / 1000),
       );
       setTimeLeft(remainingSecs);
       if (remainingSecs <= 0) {
@@ -180,7 +183,7 @@ export default function CounselPanel({
       }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [open, sessionStartedAt, sessionExpired]);
+  }, [open, sessionStartedAt, sessionExpired, purchasedMinutes]);
 
   useEffect(() => {
     if (open && result && msgs.length === 0) {
@@ -202,7 +205,7 @@ export default function CounselPanel({
   /** 전송 공통 로직 — 텍스트 직접 받음 (input state 타이밍 무관) */
   async function handleSendWithText(trimmed: string) {
     if (!trimmed || !result || !aiSummaryReady || loading || sessionExpired) return;
-    if (sessionStartedAt && isCounselSessionExpired(sessionStartedAt)) {
+    if (sessionStartedAt && isCounselSessionExpired(sessionStartedAt, purchasedMinutes)) {
       setSessionExpired(true);
       return;
     }
@@ -270,7 +273,7 @@ export default function CounselPanel({
   const FabButton = (
     <button
       id="counsel-panel-fab"
-      onClick={() => setOpen(true)}
+      onClick={() => setShowPaymentModal(true)}
       aria-label="AI 심층 상담 열기"
       style={{
         position: 'fixed',
@@ -537,6 +540,22 @@ export default function CounselPanel({
             );
           })}
           <div ref={bottomRef} />
+          {/* 연장 버튼 (종료 임박 시) */}
+          {sessionStartedAt && !sessionExpired && timeLeft <= 60 && (
+            <div style={{ textAlign: 'center', margin: '10px 0' }}>
+              <button
+                onClick={() => setShowPaymentModal(true)}
+                style={{
+                  background: 'linear-gradient(90deg, #7c4fc4, #3a7bd5)',
+                  border: 'none', borderRadius: 20, padding: '8px 16px',
+                  color: '#fff', fontSize: '.8rem', fontWeight: 'bold',
+                  cursor: 'pointer', boxShadow: '0 4px 12px rgba(124,79,196,0.3)',
+                }}
+              >
+                ⏳ 10분 더 연장하기 (990원)
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -559,7 +578,7 @@ export default function CounselPanel({
               textAlign: 'center',
               fontVariantNumeric: 'tabular-nums',
             }}>
-              남은 상담 시간 {formatCounselTimeLeft(timeLeft)} (세션 10분)
+              남은 상담 시간 {formatCounselTimeLeft(timeLeft)} (세션 {purchasedMinutes}분)
             </div>
           )}
           {sessionExpired && (
@@ -677,6 +696,22 @@ export default function CounselPanel({
     <>
       {!open && result && FabButton}
       {open && Panel}
+      <PaymentModal
+        open={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        onSuccess={(mins) => {
+          if (open && sessionStartedAt) {
+            // 시간 연장
+            setPurchasedMinutes(prev => prev + mins);
+            setSessionExpired(false);
+          } else {
+            // 처음 결제
+            setPurchasedMinutes(mins);
+            setOpen(true);
+          }
+          setShowPaymentModal(false);
+        }}
+      />
     </>
   );
 }

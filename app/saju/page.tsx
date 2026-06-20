@@ -48,6 +48,7 @@ import type { OhaengResult } from '../../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
 import { preloadSajuRewardedAd, showSajuRewardedAd } from '../../lib/toss-rewarded-ad';
+import CounselPanel from '../counsel/CounselPanel';
 
 // 음력 변환 (클라이언트 전용)
 type MsLib = { lunarToSolar: (y:number,m:number,d:number,leap:boolean)=>{year:number,month:number,day:number} };
@@ -1085,6 +1086,7 @@ export default function Home() {
           <a href="/privacy" style={{ color:'var(--muted)', textDecoration:'underline' }}>개인정보처리방침</a>
         </p>
       </footer>
+      <CounselPanel result={result} aiSummaryReady={aiFortuneComplete} />
       </div>{/* /z-index wrapper */}
     </div>
   );

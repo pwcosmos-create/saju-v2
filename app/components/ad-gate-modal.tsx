@@ -11,7 +11,7 @@ interface AdGateModalProps {
   onClose: () => void;
 }
 
-const AD_UNIT = 'DAN-JQne3FQbIyDWP3v';
+const AD_UNIT = 'DAN-oIsF9hVzrc3FjgRa';
 const AD_WAIT_SEC = 5; // 최소 광고 노출 시간
 
 export default function AdGateModal({ open, onProceed, onClose }: AdGateModalProps) {

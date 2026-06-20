@@ -38,7 +38,7 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
 
     const script = document.createElement('script');
     script.type = 'text/javascript';
-    script.src = '//t1.kakaocdn.net/kas/static/ba.min.js';
+    script.src = `//t1.kakaocdn.net/kas/static/ba.min.js?v=${Date.now()}`;
     script.async = true;
 
     container.appendChild(ins);

@@ -22,7 +22,7 @@ import { tossChat } from '../../lib/toss-http';
 
 const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
-export type Msg = { role: 'user' | 'assistant'; content: string };
+export type Msg = { role: 'user' | 'assistant'; content: string; thought?: string };
 
 const API_PATH = '/api/saju-chat';
 const TIMEOUT_MS = 90_000;
@@ -81,7 +81,7 @@ export function useCounselChat(
       { role: 'user', content: trimmed },
     ];
 
-    const withLoading: Msg[] = [...current, userMsg, { role: 'assistant', content: '' }];
+    const withLoading: Msg[] = [...current, userMsg, { role: 'assistant', content: '', thought: '사주 분석을 시작합니다...' }];
     applyMsgs(withLoading);
     setLoading(true);
 
@@ -90,73 +90,74 @@ export function useCounselChat(
     const startedAt = Date.now();
 
     try {
-      let content = '';
-      if (APPS_IN_TOSS) {
-        const payload = {
+      const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
+      const response = await fetch(`${base}/api/agent/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: ac.signal,
+        body: JSON.stringify({
           messages: apiMessages,
           sajuContext: buildChatContext(result),
-          chatMode: 'single',
           counselorName: counselorRef.current,
-          sessionStartedAt: sessionStartedAt ?? undefined,
-          dailyFortune: (() => {
-            const targetDate = resolveDailyFortuneDate(trimmed);
-            if (!targetDate) return null;
-            try {
-              return dailyFortuneToCounselPayload(dailyFortune(result, targetDate));
-            } catch {
-              return null;
-            }
-          })(),
-        };
-        const bridged = await tossChat(payload);
-        if (!bridged.ok) throw new Error(bridged.error);
-        content = bridged.content.trim();
-      } else {
-        const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
-        const res = await fetch(`${base}${API_PATH}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
-          signal: ac.signal,
-          body: JSON.stringify({
-            messages: apiMessages,
-            sajuContext: buildChatContext(result),
-            chatMode: 'single',
-            counselorName: counselorRef.current,
-            sessionStartedAt: sessionStartedAt ?? undefined,
-            dailyFortune: (() => {
-              const targetDate = resolveDailyFortuneDate(trimmed);
-              if (!targetDate) return null;
-              try {
-                return dailyFortuneToCounselPayload(dailyFortune(result, targetDate));
-              } catch {
-                return null;
-              }
-            })(),
-          }),
-        });
+        }),
+      });
 
-        const raw = await res.text();
-        if (!res.ok) {
-          let errMsg = `서버 오류 (${res.status})`;
-          try { errMsg = (JSON.parse(raw) as { error?: string }).error ?? errMsg; } catch { /* noop */ }
-          throw new Error(errMsg);
-        }
-
-        const data = JSON.parse(raw) as { content?: string; error?: string };
-        if (data.error) throw new Error(data.error);
-        content = (data.content ?? '').trim();
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error ${response.status}`);
       }
 
-      if (!content) throw new Error('빈 응답');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalContent = '';
+      let lastThought = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine.startsWith('data: ')) continue;
+          const jsonStr = trimmedLine.slice(6);
+          try {
+            const data = JSON.parse(jsonStr);
+            if (data.type === 'thought') {
+              lastThought = data.text;
+              const updated = [...msgsRef.current];
+              const last = updated[updated.length - 1];
+              if (last && last.role === 'assistant') {
+                updated[updated.length - 1] = {
+                  ...last,
+                  thought: lastThought
+                };
+                applyMsgs(updated);
+              }
+            } else if (data.type === 'result') {
+              finalContent += data.text;
+              const updated = [...msgsRef.current];
+              const last = updated[updated.length - 1];
+              if (last && last.role === 'assistant') {
+                updated[updated.length - 1] = {
+                  ...last,
+                  thought: undefined, // Clear thought once result starts arriving
+                  content: finalContent
+                };
+                applyMsgs(updated);
+              }
+            }
+          } catch {
+            // parsing error, skip
+          }
+        }
+      }
 
       await waitMinReplyDelay(startedAt);
-
-      const answered: Msg[] = [...msgsRef.current];
-      const last = answered[answered.length - 1];
-      if (last?.role === 'assistant') answered[answered.length - 1] = { role: 'assistant', content };
-      applyMsgs(answered);
-      return content;
+      return finalContent.trim();
     } catch (e) {
       const isAbort = e instanceof DOMException && e.name === 'AbortError';
       const msg = e instanceof Error ? e.message : '';

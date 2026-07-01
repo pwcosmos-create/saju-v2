@@ -448,7 +448,9 @@ export default function CounselPanel({
                         <span style={{ animation: 'dot-blink 1.2s .0s infinite', display: 'inline-block' }}>●</span>
                         <span style={{ animation: 'dot-blink 1.2s .2s infinite', display: 'inline-block' }}>●</span>
                         <span style={{ animation: 'dot-blink 1.2s .4s infinite', display: 'inline-block' }}>●</span>
-                        <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>잠시만 기다리세요.. 확인중입니다</span>
+                        <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>
+                          {msg.thought || '잠시만 기다리세요.. 확인중입니다'}
+                        </span>
                       </span>
                       {/* 후원 안내 배너 — 로딩 중 노출 */}
                       {false && (
@@ -480,6 +482,9 @@ export default function CounselPanel({
                                 fontSize: '.72rem',
                                 fontWeight: 700,
                                 textDecoration: 'none',
+                                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                                // @ts-ignore
+                                style: { textDecoration: 'none' }
                               }}
                             >
                               💸 토스 후원
@@ -508,6 +513,18 @@ export default function CounselPanel({
                     </div>
                   ) : (
                     <>
+                      {msg.thought && (
+                        <div style={{
+                          fontSize: '.78rem',
+                          color: 'rgba(255,255,255,.45)',
+                          fontStyle: 'italic',
+                          marginBottom: 8,
+                          paddingBottom: 6,
+                          borderBottom: '1px dashed rgba(255,255,255,.1)'
+                        }}>
+                          💡 생각 과정: {msg.thought}
+                        </div>
+                      )}
                       {isUser ? msg.content : renderCounselContent(msg.content)}
                       {!isUser && !isError && msg.content.length > 10 && (
                         <button

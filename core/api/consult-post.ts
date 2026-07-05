@@ -9,6 +9,7 @@ import {
 } from '../counsel-greeting';
 import {
   getCounselGeminiApiKey,
+  isPaidCounselSession,
   shouldUseCounselLlmFallback,
   useCounselGeminiLlm,
 } from '../gemma24/counsel-llm-fallback';
@@ -174,8 +175,10 @@ ${compareSajuContext}
       ? body.dailyFortune
       : null;
 
+  const paidCounsel = isPaidCounselSession(sessionStartedAt);
+
   const dayTarget = parseDayFortuneTarget(lastUserMessage);
-  if (dayTarget) {
+  if (dayTarget && !paidCounsel) {
     const fortuneWhen = dayTarget.kind === 'date' ? dayTarget.date : dayTarget.offset;
     const fortunePayload =
       dailyFortune
@@ -264,11 +267,13 @@ ${compareSajuContext}
     );
   }
 
-  const cardKnowledge = buildConsultCouncilKnowledgeResult(
-    sajuContext,
-    lastUserMessage,
-    chatMode === 'compatibility' ? compareSajuContext : '',
-  );
+  const cardKnowledge = paidCounsel
+    ? { systemAppend: '', badge: 'none' as const, cardCount: 0 }
+    : buildConsultCouncilKnowledgeResult(
+      sajuContext,
+      lastUserMessage,
+      chatMode === 'compatibility' ? compareSajuContext : '',
+    );
 
   let dailyFortuneBlock = '';
   if (geminiOnlyCounsel) {
@@ -281,7 +286,7 @@ ${compareSajuContext}
     }
   }
 
-  const counselModeHeader = 'gemini';
+  const counselModeHeader = paidCounsel ? 'counsel-gemini' : 'gemini';
 
   const system = `【오늘 날짜 및 시간】
 - 현재 날짜·시각(KST): ${todayStr}

@@ -83,7 +83,7 @@ export function useCounselChat(
     }
 
     const dayTarget = parseDayFortuneTarget(trimmed);
-    if (dayTarget) {
+    if (dayTarget && !sessionStartedAt) {
       try {
         const fortuneWhen = dayTarget.kind === 'date'
           ? dayTarget.date

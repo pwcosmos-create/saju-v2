@@ -22,10 +22,15 @@ function hasLlmApiKeys(): boolean {
   );
 }
 
+/** IAP 결제 후 시작된 상담 세션 */
+export function isPaidCounselSession(sessionStartedAt: number | null): boolean {
+  return sessionStartedAt != null && Number.isFinite(sessionStartedAt) && sessionStartedAt > 0;
+}
+
 /** 유료 상담 세션·GEMINI_ONLY — 카드 조합 대신 Gemini 2.5 Flash로 답변 */
 export function useCounselGeminiLlm(sessionStartedAt: number | null): boolean {
   if (isCounselGeminiOnlyMode()) return true;
-  return sessionStartedAt != null && Number.isFinite(sessionStartedAt) && sessionStartedAt > 0;
+  return isPaidCounselSession(sessionStartedAt);
 }
 
 /** 카드·엔진으로 답 못 줄 때 Groq/Gemini 사용 여부 */

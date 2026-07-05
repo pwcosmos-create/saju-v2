@@ -23,3 +23,13 @@ export function buildGreetingReply(counselorName: string): string {
     '연애, 재물, 직업, 올해·시기 운세처럼 궁금한 점을 편하게 말씀해 주세요.',
   ].join('\n');
 }
+
+/** 「음성으로 읽어 줘」 등 — API 없이 TTS로 직전 답변 읽기 */
+export function isCounselTtsReadRequest(message: string): boolean {
+  const t = message.trim();
+  if (!t || t.length > 48) return false;
+  return (
+    /음성.*(읽|들려|말해|재생)|소리.*(읽|들려)|답변.*듣|읽어\s*(줘|주세요?)|들려\s*(줘|주세요?)/i.test(t)
+    || /^tts$/i.test(t)
+  );
+}

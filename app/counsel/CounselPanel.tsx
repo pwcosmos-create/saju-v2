@@ -26,7 +26,7 @@ import { renderCounselContent } from './render-counsel-content';
 import PaymentModal from '../components/payment-modal';
 import { restorePendingCounselPurchases } from '../../lib/toss-counsel-iap';
 import { COUNSEL_IAP_MINUTES } from '../../core/counsel-iap';
-import { buildGreetingReply } from '../../core/counsel-greeting';
+import { buildGreetingReply, isCounselTtsReadRequest } from '../../core/counsel-greeting';
 
 const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
@@ -261,6 +261,30 @@ export default function CounselPanel({
       setSessionExpired(true);
       return;
     }
+
+    if (isCounselTtsReadRequest(trimmed)) {
+      const lastAssistant = [...msgs].reverse().find(
+        (m) => m.role === 'assistant' && m.content.trim().length > 6 && !isSajuWaitingMessage(m.content),
+      );
+      stop();
+      setInput('');
+      if (!lastAssistant) {
+        applyMsgs([
+          ...msgs,
+          { role: 'user', content: trimmed },
+          { role: 'assistant', content: '먼저 상담 답변이 있어야 음성으로 들려 드릴 수 있어요. 질문을 입력해 주세요.' },
+        ]);
+        return;
+      }
+      applyMsgs([...msgs, { role: 'user', content: trimmed }]);
+      setEnabled(true);
+      setTtsHintDismissed(true);
+      setSpeakingContent(lastAssistant.content);
+      await primeAudio();
+      void speak(lastAssistant.content, { manual: true });
+      return;
+    }
+
     stop();
     setInput('');
     await send(trimmed);

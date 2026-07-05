@@ -5,6 +5,7 @@ import {
   buildGreetingReply,
   isCounselGreetingMessage,
   isCounselGreetingReply,
+  isCounselTtsReadRequest,
 } from '../counsel-greeting';
 import {
   getCounselGeminiApiKey,
@@ -143,6 +144,21 @@ ${compareSajuContext}
     const greetingContent = buildGreetingReply(counselorName);
     return Response.json(
       { content: greetingContent },
+      {
+        headers: {
+          'X-Gemma24-Knowledge-Count': '0',
+          'X-Saju-Council-Badge': 'certified',
+          'X-Saju-Counsel-Mode': 'council-counsel',
+        },
+      },
+    );
+  }
+
+  if (isCounselTtsReadRequest(lastUserMessage)) {
+    return Response.json(
+      {
+        content: '방금 답변은 상담창의 「읽기」 버튼을 누르시면 음성으로 들으실 수 있어요.',
+      },
       {
         headers: {
           'X-Gemma24-Knowledge-Count': '0',

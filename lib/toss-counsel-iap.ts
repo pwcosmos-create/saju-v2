@@ -3,9 +3,13 @@ import {
   COUNSEL_IAP_MINUTES,
   counselMinutesForSku,
   counselSkuForMinutes,
+  matchCounselProductForMinutes,
 } from '../core/counsel-iap';
 
 const GRANTED_ORDERS_KEY = 'saju_counsel_iap_granted_orders_v1';
+
+const SKU_RESOLVE_FAIL =
+  '인앱 상품을 불러오지 못했습니다. 앱인토스 콘솔에 상담 이용권이 등록·승인됐는지 확인한 뒤 다시 시도해 주세요.';
 
 async function readGrantedOrders(): Promise<Set<string>> {
   try {
@@ -40,6 +44,36 @@ export async function fetchCounselIapProducts(): Promise<IapProductListItem[]> {
   return res?.products?.filter((p) => p.type === 'CONSUMABLE') ?? [];
 }
 
+/** env SKU → 콘솔 IAP 목록 순으로 SKU 해석 */
+export async function resolveCounselSku(
+  minutes: number,
+  hints?: { skuOverride?: string | null; cachedProducts?: IapProductListItem[] },
+): Promise<string | null> {
+  const override = hints?.skuOverride?.trim();
+  if (override) return override;
+
+  const envSku = counselSkuForMinutes(minutes);
+  if (envSku) return envSku;
+
+  let products = hints?.cachedProducts;
+  if (!products?.length) {
+    try {
+      products = await fetchCounselIapProducts();
+    } catch {
+      products = [];
+    }
+  }
+
+  const matched = matchCounselProductForMinutes(products, minutes);
+  if (matched?.sku) return matched.sku;
+
+  if (minutes !== COUNSEL_IAP_MINUTES) {
+    return resolveCounselSku(COUNSEL_IAP_MINUTES, { ...hints, cachedProducts: products });
+  }
+
+  return null;
+}
+
 export function purchaseCounselMinutes(
   minutes: number,
   onSuccess: (purchasedMinutes: number) => void,
@@ -48,7 +82,7 @@ export function purchaseCounselMinutes(
 ): () => void {
   const sku = skuOverride?.trim() || counselSkuForMinutes(minutes);
   if (!sku) {
-    onFail?.('인앱 상품 SKU가 설정되지 않았습니다. 콘솔 등록 후 NEXT_PUBLIC_TOSS_IAP_SKU_COUNSEL_* 환경변수를 설정해 주세요.');
+    onFail?.(SKU_RESOLVE_FAIL);
     return () => {};
   }
 
@@ -77,24 +111,37 @@ export function purchaseCounselMinutes(
 
 /**
  * 20·30분 등 — 전용 SKU 없으면 10분 상품을 연속 결제.
- * 한 단계라도 성공하면 부분 지급 후 onFail 호출 가능.
+ * 결제 전 IAP 목록에서 SKU를 자동 해석합니다.
  */
-export function purchaseCounselMinuteBundle(
+export async function startCounselMinuteBundlePurchase(
   minutes: number,
   callbacks: {
     onProgress?: (step: number, total: number) => void;
     onSuccess: (purchasedMinutes: number) => void;
     onFail?: (message: string) => void;
   },
-  skuOverride?: string | null,
-): () => void {
+  hints?: { skuOverride?: string | null; cachedProducts?: IapProductListItem[] },
+): Promise<() => void> {
   const units = minutes / COUNSEL_IAP_MINUTES;
   if (!Number.isInteger(units) || units < 1) {
     callbacks.onFail?.('잘못된 시간 옵션입니다.');
     return () => {};
   }
 
-  const dedicatedSku = skuOverride?.trim() || counselSkuForMinutes(minutes);
+  let products = hints?.cachedProducts;
+  if (!products?.length) {
+    try {
+      products = await fetchCounselIapProducts();
+    } catch {
+      products = [];
+    }
+  }
+
+  const dedicatedSku = await resolveCounselSku(minutes, {
+    skuOverride: hints?.skuOverride,
+    cachedProducts: products,
+  });
+
   if (units === 1 && dedicatedSku) {
     return purchaseCounselMinutes(
       minutes,
@@ -104,11 +151,11 @@ export function purchaseCounselMinuteBundle(
     );
   }
 
-  const unitSku = counselSkuForMinutes(COUNSEL_IAP_MINUTES);
+  const unitSku = await resolveCounselSku(COUNSEL_IAP_MINUTES, {
+    cachedProducts: products,
+  });
   if (!unitSku) {
-    callbacks.onFail?.(
-      '인앱 상품 SKU가 설정되지 않았습니다. 콘솔 등록 후 NEXT_PUBLIC_TOSS_IAP_SKU_COUNSEL_10 환경변수를 설정해 주세요.',
-    );
+    callbacks.onFail?.(SKU_RESOLVE_FAIL);
     return () => {};
   }
 
@@ -145,6 +192,23 @@ export function purchaseCounselMinuteBundle(
     cancelled = true;
     currentCleanup?.();
   };
+}
+
+/** @deprecated use startCounselMinuteBundlePurchase */
+export function purchaseCounselMinuteBundle(
+  minutes: number,
+  callbacks: {
+    onProgress?: (step: number, total: number) => void;
+    onSuccess: (purchasedMinutes: number) => void;
+    onFail?: (message: string) => void;
+  },
+  skuOverride?: string | null,
+): () => void {
+  let cleanup: (() => void) | null = null;
+  void startCounselMinuteBundlePurchase(minutes, callbacks, { skuOverride }).then((c) => {
+    cleanup = c;
+  });
+  return () => cleanup?.();
 }
 
 /** 결제는 됐지만 지급이 안 된 주문 복원 */

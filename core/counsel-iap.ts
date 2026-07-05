@@ -48,3 +48,40 @@ export function counselMinutesForSku(sku: string): number | null {
   /** 콘솔 SKU 미매핑 시에도 10분 이용권 1회로 처리 */
   return COUNSEL_IAP_MINUTES;
 }
+
+/** IAP 상품 목록에서 분 단위 상품 매칭 (env SKU 없을 때 런타임 폴백) */
+export type CounselIapProductLike = {
+  sku: string;
+  displayName: string;
+  description?: string | null;
+  displayAmount?: string;
+};
+
+function productText(p: CounselIapProductLike): string {
+  return `${p.displayName} ${p.description ?? ''} ${p.sku}`;
+}
+
+export function matchCounselProductForMinutes(
+  products: CounselIapProductLike[],
+  minutes: number,
+): CounselIapProductLike | undefined {
+  if (!products.length) return undefined;
+
+  const envSku = counselSkuForMinutes(minutes);
+  if (envSku) {
+    const byEnv = products.find((p) => p.sku === envSku);
+    if (byEnv) return byEnv;
+  }
+
+  const minLabel = `${minutes}분`;
+  const byMinute = products.find((p) => productText(p).includes(minLabel));
+  if (byMinute) return byMinute;
+
+  if (minutes === COUNSEL_IAP_MINUTES) {
+    const counsel = products.find((p) => /상담|counsel/i.test(productText(p)));
+    if (counsel) return counsel;
+    if (products.length === 1) return products[0];
+  }
+
+  return undefined;
+}

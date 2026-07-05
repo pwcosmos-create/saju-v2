@@ -8,11 +8,12 @@ import {
   COUNSEL_IAP_MINUTES,
   counselSalePriceForMinutes,
   counselSupplyPriceForMinutes,
+  matchCounselProductForMinutes,
   type CounselIapMinuteOption,
 } from '../../core/counsel-iap';
 import {
   fetchCounselIapProducts,
-  purchaseCounselMinuteBundle,
+  startCounselMinuteBundlePurchase,
 } from '../../lib/toss-counsel-iap';
 
 const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
@@ -43,8 +44,7 @@ export default function PaymentModal({
   const cleanupRef = useRef<(() => void) | null>(null);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const productForMinutes = (m: number) =>
-    products.find((p) => p.displayName.includes(`${m}분`) || p.description.includes(`${m}분`));
+  const productForMinutes = (m: number) => matchCounselProductForMinutes(products, m);
 
   const resetModalState = () => {
     setPhase('select');
@@ -127,7 +127,16 @@ export default function PaymentModal({
         cleanupRef.current?.();
         const units = selectedMinutes / COUNSEL_IAP_MINUTES;
         setPayStep({ step: 0, total: units });
-        cleanupRef.current = purchaseCounselMinuteBundle(
+        let freshProducts = products;
+        if (!productForMinutes(selectedMinutes)) {
+          try {
+            freshProducts = await fetchCounselIapProducts();
+            setProducts(freshProducts);
+          } catch {
+            /* keep cached */
+          }
+        }
+        cleanupRef.current = await startCounselMinuteBundlePurchase(
           selectedMinutes,
           {
             onProgress: (step, total) => setPayStep({ step, total }),
@@ -139,7 +148,10 @@ export default function PaymentModal({
               if (msg) alert(msg);
             },
           },
-          productForMinutes(selectedMinutes)?.sku,
+          {
+            skuOverride: matchCounselProductForMinutes(freshProducts, selectedMinutes)?.sku,
+            cachedProducts: freshProducts,
+          },
         );
         return;
       }

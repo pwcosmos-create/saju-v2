@@ -9,8 +9,8 @@ import {
 import {
   isCounselGreetingMessage,
   isCounselGreetingReply,
-  type CouncilCounselReply,
-} from './council-counsel-reply';
+} from '../counsel-greeting';
+import type { CouncilCounselReply } from './council-counsel-reply';
 import { counselIntentTopicLabel } from './parse-counsel-intent';
 
 /** 상담 코칭 전용 — GOOGLE_AI_API_KEY 와 분리 */

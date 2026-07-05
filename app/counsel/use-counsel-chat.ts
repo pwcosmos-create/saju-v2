@@ -17,6 +17,7 @@ import { buildChatContext } from './build-saju-context';
 import { dailyFortune } from '../../core/daily-fortune';
 import { dailyFortuneToCounselPayload } from '../../core/daily-fortune/counsel-format';
 import { resolveDailyFortuneDate } from '../../core/gemma24/is-today-fortune-question';
+import { buildGreetingReply, isCounselGreetingMessage } from '../../core/counsel-greeting';
 import { tossSajuCounsel } from '../../lib/toss-http';
 
 export type Msg = { role: 'user' | 'assistant'; content: string; thought?: string };
@@ -69,6 +70,14 @@ export function useCounselChat(
     }
 
     const current = msgsRef.current;
+
+    if (isCounselGreetingMessage(trimmed)) {
+      const userMsg: Msg = { role: 'user', content: trimmed };
+      const greeting = buildGreetingReply(counselorRef.current);
+      applyMsgs([...current, userMsg, { role: 'assistant', content: greeting }]);
+      return greeting;
+    }
+
     const userMsg: Msg = { role: 'user', content: trimmed };
     const apiMessages = [
       ...buildApiMessages(current),

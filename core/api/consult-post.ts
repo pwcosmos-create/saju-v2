@@ -5,7 +5,7 @@ import {
   buildGreetingReply,
   isCounselGreetingMessage,
   isCounselGreetingReply,
-} from '../gemma24/council-counsel-reply';
+} from '../counsel-greeting';
 import {
   isCounselGeminiOnlyMode,
   shouldUseCounselLlmFallback,
@@ -137,6 +137,20 @@ ${compareSajuContext}
 
   const lastUserMessage = [...chatMessages].reverse().find((m) => m.role === 'user')?.content?.trim() ?? '';
 
+  if (isCounselGreetingMessage(lastUserMessage)) {
+    const greetingContent = buildGreetingReply(counselorName);
+    return Response.json(
+      { content: greetingContent },
+      {
+        headers: {
+          'X-Gemma24-Knowledge-Count': '0',
+          'X-Saju-Council-Badge': 'certified',
+          'X-Saju-Counsel-Mode': 'council-counsel',
+        },
+      },
+    );
+  }
+
   const compareCtx = chatMode === 'compatibility' ? compareSajuContext : '';
 
   const dailyFortune =
@@ -186,19 +200,6 @@ ${compareSajuContext}
       );
     }
 
-    if (isCounselGreetingMessage(lastUserMessage)) {
-      const greetingContent = buildGreetingReply(counselorName);
-      return Response.json(
-        { content: greetingContent },
-        {
-          headers: {
-            'X-Gemma24-Knowledge-Count': '0',
-            'X-Saju-Council-Badge': 'certified',
-            'X-Saju-Counsel-Mode': 'council-counsel',
-          },
-        },
-      );
-    }
   }
 
   if (!llmCounselFallbackEnabled()) {
@@ -269,10 +270,11 @@ ${sajuContext}`;
     ...chatMessages.slice(-10),
   ];
   const streamRequested = body.stream !== false;
+  const counselShortInput = lastUserMessage.length <= 40;
 
   const upstream = await fetchLlmStream({
     stream: streamRequested,
-    max_tokens: 8192,
+    max_tokens: counselShortInput ? 720 : 8192,
     temperature: 0.7,
     messages: llmMessages,
     /** 심층 상담 — Gemini 2.5 Flash 전용 (Groq/Llama 폴백 없음) */

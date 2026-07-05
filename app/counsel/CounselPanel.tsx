@@ -12,6 +12,8 @@ import { COUNSELOR_NAMES } from '../../core/counselor-config';
 import { useTts } from './use-tts';
 import { useStt } from './use-stt';
 import {
+  COUNSEL_LEAVE_CONFIRM_MESSAGE,
+  COUNSEL_LEAVE_SESSION_NOTICE,
   COUNSEL_SESSION_EXPIRED_MESSAGE,
   counselSessionLimitMs,
   counselSessionLimitSecs,
@@ -33,9 +35,9 @@ function pickCounselor(): string {
 
 const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
 
-function buildIntro(counselor: string, result: SajuResult): string {
+function buildIntro(counselor: string, result: SajuResult, sessionMinutes: number): string {
   return (
-    `${INTRO_PREFIX}.\n이번 세션의 배정 상담사는 「${counselor}」입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n한 세션당 상담 시간은 10분입니다.\n\n사주나 운세에 관해 궁금한 점을 편하게 물어보세요.`
+    `${INTRO_PREFIX}.\n이번 세션의 배정 상담사는 「${counselor}」입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이번 상담 시간은 ${sessionMinutes}분입니다.\n\n사주나 운세에 관해 궁금한 점을 편하게 물어보세요.`
   );
 }
 
@@ -70,11 +72,10 @@ export default function CounselPanel({
     if (!APPS_IN_TOSS || !result) return;
     void restorePendingCounselPurchases((total) => {
       if (total <= 0) return;
-      const granted = COUNSEL_IAP_MINUTES;
-      setPurchasedMinutes(granted);
+      setPurchasedMinutes(total);
       setSessionStartedAt(Date.now());
       setSessionExpired(false);
-      setTimeLeft(counselSessionLimitSecs(granted));
+      setTimeLeft(counselSessionLimitSecs(total));
       setOpen(true);
     });
   }, [result]);
@@ -237,9 +238,12 @@ export default function CounselPanel({
 
   useEffect(() => {
     if (open && result && msgs.length === 0) {
-      applyMsgs([{ role: 'assistant', content: buildIntro(counselor, result) }]);
+      applyMsgs([{
+        role: 'assistant',
+        content: buildIntro(counselor, result, purchasedMinutes || COUNSEL_IAP_MINUTES),
+      }]);
     }
-  }, [open, result, counselor, msgs.length, applyMsgs]);
+  }, [open, result, counselor, msgs.length, applyMsgs, purchasedMinutes]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -285,6 +289,39 @@ export default function CounselPanel({
     }
   }
 
+  function openExtendPayment() {
+    setShowPaymentModal(true);
+  }
+
+  function attemptCloseCounselPanel() {
+    if (sessionStartedAt && !sessionExpired && timeLeft > 0) {
+      if (!window.confirm(COUNSEL_LEAVE_CONFIRM_MESSAGE)) return;
+    }
+    stop();
+    setOpen(false);
+  }
+
+  function handlePurchaseSuccess(granted: number) {
+    if (open && sessionStartedAt) {
+      if (sessionExpired || timeLeft <= 0) {
+        setSessionStartedAt(Date.now());
+        setPurchasedMinutes(granted);
+        setTimeLeft(counselSessionLimitSecs(granted));
+      } else {
+        setPurchasedMinutes((prev) => (prev || COUNSEL_IAP_MINUTES) + granted);
+      }
+      setSessionExpired(false);
+    } else {
+      setPurchasedMinutes(granted);
+      setSessionStartedAt(Date.now());
+      setSessionExpired(false);
+      setTimeLeft(counselSessionLimitSecs(granted));
+      setOpen(true);
+    }
+    setShowPaymentModal(false);
+  }
+
+  const paymentMode = sessionStartedAt ? 'extend' : 'purchase';
   const GOLD = '#e8c97e';
   const PURPLE = '#8b6fc6';
   const panelBg = '#0e0b1c';
@@ -440,6 +477,30 @@ export default function CounselPanel({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <VoiceBtn />
+          {sessionStartedAt && (
+            <button
+              type="button"
+              onClick={openExtendPayment}
+              title="상담 시간 연장"
+              style={{
+                background: sessionExpired
+                  ? 'linear-gradient(90deg, #7c4fc4, #3a7bd5)'
+                  : 'rgba(255,255,255,.08)',
+                border: sessionExpired
+                  ? 'none'
+                  : `1px solid ${borderColor}`,
+                borderRadius: 8,
+                padding: '4px 10px',
+                color: sessionExpired ? '#fff' : 'rgba(255,255,255,.65)',
+                fontSize: '.68rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ⏱ {sessionExpired ? '연장하기' : '시간 추가'}
+            </button>
+          )}
           {sessionStartedAt && !sessionExpired && (
             <span style={{
               fontSize: '.68rem',
@@ -457,7 +518,7 @@ export default function CounselPanel({
           }}>{counselor}</span>
           <button
             id="counsel-panel-close"
-            onClick={() => { stop(); setOpen(false); }}
+            onClick={attemptCloseCounselPanel}
             aria-label="닫기"
             style={{
               background: 'rgba(255,255,255,.08)', border: 'none',
@@ -699,22 +760,6 @@ export default function CounselPanel({
             );
           })}
           <div ref={bottomRef} />
-          {/* 연장 버튼 (종료 임박 시) */}
-          {sessionStartedAt && !sessionExpired && timeLeft <= 60 && (
-            <div style={{ textAlign: 'center', margin: '10px 0' }}>
-              <button
-                onClick={() => setShowPaymentModal(true)}
-                style={{
-                  background: 'linear-gradient(90deg, #7c4fc4, #3a7bd5)',
-                  border: 'none', borderRadius: 20, padding: '8px 16px',
-                  color: '#fff', fontSize: '.8rem', fontWeight: 'bold',
-                  cursor: 'pointer', boxShadow: '0 4px 12px rgba(124,79,196,0.3)',
-                }}
-              >
-                ⏳ 10분 더 연장하기 (990원)
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -732,6 +777,7 @@ export default function CounselPanel({
           boxShadow: '0 -8px 24px rgba(0,0,0,0.35)',
         }}>
           {sessionStartedAt && !loading && !sessionExpired && (
+            <>
             <div style={{
               fontSize: '.72rem',
               color: timeLeft <= 60 ? '#ff8a8a' : 'rgba(255,255,255,.45)',
@@ -740,6 +786,16 @@ export default function CounselPanel({
             }}>
               남은 상담 시간 {formatCounselTimeLeft(timeLeft)} (세션 {purchasedMinutes || COUNSEL_IAP_MINUTES}분)
             </div>
+            <div style={{
+              fontSize: '.7rem',
+              color: 'rgba(255,200,120,.85)',
+              textAlign: 'center',
+              lineHeight: 1.5,
+              padding: '0 4px',
+            }}>
+              ⚠️ {COUNSEL_LEAVE_SESSION_NOTICE}
+            </div>
+            </>
           )}
           {sessionExpired && (
             <div style={{
@@ -751,6 +807,26 @@ export default function CounselPanel({
               {COUNSEL_SESSION_EXPIRED_MESSAGE}
             </div>
           )}
+          {sessionExpired ? (
+            <button
+              type="button"
+              onClick={openExtendPayment}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: 10,
+                border: 'none',
+                background: 'linear-gradient(135deg, #7c4fc4, #3a7bd5)',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: '.95rem',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(124,79,196,0.35)',
+              }}
+            >
+              ⏱ 시간 연장하고 대화 이어가기
+            </button>
+          ) : (
           <div style={{ display: 'flex', gap: 8 }}>
           {/* 마이크 버튼 — STT 지원 브라우저에서만 표시 */}
           {sttSupported && (
@@ -794,7 +870,7 @@ export default function CounselPanel({
             onKeyDown={handleKeyDown}
             placeholder={
               sessionExpired
-                ? '상담 제한 시간(10분)이 종료되었습니다.'
+                ? '시간 연장 후 대화를 이어갈 수 있어요.'
                 : (listening ? '듣는 중…' : '질문을 입력하세요…')
             }
             disabled={loading || sessionExpired}
@@ -835,6 +911,7 @@ export default function CounselPanel({
             }}
           >전송</button>
           </div>
+          )}
         </div>
       )}
 
@@ -858,21 +935,9 @@ export default function CounselPanel({
       {open && Panel}
       <PaymentModal
         open={showPaymentModal}
+        mode={paymentMode}
         onClose={() => setShowPaymentModal(false)}
-        onSuccess={() => {
-          const granted = COUNSEL_IAP_MINUTES;
-          if (open && sessionStartedAt && !sessionExpired) {
-            setPurchasedMinutes((prev) => (prev || COUNSEL_IAP_MINUTES) + granted);
-            setSessionExpired(false);
-          } else {
-            setPurchasedMinutes(granted);
-            setSessionStartedAt(Date.now());
-            setSessionExpired(false);
-            setTimeLeft(counselSessionLimitSecs(granted));
-            setOpen(true);
-          }
-          setShowPaymentModal(false);
-        }}
+        onSuccess={handlePurchaseSuccess}
       />
     </>
   );

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 import { resolveGeminiTtsVoiceForCounselor } from '../../../core/counselor-config';
+import { getCounselGeminiApiKey } from '../../../core/gemma24/counsel-llm-fallback';
 import { prepareTextForTts } from '../../../lib/prepare-text-for-tts';
 import { geminiTtsGenerateUrl, resolveGeminiTtsModel } from '../../../lib/gemini-tts-config';
 
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: `text는 ${TTS_BODY_MAX_CHARS}자 이하로 나누어 보내주세요` }), { status: 400 });
   }
 
-  const key = process.env.GOOGLE_AI_API_KEY;
+  const key = process.env.GOOGLE_AI_TTS_API_KEY?.trim() || getCounselGeminiApiKey();
   if (!key) {
     return new Response(JSON.stringify({ error: 'GOOGLE_AI_API_KEY 누락' }), { status: 500 });
   }

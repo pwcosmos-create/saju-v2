@@ -81,11 +81,33 @@ export default function CounselPanel({
 
   /** 현재 TTS로 읽히는 메시지 콘텐츠 추적 (버블 강조 용) */
   const [speakingContent, setSpeakingContent] = useState<string | null>(null);
+  const lastAutoSpokenRef = useRef('');
 
   // playing이 끌리면 강조 해제
   useEffect(() => {
     if (!playing) setSpeakingContent(null);
   }, [playing]);
+
+  useEffect(() => {
+    if (!open) {
+      lastAutoSpokenRef.current = '';
+      return;
+    }
+    void primeAudio();
+  }, [open, primeAudio]);
+
+  /** AI 답변(인트로 포함) — Gemini TTS 자동 읽기 */
+  useEffect(() => {
+    if (!open || !enabled || loading) return;
+    const last = msgs[msgs.length - 1];
+    if (last?.role !== 'assistant') return;
+    const content = last.content.trim();
+    if (content.length < 6 || isSajuWaitingMessage(content)) return;
+    if (content === lastAutoSpokenRef.current) return;
+    lastAutoSpokenRef.current = content;
+    setSpeakingContent(content);
+    void speak(content);
+  }, [msgs, open, enabled, loading, speak]);
 
   /** STT 콜백에서 안전하게 호출하기 위한 ref (클로저 스테일 방지) */
   const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => { });
@@ -237,14 +259,8 @@ export default function CounselPanel({
     }
     stop();
     setInput('');
-    const responseContent = await send(trimmed);
-    if (enabled && responseContent) {
-      lastInputViaVoiceRef.current = false;
-      setSpeakingContent(responseContent);
-      void speak(responseContent);
-    } else {
-      lastInputViaVoiceRef.current = false;
-    }
+    await send(trimmed);
+    lastInputViaVoiceRef.current = false;
     inputRef.current?.focus();
   }
 

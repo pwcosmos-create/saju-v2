@@ -17,7 +17,7 @@ const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
 export function useTts(counselor: string) {
   const [playing, setPlaying] = useState(false);
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -47,9 +47,10 @@ export function useTts(counselor: string) {
     setPlaying(false);
   }, []);
 
-  const speak = useCallback(async (text: string) => {
+  const speak = useCallback(async (text: string, options?: { manual?: boolean }) => {
     const ttsText = prepareTextForTts(text);
-    if (!enabled || !ttsText) return;
+    if (!ttsText) return;
+    if (!options?.manual && !enabled) return;
     if (typeof window === 'undefined') return;
     if (!APPS_IN_TOSS && !window.speechSynthesis) return;
     stop();

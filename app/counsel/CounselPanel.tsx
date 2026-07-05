@@ -81,6 +81,7 @@ export default function CounselPanel({
 
   /** 현재 TTS로 읽히는 메시지 콘텐츠 추적 (버블 강조 용) */
   const [speakingContent, setSpeakingContent] = useState<string | null>(null);
+  const [ttsHintDismissed, setTtsHintDismissed] = useState(false);
   const lastAutoSpokenRef = useRef('');
 
   // playing이 끌리면 강조 해제
@@ -91,6 +92,7 @@ export default function CounselPanel({
   useEffect(() => {
     if (!open) {
       lastAutoSpokenRef.current = '';
+      setTtsHintDismissed(false);
       return;
     }
     void primeAudio();
@@ -288,6 +290,13 @@ export default function CounselPanel({
   const panelBg = '#0e0b1c';
   const borderColor = 'rgba(255,255,255,0.1)';
 
+  function toggleTts() {
+    setEnabled((v) => {
+      if (!v) setTtsHintDismissed(true);
+      return !v;
+    });
+  }
+
   function VoiceBtn() {
     if (playing) {
       return (
@@ -299,14 +308,14 @@ export default function CounselPanel({
       );
     }
     return (
-      <button id="counsel-tts-toggle" onClick={() => setEnabled(v => !v)} title={enabled ? '음성 끄기' : '음성 켜기'} style={{
+      <button id="counsel-tts-toggle" onClick={toggleTts} title={enabled ? '음성 끄기' : '음성 켜기'} style={{
         background: enabled ? 'rgba(74,158,255,.15)' : 'rgba(255,255,255,.06)',
         border: `1px solid ${enabled ? 'rgba(74,158,255,.4)' : 'rgba(255,255,255,.15)'}`,
         borderRadius: 8, padding: '3px 10px',
-        color: enabled ? '#7bbfff' : 'rgba(255,255,255,.35)',
+        color: enabled ? '#7bbfff' : 'rgba(255,255,255,.55)',
         cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
       }}>
-        {enabled ? '🔊 음성' : '🔇 음소거'}
+        {enabled ? '🔊 음성' : '🔊 음성 켜기'}
       </button>
     );
   }
@@ -459,6 +468,60 @@ export default function CounselPanel({
           >✕</button>
         </div>
       </div>
+
+      {aiSummaryReady && sessionStartedAt && !enabled && !ttsHintDismissed && (
+        <div
+          role="note"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            margin: '0 12px',
+            marginTop: 10,
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: 'rgba(74,158,255,.1)',
+            border: '1px solid rgba(74,158,255,.25)',
+            flexShrink: 0,
+          }}
+        >
+          <button
+            type="button"
+            onClick={toggleTts}
+            style={{
+              flex: 1,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              textAlign: 'left',
+              color: 'rgba(200,225,255,.95)',
+              fontSize: '.78rem',
+              lineHeight: 1.45,
+              cursor: 'pointer',
+            }}
+          >
+            🔊 누르면 답변을 음성으로 들을 수 있어요
+          </button>
+          <button
+            type="button"
+            onClick={() => setTtsHintDismissed(true)}
+            aria-label="안내 닫기"
+            style={{
+              flexShrink: 0,
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255,255,255,.45)',
+              cursor: 'pointer',
+              fontSize: '.9rem',
+              lineHeight: 1,
+              padding: 4,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── guard ── */}
       {!aiSummaryReady && (
@@ -613,7 +676,7 @@ export default function CounselPanel({
                             } else {
                               void primeAudio().then(() => {
                                 setSpeakingContent(msg.content);
-                                void speak(msg.content);
+                                void speak(msg.content, { manual: true });
                               });
                             }
                           }}

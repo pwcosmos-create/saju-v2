@@ -18,6 +18,15 @@ export function counselSupplyPriceForMinutes(minutes: number): number {
   return (minutes / COUNSEL_IAP_MINUTES) * COUNSEL_IAP_SUPPLY_PRICE_10MIN;
 }
 
+export function isCounselMinuteOption(minutes: number): minutes is CounselIapMinuteOption {
+  return (COUNSEL_IAP_MINUTE_OPTIONS as readonly number[]).includes(minutes);
+}
+
+/** 10분 단위 구매 횟수 (20분=2회, 30분=3회) */
+export function counselPurchaseUnitsForMinutes(minutes: number): number {
+  return minutes / COUNSEL_IAP_MINUTES;
+}
+
 const SKU_ENV: Record<number, string | undefined> = {
   10: process.env.NEXT_PUBLIC_TOSS_IAP_SKU_COUNSEL_10,
   20: process.env.NEXT_PUBLIC_TOSS_IAP_SKU_COUNSEL_20,

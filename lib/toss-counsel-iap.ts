@@ -1,5 +1,9 @@
 import { IAP, Storage, type IapProductListItem } from '@apps-in-toss/web-framework';
-import { counselMinutesForSku, counselSkuForMinutes } from '../core/counsel-iap';
+import {
+  COUNSEL_IAP_MINUTES,
+  counselMinutesForSku,
+  counselSkuForMinutes,
+} from '../core/counsel-iap';
 
 const GRANTED_ORDERS_KEY = 'saju_counsel_iap_granted_orders_v1';
 
@@ -69,6 +73,78 @@ export function purchaseCounselMinutes(
       onFail?.('결제에 실패했습니다. 잠시 후 다시 시도해 주세요.');
     },
   });
+}
+
+/**
+ * 20·30분 등 — 전용 SKU 없으면 10분 상품을 연속 결제.
+ * 한 단계라도 성공하면 부분 지급 후 onFail 호출 가능.
+ */
+export function purchaseCounselMinuteBundle(
+  minutes: number,
+  callbacks: {
+    onProgress?: (step: number, total: number) => void;
+    onSuccess: (purchasedMinutes: number) => void;
+    onFail?: (message: string) => void;
+  },
+  skuOverride?: string | null,
+): () => void {
+  const units = minutes / COUNSEL_IAP_MINUTES;
+  if (!Number.isInteger(units) || units < 1) {
+    callbacks.onFail?.('잘못된 시간 옵션입니다.');
+    return () => {};
+  }
+
+  const dedicatedSku = skuOverride?.trim() || counselSkuForMinutes(minutes);
+  if (units === 1 && dedicatedSku) {
+    return purchaseCounselMinutes(
+      minutes,
+      callbacks.onSuccess,
+      callbacks.onFail,
+      dedicatedSku,
+    );
+  }
+
+  const unitSku = counselSkuForMinutes(COUNSEL_IAP_MINUTES);
+  if (!unitSku) {
+    callbacks.onFail?.(
+      '인앱 상품 SKU가 설정되지 않았습니다. 콘솔 등록 후 NEXT_PUBLIC_TOSS_IAP_SKU_COUNSEL_10 환경변수를 설정해 주세요.',
+    );
+    return () => {};
+  }
+
+  let cancelled = false;
+  let currentCleanup: (() => void) | null = null;
+  let step = 0;
+
+  const finishPartial = () => {
+    if (step > 0) callbacks.onSuccess(step * COUNSEL_IAP_MINUTES);
+  };
+
+  const runNext = () => {
+    if (cancelled) return;
+    step += 1;
+    callbacks.onProgress?.(step, units);
+    currentCleanup = purchaseCounselMinutes(
+      COUNSEL_IAP_MINUTES,
+      () => {
+        if (cancelled) return;
+        if (step >= units) callbacks.onSuccess(minutes);
+        else runNext();
+      },
+      (msg) => {
+        if (cancelled) return;
+        finishPartial();
+        callbacks.onFail?.(msg);
+      },
+      unitSku,
+    );
+  };
+
+  runNext();
+  return () => {
+    cancelled = true;
+    currentCleanup?.();
+  };
 }
 
 /** 결제는 됐지만 지급이 안 된 주문 복원 */

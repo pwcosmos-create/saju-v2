@@ -308,7 +308,12 @@ export default function CounselPanel({
         setPurchasedMinutes(granted);
         setTimeLeft(counselSessionLimitSecs(granted));
       } else {
-        setPurchasedMinutes((prev) => (prev || COUNSEL_IAP_MINUTES) + granted);
+        const nextMinutes = (purchasedMinutes || COUNSEL_IAP_MINUTES) + granted;
+        setPurchasedMinutes(nextMinutes);
+        setTimeLeft(Math.max(
+          0,
+          Math.floor((sessionStartedAt + counselSessionLimitMs(nextMinutes) - Date.now()) / 1000),
+        ));
       }
       setSessionExpired(false);
     } else {

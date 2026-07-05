@@ -164,6 +164,20 @@ export default function CounselPanel({
   }, [open, stop]);
 
 
+  /** 상담 열림 시 뒤 페이지 스크롤·하단 노출 차단 */
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [open]);
+
+
   useEffect(() => {
     if (!aiSummaryReady) {
       stop(); reset(); setOpen(false); setShowPaymentModal(false);
@@ -255,7 +269,7 @@ export default function CounselPanel({
 
   const GOLD = '#e8c97e';
   const PURPLE = '#8b6fc6';
-  const panelBg = 'rgba(14,11,28,0.97)';
+  const panelBg = '#0e0b1c';
   const borderColor = 'rgba(255,255,255,0.1)';
 
   function VoiceBtn() {
@@ -320,33 +334,69 @@ export default function CounselPanel({
         0%, 100% { box-shadow: 0 0 10px rgba(139,111,198,.25), inset 0 0 6px rgba(139,111,198,.06); }
         50%       { box-shadow: 0 0 22px rgba(139,111,198,.55), inset 0 0 12px rgba(139,111,198,.15); }
       }
+      @media (max-width: 520px) {
+        #counsel-panel {
+          inset: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          height: 100dvh !important;
+          min-height: 100dvh !important;
+          margin: 0 !important;
+          border-radius: 0 !important;
+          border-left: none !important;
+          border-right: none !important;
+        }
+      }
     `}</style>
+    {open && (
+      <div
+        id="counsel-panel-backdrop"
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9099,
+          background: panelBg,
+        }}
+      />
+    )}
     <div
       id="counsel-panel"
       role="dialog"
       aria-label="AI 심층 상담"
       style={{
         position: 'fixed',
-        /* 모바일: 거의 전체화면, 데스크톱: 우측 고정 패널 */
-        top: 'env(safe-area-inset-top, 0px)',
-        bottom: 'env(safe-area-inset-bottom, 0px)',
-        right: 0,
-        left: 0,
-        /* 데스크톱에서만 작은 패널 */
-        maxWidth: 'min(420px, 100vw)',
-        marginLeft: 'auto',
-        marginRight: 0,
-        /* 데스크톱 여백 */
-        borderRadius: 'clamp(0px, calc((100vw - 480px) * 9999), 20px)',
-        margin: 'clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 80px)',
+        ...(APPS_IN_TOSS
+          ? {
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              width: '100%',
+              maxWidth: '100%',
+              height: '100dvh',
+              minHeight: '100dvh',
+              margin: 0,
+              borderRadius: 0,
+            }
+          : {
+              top: 'env(safe-area-inset-top, 0px)',
+              bottom: 'env(safe-area-inset-bottom, 0px)',
+              right: 0,
+              left: 0,
+              maxWidth: 'min(420px, 100vw)',
+              marginLeft: 'auto',
+              marginRight: 0,
+              borderRadius: 'clamp(0px, calc((100vw - 480px) * 9999), 20px)',
+              margin: 'clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 80px)',
+            }),
         zIndex: 9100,
         display: 'flex',
         flexDirection: 'column',
         background: panelBg,
-        border: `1px solid ${borderColor}`,
-        boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
+        border: APPS_IN_TOSS ? 'none' : `1px solid ${borderColor}`,
+        boxShadow: APPS_IN_TOSS ? 'none' : '0 8px 40px rgba(0,0,0,0.7)',
         overflow: 'hidden',
-        backdropFilter: 'blur(24px)',
       }}
     >
       {/* ── 헤더 ── */}
@@ -412,6 +462,7 @@ export default function CounselPanel({
       {aiSummaryReady && (
         <div style={{
           flex: 1,
+          minHeight: 0,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           padding: '12px 14px',
@@ -592,13 +643,14 @@ export default function CounselPanel({
       {aiSummaryReady && (
         <div style={{
           padding: '10px 12px',
-          paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))',
+          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
           borderTop: `1px solid ${borderColor}`,
           display: 'flex',
           flexDirection: 'column',
           gap: 8,
           flexShrink: 0,
           background: panelBg,
+          boxShadow: '0 -8px 24px rgba(0,0,0,0.35)',
         }}>
           {sessionStartedAt && !loading && !sessionExpired && (
             <div style={{

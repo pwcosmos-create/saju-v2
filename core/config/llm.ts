@@ -269,7 +269,7 @@ export function streamTextToOpenAiSse(text: string): ReadableStream {
   });
 }
 
-const UPSTREAM_INTERNAL_KEYS = new Set(['geminiOnly', 'geminiFirst']);
+const UPSTREAM_INTERNAL_KEYS = new Set(['geminiOnly', 'geminiFirst', 'counselSession']);
 
 function prepareUpstreamBody(body: Record<string, unknown>): Record<string, unknown> {
   const upstreamBody: Record<string, unknown> = { ...body, stream: false };

@@ -3,6 +3,10 @@
  */
 import { buildDaeunFortuneBody, parseDaeunFromQuery } from './council-fortune-daeun';
 import { kstCalendarDatePlusDays } from '../daily-fortune/kst-date';
+import {
+  computeDailyLuckyNumbers,
+  formatKstDateLabel,
+} from '../daily-fortune/lucky-numbers';
 import { extractPromptFacts } from './saju-knowledge';
 import { FORTUNE_SECTION_TITLES, formatFortuneSectionHeader } from './fortune-display-order';
 
@@ -1196,43 +1200,6 @@ const LUCKY_NUMBERS_BY_ELEM: Record<string, {
     timeDetail: '고요해지는 밤 시간대에 수(水) 기운이 직관과 판단을 깊게 만듭니다',
   },
 };
-
-const STEM_MICRO_SHIFT: Record<string, number> = {
-  갑목: 0, 을목: 1, 병화: 2, 정화: 1, 무토: 3,
-  기토: 2, 경금: 4, 신금: 1, 임수: 3, 계수: 5,
-};
-
-const ELEM_IDX: Record<string, number> = { 목: 0, 화: 1, 토: 2, 금: 3, 수: 4 };
-
-function formatKstDateLabel(date: Date): string {
-  const y = date.getUTCFullYear();
-  const m = date.getUTCMonth() + 1;
-  const d = date.getUTCDate();
-  return `${y}년 ${m}월 ${d}일`;
-}
-
-/** 운세를 보는 당일(KST) + 용신·일간 기반 행운 숫자 6개 (1~45) */
-function computeDailyLuckyNumbers(
-  yongsinElem: string,
-  stemKo: string | null,
-  viewDate: Date,
-): number[] {
-  const y = viewDate.getUTCFullYear();
-  const m = viewDate.getUTCMonth() + 1;
-  const d = viewDate.getUTCDate();
-  const elemIdx = ELEM_IDX[yongsinElem] ?? 0;
-  const shift = stemKo ? (STEM_MICRO_SHIFT[stemKo] ?? 0) : 0;
-  let seed = y * 10000 + m * 100 + d + elemIdx * 997 + shift * 37;
-
-  const out = new Set<number>();
-  let guard = 0;
-  while (out.size < 6 && guard < 120) {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    out.add((seed % 45) + 1);
-    guard += 1;
-  }
-  return [...out].sort((a, b) => a - b);
-}
 
 function buildLuckyNumbersSection(
   yongsinElem: string | null,

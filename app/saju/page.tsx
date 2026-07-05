@@ -41,6 +41,12 @@ import {
 import { fetchStream } from '../../core/http-client/stream-fetcher';
 import { dailyFortune } from '../../core/daily-fortune';
 import type { DailyFortuneResult } from '../../core/daily-fortune';
+import {
+  computeDailyLuckyNumbers,
+  parseKstDateString,
+  STEM_KO_LABELS,
+  YONGSIN_ELEM_CHARS,
+} from '../../core/daily-fortune/lucky-numbers';
 import { calcStrength, getSipsin, classifyElements } from '../../core/daily-fortune/classifier';
 import { buildMonthlyBriefs } from '../../core/daily-fortune/monthly-brief';
 import type { MonthlyBrief } from '../../core/daily-fortune/monthly-brief';
@@ -947,7 +953,7 @@ export default function Home() {
 
           <PillarGrid pillars={result.pillars} />
           <ScoreCards ds={ds} />
-          {fortuneResult && <DailyFortuneCard fortune={fortuneResult} />}
+          {fortuneResult && <DailyFortuneCard fortune={fortuneResult} dayStemIdx={ds} />}
           {dp&&<IljooCard dp={dp} yearBranch={result.pillars[0]?.b ?? 0} />}
           <OhaengCard ohaeng={result.ohaeng} />
           {!APPS_IN_TOSS && <KakaoAd />}
@@ -1195,7 +1201,7 @@ function OhaengCard({ ohaeng }: { ohaeng:OhaengResult }) {
   );
 }
 
-function DailyFortuneCard({ fortune }: { fortune: DailyFortuneResult }) {
+function DailyFortuneCard({ fortune, dayStemIdx }: { fortune: DailyFortuneResult; dayStemIdx: number }) {
   const levelColors: Record<string, string> = {
     '매우 좋음': '#4cbe82', '좋음': '#82d9a8', '보통': '#e8c46a', '주의': '#e09050', '매우 주의': '#e05555',
   };
@@ -1205,6 +1211,11 @@ function DailyFortuneCard({ fortune }: { fortune: DailyFortuneResult }) {
   const color = levelColors[fortune.level] ?? 'var(--muted)';
   const dots  = levelDots[fortune.level] ?? 3;
   const cls   = fortune.classification;
+  const luckyNumbers = useMemo(() => {
+    const yongsinElem = YONGSIN_ELEM_CHARS[cls.yongsin] ?? '토';
+    const stemKo = STEM_KO_LABELS[dayStemIdx] ?? null;
+    return computeDailyLuckyNumbers(yongsinElem, stemKo, parseKstDateString(fortune.date));
+  }, [cls.yongsin, dayStemIdx, fortune.date]);
 
   return (
     <div style={{ background:'linear-gradient(135deg,rgba(74,158,255,.08),rgba(139,111,198,.08))',
@@ -1283,6 +1294,14 @@ function DailyFortuneCard({ fortune }: { fortune: DailyFortuneResult }) {
         <ElemBadge idx={cls.yongsin} />
         <span style={{ fontSize:'.7rem', color:'var(--muted)', marginLeft:4 }}>기신</span>
         {cls.gisin.map(e => <ElemBadge key={e} idx={e} />)}
+      </div>
+
+      {/* 오늘의 추천 숫자 */}
+      <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid var(--border)' }}>
+        <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:8 }}>🎱 오늘의 추천 숫자</div>
+        <div style={{ fontSize:'1.05rem', fontWeight:800, letterSpacing:1, color:'var(--gold)' }}>
+          ✨ {luckyNumbers.join(' · ')} ✨
+        </div>
       </div>
     </div>
   );

@@ -1,9 +1,13 @@
 import { NextRequest } from 'next/server';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 import { resolveGeminiTtsVoiceForCounselor } from '../../../core/counselor-config';
-import { getCounselGeminiApiKey } from '../../../core/gemma24/counsel-llm-fallback';
 import { prepareTextForTts } from '../../../lib/prepare-text-for-tts';
-import { geminiTtsGenerateUrl, resolveGeminiTtsModel } from '../../../lib/gemini-tts-config';
+import {
+  geminiTtsGenerateUrl,
+  isRetryableGeminiTtsError,
+  resolveGeminiTtsApiKeys,
+  resolveGeminiTtsModel,
+} from '../../../lib/gemini-tts-config';
 
 /** 긴 답은 여러 청크로 호출되므로 채팅보다 여유 있게 */
 const checkRateLimit = makeRateLimiter(48, 60_000);
@@ -82,34 +86,48 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: `text는 ${TTS_BODY_MAX_CHARS}자 이하로 나누어 보내주세요` }), { status: 400 });
   }
 
-  const key = process.env.GOOGLE_AI_TTS_API_KEY?.trim() || getCounselGeminiApiKey();
-  if (!key) {
+  const apiKeys = resolveGeminiTtsApiKeys();
+  if (apiKeys.length === 0) {
     return new Response(JSON.stringify({ error: 'GOOGLE_AI_API_KEY 누락' }), { status: 500 });
   }
 
   const ttsModel = resolveGeminiTtsModel();
+  const requestBody = JSON.stringify({
+    contents: [{ parts: [{ text }] }],
+    generationConfig: {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName },
+        },
+      },
+    },
+  });
 
   try {
-    const upstream = await fetch(geminiTtsGenerateUrl(ttsModel, key), {
+    let raw = '';
+    let upstreamOk = false;
+    let lastError = 'TTS upstream 오류';
+
+    for (let ki = 0; ki < apiKeys.length; ki++) {
+      const key = apiKeys[ki];
+      const upstream = await fetch(geminiTtsGenerateUrl(ttsModel, key), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text }] }],
-          generationConfig: {
-            responseModalities: ['AUDIO'],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName },
-              },
-            },
-          },
-        }),
-      },
-    );
+        body: requestBody,
+      });
+      raw = await upstream.text();
+      if (upstream.ok) {
+        upstreamOk = true;
+        break;
+      }
+      lastError = `TTS upstream 오류: ${raw}`;
+      const hasNextKey = ki < apiKeys.length - 1;
+      if (!hasNextKey || !isRetryableGeminiTtsError(upstream.status, raw)) break;
+    }
 
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      return new Response(JSON.stringify({ error: `TTS upstream 오류: ${raw}` }), { status: 502 });
+    if (!upstreamOk) {
+      return new Response(JSON.stringify({ error: lastError }), { status: 502 });
     }
 
     const json = JSON.parse(raw) as any;

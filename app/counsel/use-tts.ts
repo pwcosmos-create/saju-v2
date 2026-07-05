@@ -58,6 +58,7 @@ export function useTts(counselor: string) {
     stop();
 
     await primeSpeechAudio();
+    primeBrowserTtsVoices();
 
     const units = splitForPausedReading(ttsText);
     if (units.length === 0) return;
@@ -68,30 +69,21 @@ export function useTts(counselor: string) {
 
     try {
       if (APPS_IN_TOSS) {
-        let allOk = true;
+        let serverFailed = false;
         for (let ui = 0; ui < units.length; ui++) {
-          if (ac.signal.aborted) {
-            allOk = false;
-            break;
-          }
+          if (ac.signal.aborted || serverFailed) break;
           const unit = units[ui];
           const apiChunks = splitUnitForApi(unit.text);
           for (const chunk of apiChunks) {
-            if (ac.signal.aborted) {
-              allOk = false;
-              break;
-            }
+            if (ac.signal.aborted || serverFailed) break;
             let bridged = await tossTts(chunk, counselorRef.current);
             if (!bridged.ok) {
               await new Promise<void>((r) => window.setTimeout(r, 400));
-              if (ac.signal.aborted) {
-                allOk = false;
-                break;
-              }
+              if (ac.signal.aborted) break;
               bridged = await tossTts(chunk, counselorRef.current);
             }
             if (!bridged.ok || ac.signal.aborted) {
-              allOk = false;
+              serverFailed = true;
               break;
             }
             const ok = await playServerTtsAudio(
@@ -103,11 +95,11 @@ export function useTts(counselor: string) {
               },
             );
             if (!ok || ac.signal.aborted) {
-              allOk = false;
+              serverFailed = true;
               break;
             }
           }
-          if (!allOk || ac.signal.aborted) break;
+          if (serverFailed || ac.signal.aborted) break;
           if (unit.pauseAfterMs > 0 && ui < units.length - 1) {
             await new Promise<void>((resolve, reject) => {
               const timer = window.setTimeout(resolve, unit.pauseAfterMs);
@@ -118,7 +110,8 @@ export function useTts(counselor: string) {
             });
           }
         }
-        if (!allOk && !ac.signal.aborted && window.speechSynthesis) {
+        if (serverFailed && !ac.signal.aborted) {
+          primeBrowserTtsVoices();
           await speakPausedBrowserReading(units, counselorRef.current, ac.signal);
         }
       } else {

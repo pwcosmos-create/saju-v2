@@ -28,15 +28,16 @@ async function markOrderGranted(orderId: string): Promise<void> {
   await Storage.setItem(GRANTED_ORDERS_KEY, JSON.stringify([...granted]));
 }
 
-async function grantCounselOrder(orderId: string, sku: string): Promise<number | null> {
+type GrantResult = { minutes: number; newlyGranted: boolean };
+
+async function grantCounselOrder(orderId: string, sku: string): Promise<GrantResult | null> {
+  const minutes = counselMinutesForSku(sku);
   const granted = await readGrantedOrders();
   if (granted.has(orderId)) {
-    return counselMinutesForSku(sku);
+    return { minutes, newlyGranted: false };
   }
-  const minutes = counselMinutesForSku(sku);
-  if (!minutes) return null;
   await markOrderGranted(orderId);
-  return minutes;
+  return { minutes, newlyGranted: true };
 }
 
 export async function fetchCounselIapProducts(): Promise<IapProductListItem[]> {
@@ -91,18 +92,32 @@ export function purchaseCounselMinutes(
       sku,
       processProductGrant: async ({ orderId }) => {
         const granted = await grantCounselOrder(orderId, sku);
-        return granted != null;
+        if (!granted) return false;
+        try {
+          await IAP.completeProductGrant({ params: { orderId } });
+        } catch (e) {
+          console.warn('completeProductGrant failed:', e);
+          return false;
+        }
+        return true;
       },
     },
     onEvent: async (event) => {
       if (event.type !== 'success') return;
-      const mins = await grantCounselOrder(event.data.orderId, sku);
-      if (mins) onSuccess(mins);
-      else onFail?.('상품 지급에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      const granted = await grantCounselOrder(event.data.orderId, sku);
+      if (!granted) {
+        onFail?.('상품 지급에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      /** 결제 성공 — 지급은 processProductGrant에서 처리, UI는 항상 완료 */
+      onSuccess(COUNSEL_IAP_MINUTES);
     },
     onError: (error) => {
       const code = (error as { code?: string })?.code;
-      if (code === 'USER_CANCELED') return;
+      if (code === 'USER_CANCELED') {
+        onFail?.('');
+        return;
+      }
       console.error('IAP error:', error);
       onFail?.('결제에 실패했습니다. 잠시 후 다시 시도해 주세요.');
     },
@@ -220,9 +235,9 @@ export async function restorePendingCounselPurchases(
 
   let total = 0;
   for (const order of pending.orders) {
-    const mins = await grantCounselOrder(order.orderId, order.sku);
-    if (mins) {
-      total += mins;
+    const granted = await grantCounselOrder(order.orderId, order.sku);
+    if (granted?.newlyGranted) {
+      total += COUNSEL_IAP_MINUTES;
       try {
         await IAP.completeProductGrant({ params: { orderId: order.orderId } });
       } catch (e) {

@@ -16,8 +16,11 @@ import {
 import { buildChatContext } from './build-saju-context';
 import { dailyFortune } from '../../core/daily-fortune';
 import { dailyFortuneToCounselPayload } from '../../core/daily-fortune/counsel-format';
+import { kstCalendarDatePlusDays } from '../../core/daily-fortune/kst-date';
 import { resolveDailyFortuneDate } from '../../core/gemma24/is-today-fortune-question';
-import { buildGreetingReply, isCounselGreetingMessage } from '../../core/counsel-greeting';
+import { buildGreetingReply, isCounselGreetingMessage, isCounselGreetingReply } from '../../core/counsel-greeting';
+import { buildDayFortuneCounselReply } from '../../core/daily-fortune/counsel-format';
+import { parseDayFortuneTarget } from '../../core/gemma24/is-today-fortune-question';
 import { tossSajuCounsel } from '../../lib/toss-http';
 
 export type Msg = { role: 'user' | 'assistant'; content: string; thought?: string };
@@ -29,12 +32,13 @@ function isShortCounselInput(text: string): boolean {
   return t.length > 0 && t.length <= 24;
 }
 /** 인트로 말풍선은 API에 포함하지 않음 */
-const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
-
 function buildApiMessages(msgs: Msg[]): { role: string; content: string }[] {
   return msgs.filter(
     m => m.content.trim().length > 0 &&
-      !(m.role === 'assistant' && m.content.startsWith(INTRO_PREFIX)),
+      !(m.role === 'assistant' && (
+        m.content.includes('이번 상담 시간은')
+        || isCounselGreetingReply(m.content)
+      )),
   );
 }
 
@@ -78,6 +82,26 @@ export function useCounselChat(
       return greeting;
     }
 
+    const dayTarget = parseDayFortuneTarget(trimmed);
+    if (dayTarget) {
+      try {
+        const fortuneWhen = dayTarget.kind === 'date'
+          ? dayTarget.date
+          : kstCalendarDatePlusDays(dayTarget.offset);
+        const payload = dailyFortuneToCounselPayload(dailyFortune(result, fortuneWhen));
+        const reply = buildDayFortuneCounselReply(
+          payload,
+          counselorRef.current,
+          dayTarget.label,
+        );
+        const userMsg: Msg = { role: 'user', content: trimmed };
+        applyMsgs([...current, userMsg, { role: 'assistant', content: reply }]);
+        return reply;
+      } catch {
+        /* 일운 계산 실패 시 API 폴백 */
+      }
+    }
+
     const userMsg: Msg = { role: 'user', content: trimmed };
     const apiMessages = [
       ...buildApiMessages(current),
@@ -90,7 +114,11 @@ export function useCounselChat(
       {
         role: 'assistant',
         content: '',
-        thought: isShortCounselInput(trimmed) ? undefined : '사주 분석을 시작합니다...',
+        thought: dayTarget
+          ? `${dayTarget.label}를 살펴보고 있습니다...`
+          : isShortCounselInput(trimmed)
+            ? undefined
+            : '사주 분석을 시작합니다...',
       },
     ];
     applyMsgs(withLoading);

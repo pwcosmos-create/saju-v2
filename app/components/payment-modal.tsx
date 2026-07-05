@@ -4,20 +4,20 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { IapProductListItem } from '@apps-in-toss/web-framework';
 import { COUNSEL_LEAVE_SESSION_NOTICE } from '../../core/counsel-session';
 import {
-  COUNSEL_IAP_MINUTE_OPTIONS,
   COUNSEL_IAP_MINUTES,
-  counselSalePriceForMinutes,
-  counselSupplyPriceForMinutes,
+  COUNSEL_IAP_SALE_PRICE_10MIN,
+  COUNSEL_IAP_SUPPLY_PRICE_10MIN,
   matchCounselProductForMinutes,
-  type CounselIapMinuteOption,
 } from '../../core/counsel-iap';
 import {
   fetchCounselIapProducts,
-  startCounselMinuteBundlePurchase,
+  purchaseCounselMinutes,
+  resolveCounselSku,
 } from '../../lib/toss-counsel-iap';
 
 const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 const SUCCESS_HOLD_MS = 2200;
+const PAYMENT_TIMEOUT_MS = 120_000;
 
 type PaymentPhase = 'select' | 'paying' | 'success';
 
@@ -38,20 +38,50 @@ export default function PaymentModal({
   const [phase, setPhase] = useState<PaymentPhase>('select');
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<IapProductListItem[]>([]);
-  const [selectedMinutes, setSelectedMinutes] = useState<CounselIapMinuteOption>(COUNSEL_IAP_MINUTES);
-  const [payStep, setPayStep] = useState({ step: 0, total: 1 });
   const [successMinutes, setSuccessMinutes] = useState(0);
   const cleanupRef = useRef<(() => void) | null>(null);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const paymentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const purchaseSettledRef = useRef(false);
 
-  const productForMinutes = (m: number) => matchCounselProductForMinutes(products, m);
+  const product10 = matchCounselProductForMinutes(products, COUNSEL_IAP_MINUTES);
+  const displayPrice = APPS_IN_TOSS
+    ? (product10?.displayAmount ?? `${COUNSEL_IAP_SALE_PRICE_10MIN.toLocaleString()}원`)
+    : `${COUNSEL_IAP_SALE_PRICE_10MIN.toLocaleString()}원`;
 
   const resetModalState = () => {
     setPhase('select');
     setLoading(false);
-    setPayStep({ step: 0, total: 1 });
     setSuccessMinutes(0);
-    setSelectedMinutes(COUNSEL_IAP_MINUTES);
+    purchaseSettledRef.current = false;
+    if (paymentTimeoutRef.current) {
+      clearTimeout(paymentTimeoutRef.current);
+      paymentTimeoutRef.current = null;
+    }
+  };
+
+  const settlePayment = (message?: string) => {
+    if (purchaseSettledRef.current) return;
+    purchaseSettledRef.current = true;
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+    if (paymentTimeoutRef.current) {
+      clearTimeout(paymentTimeoutRef.current);
+      paymentTimeoutRef.current = null;
+    }
+    setPhase('select');
+    setLoading(false);
+    if (message) alert(message);
+  };
+
+  const finishPurchaseSuccess = (minutes: number) => {
+    if (purchaseSettledRef.current) return;
+    purchaseSettledRef.current = true;
+    if (paymentTimeoutRef.current) {
+      clearTimeout(paymentTimeoutRef.current);
+      paymentTimeoutRef.current = null;
+    }
+    finishWithSuccess(minutes);
   };
 
   const finishWithSuccess = (minutes: number) => {
@@ -78,7 +108,6 @@ export default function PaymentModal({
       resetModalState();
       return;
     }
-    setSelectedMinutes(COUNSEL_IAP_MINUTES);
     if (!APPS_IN_TOSS) return;
     void fetchCounselIapProducts().then(setProducts).catch(() => setProducts([]));
     return () => {
@@ -95,22 +124,17 @@ export default function PaymentModal({
 
   if (!open) return null;
 
-  const amount = counselSalePriceForMinutes(selectedMinutes);
-  const displayPrice = APPS_IN_TOSS
-    ? (productForMinutes(selectedMinutes)?.displayAmount ?? `${amount.toLocaleString()}원`)
-    : `${amount.toLocaleString()}원`;
-
   const title = phase === 'success'
     ? (mode === 'extend' ? '시간 연장 완료' : '결제 완료')
     : mode === 'extend'
-      ? '상담 시간 연장'
+      ? '상담 10분 연장'
       : 'AI 심층 상담 이용권';
 
   const subtitle = mode === 'extend'
-    ? '추가할 시간을 선택한 뒤 결제해 주세요.'
+    ? '10분 이용권을 추가 구매하면 상담을 이어갈 수 있어요.'
     : APPS_IN_TOSS
-      ? '이용 시간을 선택한 뒤 토스 인앱결제로 구매합니다.'
-      : '이용 시간을 선택한 뒤 구매합니다.';
+      ? '토스 인앱결제로 10분 상담 이용권을 구매합니다.'
+      : 'AI 심층 상담 10분 이용권 (990원)';
 
   const canDismiss = phase === 'select' && !loading;
 
@@ -122,13 +146,18 @@ export default function PaymentModal({
   const handlePayment = async () => {
     setLoading(true);
     setPhase('paying');
+    purchaseSettledRef.current = false;
     try {
       if (APPS_IN_TOSS) {
         cleanupRef.current?.();
-        const units = selectedMinutes / COUNSEL_IAP_MINUTES;
-        setPayStep({ step: 0, total: units });
+        if (paymentTimeoutRef.current) clearTimeout(paymentTimeoutRef.current);
+        paymentTimeoutRef.current = setTimeout(() => {
+          if (!purchaseSettledRef.current) {
+            settlePayment('결제 응답이 지연되고 있습니다. 토스 결제창을 확인하거나 잠시 후 다시 시도해 주세요.');
+          }
+        }, PAYMENT_TIMEOUT_MS);
         let freshProducts = products;
-        if (!productForMinutes(selectedMinutes)) {
+        if (!product10) {
           try {
             freshProducts = await fetchCounselIapProducts();
             setProducts(freshProducts);
@@ -136,22 +165,19 @@ export default function PaymentModal({
             /* keep cached */
           }
         }
-        cleanupRef.current = await startCounselMinuteBundlePurchase(
-          selectedMinutes,
-          {
-            onProgress: (step, total) => setPayStep({ step, total }),
-            onSuccess: (purchased) => finishWithSuccess(purchased),
-            onFail: (msg) => {
-              setPhase('select');
-              setLoading(false);
-              cleanupRef.current = null;
-              if (msg) alert(msg);
-            },
-          },
-          {
-            skuOverride: matchCounselProductForMinutes(freshProducts, selectedMinutes)?.sku,
-            cachedProducts: freshProducts,
-          },
+        const sku = await resolveCounselSku(COUNSEL_IAP_MINUTES, {
+          skuOverride: matchCounselProductForMinutes(freshProducts, COUNSEL_IAP_MINUTES)?.sku,
+          cachedProducts: freshProducts,
+        });
+        if (!sku) {
+          settlePayment('인앱 상품을 불러오지 못했습니다. 콘솔에 상담 이용권이 등록·승인됐는지 확인해 주세요.');
+          return;
+        }
+        cleanupRef.current = purchaseCounselMinutes(
+          COUNSEL_IAP_MINUTES,
+          (purchased) => finishPurchaseSuccess(purchased),
+          (msg) => settlePayment(msg || undefined),
+          sku,
         );
         return;
       }
@@ -165,9 +191,9 @@ export default function PaymentModal({
 
       if (sdk.checkoutPayment) {
         const response = await sdk.checkoutPayment({
-          amount,
+          amount: COUNSEL_IAP_SALE_PRICE_10MIN,
           orderId: 'ORDER_' + Date.now(),
-          orderName: `AI 심층 상담 ${selectedMinutes}분`,
+          orderName: `AI 심층 상담 ${COUNSEL_IAP_MINUTES}분`,
         });
         if (response) {
           const res = await fetch('/api/payments/confirm', {
@@ -176,11 +202,11 @@ export default function PaymentModal({
             body: JSON.stringify({
               paymentKey: response.paymentKey || 'native_payment_key',
               orderId: response.orderId || 'ORDER_' + Date.now(),
-              amount,
+              amount: COUNSEL_IAP_SALE_PRICE_10MIN,
             }),
           });
           const data = await res.json();
-          if (data.success) finishWithSuccess(selectedMinutes);
+          if (data.success) finishWithSuccess(COUNSEL_IAP_MINUTES);
           else {
             setPhase('select');
             alert('결제 승인 실패');
@@ -190,7 +216,7 @@ export default function PaymentModal({
         }
       } else {
         const proceed = window.confirm(
-          `[테스트 환경] 실제 결제창이 뜰 수 없습니다.\n${amount.toLocaleString()}원을 결제하시겠습니까?`,
+          `[테스트 환경] 실제 결제창이 뜰 수 없습니다.\n${COUNSEL_IAP_SALE_PRICE_10MIN.toLocaleString()}원을 결제하시겠습니까?`,
         );
         if (proceed) {
           const res = await fetch('/api/payments/confirm', {
@@ -199,11 +225,11 @@ export default function PaymentModal({
             body: JSON.stringify({
               paymentKey: 'mock_test_key',
               orderId: 'ORDER_' + Date.now(),
-              amount,
+              amount: COUNSEL_IAP_SALE_PRICE_10MIN,
             }),
           });
           const data = await res.json();
-          if (data.success) finishWithSuccess(selectedMinutes);
+          if (data.success) finishWithSuccess(COUNSEL_IAP_MINUTES);
           else setPhase('select');
         } else {
           setPhase('select');
@@ -218,15 +244,11 @@ export default function PaymentModal({
     }
   };
 
-  const payButtonLabel = (() => {
-    if (loading || phase === 'paying') {
-      if (payStep.total > 1 && payStep.step > 0) {
-        return `결제 ${payStep.step}/${payStep.total} 진행 중...`;
-      }
-      return '결제 진행 중...';
-    }
-    return mode === 'extend' ? `${displayPrice} 연장하기` : `${displayPrice} 결제하기`;
-  })();
+  const payButtonLabel = loading || phase === 'paying'
+    ? '결제 진행 중...'
+    : mode === 'extend'
+      ? `${displayPrice} · 10분 연장`
+      : `${displayPrice} 결제하기`;
 
   return (
     <>
@@ -269,18 +291,10 @@ export default function PaymentModal({
           </div>
 
           {phase === 'success' ? (
-            <div style={{
-              padding: '36px 24px 40px',
-              textAlign: 'center',
-            }}>
+            <div style={{ padding: '36px 24px 40px', textAlign: 'center' }}>
               <div style={{ fontSize: '2.4rem', marginBottom: 12 }}>✅</div>
-              <p style={{
-                margin: '0 0 8px',
-                fontSize: '1.05rem',
-                fontWeight: 700,
-                color: '#333',
-              }}>
-                {successMinutes}분이 {mode === 'extend' ? '추가' : '적용'}되었습니다
+              <p style={{ margin: '0 0 8px', fontSize: '1.05rem', fontWeight: 700, color: '#333' }}>
+                10분이 {mode === 'extend' ? '추가' : '적용'}되었습니다
               </p>
               <p style={{ margin: 0, fontSize: '.88rem', color: '#666', lineHeight: 1.6 }}>
                 잠시 후 상담 화면으로 돌아갑니다.
@@ -293,51 +307,17 @@ export default function PaymentModal({
                   {subtitle}
                 </p>
 
-                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  {COUNSEL_IAP_MINUTE_OPTIONS.map((m) => {
-                    const selected = selectedMinutes === m;
-                    const price = counselSalePriceForMinutes(m);
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setSelectedMinutes(m)}
-                        disabled={loading}
-                        style={{
-                          flex: 1,
-                          padding: '12px 8px',
-                          borderRadius: 10,
-                          border: selected ? '2px solid #3182f6' : '1px solid #ddd',
-                          background: selected ? '#f5f8ff' : '#fafafa',
-                          cursor: loading ? 'not-allowed' : 'pointer',
-                          textAlign: 'center',
-                          opacity: loading ? 0.7 : 1,
-                        }}
-                      >
-                        <div style={{
-                          fontSize: '1rem', fontWeight: 700,
-                          color: selected ? '#3182f6' : '#333',
-                        }}>
-                          +{m}분
-                        </div>
-                        <div style={{ marginTop: 4, fontSize: '.78rem', color: '#888' }}>
-                          {price.toLocaleString()}원
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
                 <div style={{
                   padding: '14px 16px', borderRadius: 10,
                   background: '#f5f8ff', border: '1px solid #d6e4ff',
+                  textAlign: 'center',
                 }}>
                   <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#3182f6' }}>
-                    AI 심층 상담 {selectedMinutes}분
+                    AI 심층 상담 {COUNSEL_IAP_MINUTES}분
                     {mode === 'extend' ? ' 연장' : ''}
                   </div>
                   <div style={{ marginTop: 6, fontSize: '.85rem', color: '#666' }}>
-                    사주 기반 1:1 AI 상담 · {selectedMinutes}분 {mode === 'extend' ? '추가' : '이용'}
+                    사주 기반 1:1 AI 상담 · 세션당 {COUNSEL_IAP_MINUTES}분
                   </div>
                 </div>
 
@@ -347,12 +327,6 @@ export default function PaymentModal({
                 }}>
                   결제 금액: {displayPrice}
                 </div>
-
-                {selectedMinutes > COUNSEL_IAP_MINUTES && APPS_IN_TOSS && (
-                  <p style={{ marginTop: 8, fontSize: '.78rem', color: '#888', lineHeight: 1.5 }}>
-                    10분 이용권 {selectedMinutes / COUNSEL_IAP_MINUTES}회 순차 결제됩니다.
-                  </p>
-                )}
 
                 <p style={{
                   marginTop: 12,
@@ -369,8 +343,8 @@ export default function PaymentModal({
 
                 {APPS_IN_TOSS && (
                   <p style={{ marginTop: 10, fontSize: '.78rem', color: '#888', lineHeight: 1.6 }}>
-                    공급가 {counselSupplyPriceForMinutes(selectedMinutes).toLocaleString()}원 기준
-                    (10분당 {counselSupplyPriceForMinutes(COUNSEL_IAP_MINUTES).toLocaleString()}원)
+                    공급가 {COUNSEL_IAP_SUPPLY_PRICE_10MIN.toLocaleString()}원
+                    (판매가 {COUNSEL_IAP_SALE_PRICE_10MIN.toLocaleString()}원)
                   </p>
                 )}
               </div>

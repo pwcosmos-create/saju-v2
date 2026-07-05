@@ -13,10 +13,11 @@ import {
 } from '../gemma24/counsel-llm-fallback';
 import {
   formatDailyFortuneCounselForLlm,
+  buildDayFortuneCounselReply,
   type DailyFortuneCounselPayload,
 } from '../daily-fortune/counsel-format';
 import { tryDailyFortuneFromSajuContext } from '../daily-fortune/from-saju-context';
-import { resolveDailyFortuneDate } from '../gemma24/is-today-fortune-question';
+import { parseDayFortuneTarget, resolveDailyFortuneDate } from '../gemma24/is-today-fortune-question';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
 import { SAJU_WAITING_LABEL } from '../user-messages';
 import { makeRateLimiter } from '../http-client/rate-limit';
@@ -152,12 +153,38 @@ ${compareSajuContext}
     );
   }
 
-  const compareCtx = chatMode === 'compatibility' ? compareSajuContext : '';
-
   const dailyFortune =
     body.dailyFortune && typeof body.dailyFortune === 'object' && body.dailyFortune.date
       ? body.dailyFortune
       : null;
+
+  const dayTarget = parseDayFortuneTarget(lastUserMessage);
+  if (dayTarget) {
+    const fortuneWhen = dayTarget.kind === 'date' ? dayTarget.date : dayTarget.offset;
+    const fortunePayload =
+      dailyFortune
+      ?? tryDailyFortuneFromSajuContext(sajuContext, fortuneWhen);
+    if (fortunePayload) {
+      const content = buildDayFortuneCounselReply(
+        fortunePayload,
+        counselorName,
+        dayTarget.label,
+      );
+      return Response.json(
+        { content },
+        {
+          headers: counselJsonHeaders({
+            content,
+            cardCount: 0,
+            draftCardCount: 0,
+            mode: 'council-counsel',
+          }),
+        },
+      );
+    }
+  }
+
+  const compareCtx = chatMode === 'compatibility' ? compareSajuContext : '';
 
   const geminiOnlyCounsel = useCounselGeminiLlm(sessionStartedAt);
 

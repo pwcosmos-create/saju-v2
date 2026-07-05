@@ -38,14 +38,11 @@ export function counselSkuForMinutes(minutes: number): string | null {
   return sku || null;
 }
 
-export function counselMinutesForSku(sku: string): number | null {
+export function counselMinutesForSku(sku: string): number {
   for (const [mins, envSku] of Object.entries(SKU_ENV)) {
     if (envSku?.trim() === sku) return Number(mins);
   }
-  if (sku.includes('10') || sku.endsWith('_10m')) return COUNSEL_IAP_MINUTES;
-  if (sku.includes('20') || sku.endsWith('_20m')) return 20;
-  if (sku.includes('30') || sku.endsWith('_30m')) return 30;
-  /** 콘솔 SKU 미매핑 시에도 10분 이용권 1회로 처리 */
+  /** 판매 상품은 10분 이용권만 — SKU 부분문자열(예: v3.0, …30…)로 20·30분 추론하지 않음 */
   return COUNSEL_IAP_MINUTES;
 }
 

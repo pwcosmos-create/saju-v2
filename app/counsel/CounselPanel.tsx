@@ -26,6 +26,7 @@ import { renderCounselContent } from './render-counsel-content';
 import PaymentModal from '../components/payment-modal';
 import { restorePendingCounselPurchases } from '../../lib/toss-counsel-iap';
 import { COUNSEL_IAP_MINUTES } from '../../core/counsel-iap';
+import { buildGreetingReply } from '../../core/counsel-greeting';
 
 const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
@@ -33,12 +34,9 @@ function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
 }
 
-const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
-
 function buildIntro(counselor: string, result: SajuResult, sessionMinutes: number): string {
-  return (
-    `${INTRO_PREFIX}.\n이번 세션의 배정 상담사는 「${counselor}」입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이번 상담 시간은 ${sessionMinutes}분입니다.\n\n사주나 운세에 관해 궁금한 점을 편하게 물어보세요.`
-  );
+  const greeting = buildGreetingReply(counselor);
+  return `${greeting}\n\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이번 상담 시간은 ${sessionMinutes}분입니다.`;
 }
 
 export default function CounselPanel({
@@ -301,14 +299,15 @@ export default function CounselPanel({
     setOpen(false);
   }
 
-  function handlePurchaseSuccess(granted: number) {
+  function handlePurchaseSuccess(_granted: number) {
+    const minutesGranted = COUNSEL_IAP_MINUTES;
     if (open && sessionStartedAt) {
       if (sessionExpired || timeLeft <= 0) {
         setSessionStartedAt(Date.now());
-        setPurchasedMinutes(granted);
-        setTimeLeft(counselSessionLimitSecs(granted));
+        setPurchasedMinutes(minutesGranted);
+        setTimeLeft(counselSessionLimitSecs(minutesGranted));
       } else {
-        const nextMinutes = (purchasedMinutes || COUNSEL_IAP_MINUTES) + granted;
+        const nextMinutes = (purchasedMinutes || COUNSEL_IAP_MINUTES) + minutesGranted;
         setPurchasedMinutes(nextMinutes);
         setTimeLeft(Math.max(
           0,
@@ -317,10 +316,10 @@ export default function CounselPanel({
       }
       setSessionExpired(false);
     } else {
-      setPurchasedMinutes(granted);
+      setPurchasedMinutes(minutesGranted);
       setSessionStartedAt(Date.now());
       setSessionExpired(false);
-      setTimeLeft(counselSessionLimitSecs(granted));
+      setTimeLeft(counselSessionLimitSecs(minutesGranted));
       setOpen(true);
     }
     setShowPaymentModal(false);

@@ -13,6 +13,28 @@ const root = path.resolve(__dirname, '..');
 const apiDir = path.join(root, 'app', 'api');
 const stashDir = path.join(root, 'app', '_api_stashed_for_toss_export');
 
+async function exists(p) {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Windows에서 out/ rename EPERM 시 cp+rm 폴백 */
+async function moveDir(src, dest) {
+  await fs.rm(dest, { recursive: true, force: true });
+  await fs.mkdir(path.dirname(dest), { recursive: true });
+  try {
+    await fs.rename(src, dest);
+  } catch (e) {
+    if (e?.code !== 'EPERM' && e?.code !== 'EXDEV') throw e;
+    await fs.cp(src, dest, { recursive: true });
+    await fs.rm(src, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+  }
+}
+
 /** Next export 를 out/web/ 아래로 옮겨 ait 가 기대하는 out/web/index.html 구조와 맞춘다. */
 async function nestExportUnderOutWeb() {
   const outRoot = path.join(root, 'out');
@@ -30,18 +52,9 @@ async function nestExportUnderOutWeb() {
   }
 
   await fs.rm(staging, { recursive: true, force: true });
-  await fs.rename(outRoot, staging);
+  await moveDir(outRoot, staging);
   await fs.mkdir(outRoot, { recursive: true });
-  await fs.rename(staging, outWeb);
-}
-
-async function exists(p) {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
+  await moveDir(staging, outWeb);
 }
 
 const SAJU_ANALYZE_BOOT = `<script>(function(){var lastRun=0;function showErr(m){var w=document.getElementById("saju-js-wait");if(w){w.textContent=m;w.style.display="block";}}function hideWait(){var w=document.getElementById("saju-js-wait");if(w)w.style.display="none";}function runAnalyze(e){var t=e.target&&e.target.closest("[data-saju-analyze]");if(!t)return;var now=Date.now();if(now-lastRun<900)return;lastRun=now;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();if(typeof window.__SAJU_ANALYZE__==="function"){hideWait();window.__SAJU_ANALYZE__();return;}if(typeof window.__SAJU_STANDALONE_ANALYZE__==="function"){var r=window.__SAJU_STANDALONE_ANALYZE__();if(!r.ok)showErr(r.error);else hideWait();return;}showErr("앱을 불러오는 중이에요. 잠시 후 다시 눌러주세요.");}document.addEventListener("click",runAnalyze,true);document.addEventListener("touchend",runAnalyze,true);var n=0;var iv=setInterval(function(){if(typeof window.__SAJU_ANALYZE__==="function"){hideWait();clearInterval(iv);}else if(++n>60)clearInterval(iv);},500);})();</script>`;

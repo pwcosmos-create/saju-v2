@@ -42,7 +42,7 @@ import { fetchStream } from '../../core/http-client/stream-fetcher';
 import { dailyFortune } from '../../core/daily-fortune';
 import type { DailyFortuneResult } from '../../core/daily-fortune';
 import {
-  computeDailyLuckyNumbers,
+  buildDailyLuckyNumbersLines,
   parseKstDateString,
   STEM_KO_LABELS,
   YONGSIN_ELEM_CHARS,
@@ -1211,10 +1211,10 @@ function DailyFortuneCard({ fortune, dayStemIdx }: { fortune: DailyFortuneResult
   const color = levelColors[fortune.level] ?? 'var(--muted)';
   const dots  = levelDots[fortune.level] ?? 3;
   const cls   = fortune.classification;
-  const luckyNumbers = useMemo(() => {
+  const luckyLines = useMemo(() => {
     const yongsinElem = YONGSIN_ELEM_CHARS[cls.yongsin] ?? '토';
     const stemKo = STEM_KO_LABELS[dayStemIdx] ?? null;
-    return computeDailyLuckyNumbers(yongsinElem, stemKo, parseKstDateString(fortune.date));
+    return buildDailyLuckyNumbersLines(yongsinElem, stemKo, parseKstDateString(fortune.date));
   }, [cls.yongsin, dayStemIdx, fortune.date]);
 
   return (
@@ -1296,13 +1296,12 @@ function DailyFortuneCard({ fortune, dayStemIdx }: { fortune: DailyFortuneResult
         {cls.gisin.map(e => <ElemBadge key={e} idx={e} />)}
       </div>
 
-      {/* 오늘의 추천 숫자 */}
-      <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid var(--border)' }}>
-        <div style={{ fontSize:'.72rem', color:'var(--muted)', marginBottom:8 }}>🎱 오늘의 추천 숫자</div>
-        <div style={{ fontSize:'1.05rem', fontWeight:800, letterSpacing:1, color:'var(--gold)' }}>
-          ✨ {luckyNumbers.join(' · ')} ✨
+      {/* 오늘의 추천 숫자 — AI 심층 풀이 10번과 동일 형식 */}
+      {luckyLines.length > 0 && (
+        <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid var(--border)' }}>
+          {renderFortuneLines(luckyLines)}
         </div>
-      </div>
+      )}
     </div>
   );
 }

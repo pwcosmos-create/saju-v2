@@ -295,8 +295,8 @@ ${compareSajuContext}
   const dayFortuneGuide = paidCounsel && dayTarget
     ? `【유료 실시간 일운 상담 — 필수】
 - 사주 카드·정해진 템플릿·저장된 해석 문구를 쓰지 마세요. 아래 실시간 일운 계산과 명식만으로 **지금 대화하듯** 답하세요.
-- 사용자 질문 주제: 「${dayTarget.label}」 — **이 날짜의 일운**만 다루세요. 올해·대운 전체 풀이로 새지 마세요.
-- 일진·십신·행동 조언·주의할 점을 상담사 말투로 4~8문장 이상 풀어 쓰고, 반드시 완결된 문장으로 끝내세요.
+- 사용자 질문 주제: 「${dayTarget.label}」 — **이 날짜의 일운**만 다루세요. 월운·세운·올해 전체 설명은 1문장 이내로만 언급하고 오늘 일진 중심으로 쓰세요.
+- **5~7문장**, 상담사 말투. 반드시 **완결된 마지막 문장**으로 끝내세요. 문장 중간에서 끊지 마세요.
 
 `
     : '';
@@ -340,9 +340,17 @@ ${sajuContext}`;
   const isDayFortuneAsk = Boolean(dayTarget);
   const counselShortInput = lastUserMessage.length <= 40 && !isDayFortuneAsk;
 
+  const counselMaxTokens = isDayFortuneAsk
+    ? 4096
+    : paidCounsel
+      ? 4096
+      : counselShortInput
+        ? 720
+        : 8192;
+
   const upstream = await fetchLlmStream({
     stream: streamRequested,
-    max_tokens: counselShortInput ? 720 : isDayFortuneAsk ? 2048 : 8192,
+    max_tokens: counselMaxTokens,
     temperature: 0.7,
     messages: llmMessages,
     /** 심층 상담 — Gemini 2.5 Flash 전용 (Groq/Llama 폴백 없음) */

@@ -55,7 +55,7 @@ async function callGeminiCompletion(
   geminiKey: string,
   upstreamBody: Record<string, unknown>,
   timeoutMs = 600_000,
-): Promise<{ ok: boolean; status: number; text: string }> {
+): Promise<{ ok: boolean; status: number; text: string; finishReason?: string }> {
   const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${geminiKey}` },
@@ -68,8 +68,10 @@ async function callGeminiCompletion(
     return { ok: false, status: response.status, text: '' };
   }
   const data = await response.json();
-  const text = data.choices?.[0]?.message?.content ?? '';
-  return { ok: Boolean(text), status: response.status, text };
+  const choice = data.choices?.[0];
+  const text = choice?.message?.content ?? '';
+  const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+  return { ok: Boolean(text), status: response.status, text, finishReason };
 }
 
 let keyIndex = 0;
@@ -270,14 +272,18 @@ export function streamTextToOpenAiSse(text: string): ReadableStream {
 }
 
 const UPSTREAM_INTERNAL_KEYS = new Set(['geminiOnly', 'geminiFirst', 'counselSession']);
+const DEFAULT_UPSTREAM_MAX_TOKENS = 3000;
+const COUNSEL_UPSTREAM_MAX_TOKENS = 8192;
 
 function prepareUpstreamBody(body: Record<string, unknown>): Record<string, unknown> {
+  const geminiOnly = Boolean(body.geminiOnly);
   const upstreamBody: Record<string, unknown> = { ...body, stream: false };
   for (const key of UPSTREAM_INTERNAL_KEYS) {
     delete upstreamBody[key];
   }
-  if (upstreamBody.max_tokens && (upstreamBody.max_tokens as number) > 3000) {
-    upstreamBody.max_tokens = 3000;
+  const tokenCap = geminiOnly ? COUNSEL_UPSTREAM_MAX_TOKENS : DEFAULT_UPSTREAM_MAX_TOKENS;
+  if (upstreamBody.max_tokens && (upstreamBody.max_tokens as number) > tokenCap) {
+    upstreamBody.max_tokens = tokenCap;
   }
   if (Array.isArray(upstreamBody.messages)) {
     upstreamBody.messages = (upstreamBody.messages as { role: string; content: string }[]).map((m) => ({
@@ -325,7 +331,7 @@ async function completeWithGroq(upstreamBody: Record<string, unknown>): Promise<
 
 async function completeWithGemini(
   upstreamBody: Record<string, unknown>,
-  options?: { apiKey?: string; timeoutMs?: number },
+  options?: { apiKey?: string; timeoutMs?: number; allowContinuation?: boolean },
 ): Promise<string> {
   const geminiKey = options?.apiKey?.trim() || process.env.GOOGLE_AI_API_KEY || '';
   if (!geminiKey) return '';
@@ -334,7 +340,33 @@ async function completeWithGemini(
     if (waitMs > 0) await sleep(waitMs);
     try {
       const result = await callGeminiCompletion(geminiKey, upstreamBody, timeoutMs);
-      if (result.ok && result.text) return result.text;
+      if (result.ok && result.text) {
+        let text = result.text;
+        if (
+          options?.allowContinuation
+          && result.finishReason === 'length'
+          && Array.isArray(upstreamBody.messages)
+        ) {
+          const cont = await callGeminiCompletion(
+            geminiKey,
+            {
+              ...upstreamBody,
+              messages: [
+                ...(upstreamBody.messages as { role: string; content: string }[]),
+                { role: 'assistant', content: text },
+                {
+                  role: 'user',
+                  content: '방금 답변이 중간에 끊겼습니다. 끊긴 부분부터 이어서 마지막 문장까지 완성해 주세요. 앞 내용을 반복하지 마세요.',
+                },
+              ],
+              max_tokens: Math.min(2048, (upstreamBody.max_tokens as number) || 2048),
+            },
+            timeoutMs,
+          );
+          if (cont.ok && cont.text.trim()) text += cont.text;
+        }
+        return text;
+      }
       if (result.status === 429) {
         console.warn(waitMs === 0 ? 'Gemini 429, retrying in 3s.' : 'Gemini 429 on retry.');
         continue;
@@ -374,7 +406,7 @@ export async function fetchLlmStream(body: any): Promise<Response> {
   const geminiFirst = Boolean(body.geminiFirst);
   const counselSession = Boolean(body.counselSession);
   const counselGeminiOpts = counselSession
-    ? { apiKey: getCounselGeminiApiKey(), timeoutMs: 45_000 }
+    ? { apiKey: getCounselGeminiApiKey(), timeoutMs: 60_000, allowContinuation: true }
     : undefined;
   const gemini = () => completeWithGemini(upstreamBody, counselGeminiOpts);
   draftText = geminiOnly

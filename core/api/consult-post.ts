@@ -15,10 +15,12 @@ import {
 } from '../gemma24/counsel-llm-fallback';
 import {
   formatDailyFortuneCounselForLlm,
+  formatDailyFortuneFactsForPaidLlm,
   buildDayFortuneCounselReply,
   type DailyFortuneCounselPayload,
 } from '../daily-fortune/counsel-format';
 import { tryDailyFortuneFromSajuContext } from '../daily-fortune/from-saju-context';
+import { kstCalendarDatePlusDays } from '../daily-fortune/kst-date';
 import { parseDayFortuneTarget, resolveDailyFortuneDate } from '../gemma24/is-today-fortune-question';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
 import { SAJU_WAITING_LABEL } from '../user-messages';
@@ -277,14 +279,27 @@ ${compareSajuContext}
 
   let dailyFortuneBlock = '';
   if (geminiOnlyCounsel) {
-    const fortuneWhen = resolveDailyFortuneDate(lastUserMessage);
+    const fortuneWhen = dayTarget
+      ? (dayTarget.kind === 'date' ? dayTarget.date : kstCalendarDatePlusDays(dayTarget.offset))
+      : resolveDailyFortuneDate(lastUserMessage);
     const fortunePayload =
       dailyFortune
       ?? (fortuneWhen ? tryDailyFortuneFromSajuContext(sajuContext, fortuneWhen) : null);
     if (fortunePayload) {
-      dailyFortuneBlock = `\n${formatDailyFortuneCounselForLlm(fortunePayload)}\n`;
+      dailyFortuneBlock = paidCounsel && dayTarget
+        ? `\n${formatDailyFortuneFactsForPaidLlm(fortunePayload, dayTarget.label)}\n`
+        : `\n${formatDailyFortuneCounselForLlm(fortunePayload)}\n`;
     }
   }
+
+  const dayFortuneGuide = paidCounsel && dayTarget
+    ? `【유료 실시간 일운 상담 — 필수】
+- 사주 카드·정해진 템플릿·저장된 해석 문구를 쓰지 마세요. 아래 실시간 일운 계산과 명식만으로 **지금 대화하듯** 답하세요.
+- 사용자 질문 주제: 「${dayTarget.label}」 — **이 날짜의 일운**만 다루세요. 올해·대운 전체 풀이로 새지 마세요.
+- 일진·십신·행동 조언·주의할 점을 상담사 말투로 4~8문장 이상 풀어 쓰고, 반드시 완결된 문장으로 끝내세요.
+
+`
+    : '';
 
   const counselModeHeader = paidCounsel ? 'counsel-gemini' : 'gemini';
 
@@ -312,7 +327,7 @@ ${counselorPersona}
 
 사용자가 한국어로 질문하면 한국어로, 다른 언어로 질문하면 그 언어로 답변하세요. 단, 사주 용어는 한국 명리학 용어를 기준으로 유지하세요.
 
-${modeGuide}
+${dayFortuneGuide}${modeGuide}
 ${cardKnowledge.systemAppend ? `\n${cardKnowledge.systemAppend}\n` : ''}${dailyFortuneBlock}【사주 데이터】
 ${sajuContext}`;
 
@@ -322,11 +337,12 @@ ${sajuContext}`;
     ...chatMessages.slice(-10),
   ];
   const streamRequested = body.stream !== false;
-  const counselShortInput = lastUserMessage.length <= 40;
+  const isDayFortuneAsk = Boolean(dayTarget);
+  const counselShortInput = lastUserMessage.length <= 40 && !isDayFortuneAsk;
 
   const upstream = await fetchLlmStream({
     stream: streamRequested,
-    max_tokens: counselShortInput ? 720 : 8192,
+    max_tokens: counselShortInput ? 720 : isDayFortuneAsk ? 2048 : 8192,
     temperature: 0.7,
     messages: llmMessages,
     /** 심층 상담 — Gemini 2.5 Flash 전용 (Groq/Llama 폴백 없음) */

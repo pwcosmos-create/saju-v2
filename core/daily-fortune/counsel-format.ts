@@ -136,6 +136,22 @@ export function formatDailyFortuneCounselForLlm(f: DailyFortuneCounselPayload): 
   return `【일운 산출 데이터 — 아래 수치·날짜를 사실로 활용하고, 자연스러운 대화체로 풀어 쓸 것】\n${draft.body}`;
 }
 
+/** 유료 상담 — 사주 카드·템플릿 없이 실시간 일운 사실만 전달 */
+export function formatDailyFortuneFactsForPaidLlm(
+  f: DailyFortuneCounselPayload,
+  topicLabel: string,
+): string {
+  return `【실시간 일운 계산 — ${topicLabel}】
+- 날짜: ${f.date}
+- 일진: ${f.dayLabel}(${f.dayHanja})
+- 종합: ${f.level}
+- 일진 십신: ${f.sipsin}
+- 행동 조언: ${f.action}
+- 한줄 요약: ${f.oneLiner}
+- 원국 이벤트: ${f.eventsSummary}
+- 대운·세운·월운 십신: ${f.daewoonSipsin} / ${f.yearSipsin} / ${f.monthSipsin}`;
+}
+
 export function buildDayFortuneCounselReply(
   f: DailyFortuneCounselPayload,
   counselorName: string,

@@ -22,6 +22,10 @@ import { isSajuWaitingMessage } from '../../core/user-messages';
 import { useCounselChat } from './use-counsel-chat';
 import { renderCounselContent } from './render-counsel-content';
 import PaymentModal from '../components/payment-modal';
+import { restorePendingCounselPurchases } from '../../lib/toss-counsel-iap';
+import { COUNSEL_IAP_MINUTES } from '../../core/counsel-iap';
+
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
 function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
@@ -44,7 +48,7 @@ export default function CounselPanel({
 }) {
   const [open, setOpen] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [purchasedMinutes, setPurchasedMinutes] = useState(10);
+  const [purchasedMinutes, setPurchasedMinutes] = useState(0);
   const [input, setInput] = useState('');
   const [counselor] = useState(pickCounselor);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
@@ -58,8 +62,22 @@ export default function CounselPanel({
     aiSummaryReady,
     counselor,
     sessionStartedAt,
+    purchasedMinutes || COUNSEL_IAP_MINUTES,
   );
   const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
+
+  useEffect(() => {
+    if (!APPS_IN_TOSS || !result) return;
+    void restorePendingCounselPurchases((total) => {
+      if (total <= 0) return;
+      const granted = COUNSEL_IAP_MINUTES;
+      setPurchasedMinutes(granted);
+      setSessionStartedAt(Date.now());
+      setSessionExpired(false);
+      setTimeLeft(counselSessionLimitSecs(granted));
+      setOpen(true);
+    });
+  }, [result]);
 
   /** 현재 TTS로 읽히는 메시지 콘텐츠 추적 (버블 강조 용) */
   const [speakingContent, setSpeakingContent] = useState<string | null>(null);
@@ -158,16 +176,10 @@ export default function CounselPanel({
   useEffect(() => {
     if (!open) {
       setSessionStartedAt(null);
-      setTimeLeft(counselSessionLimitSecs(purchasedMinutes));
+      setTimeLeft(counselSessionLimitSecs(purchasedMinutes || COUNSEL_IAP_MINUTES));
       setSessionExpired(false);
-      return;
     }
-    if (aiSummaryReady && !sessionStartedAt) {
-      setSessionStartedAt(Date.now());
-      setSessionExpired(false);
-      setTimeLeft(counselSessionLimitSecs(purchasedMinutes));
-    }
-  }, [open, aiSummaryReady, sessionStartedAt, purchasedMinutes]);
+  }, [open, purchasedMinutes]);
 
   useEffect(() => {
     if (!open || !sessionStartedAt || sessionExpired) return;
@@ -595,7 +607,7 @@ export default function CounselPanel({
               textAlign: 'center',
               fontVariantNumeric: 'tabular-nums',
             }}>
-              남은 상담 시간 {formatCounselTimeLeft(timeLeft)} (세션 {purchasedMinutes}분)
+              남은 상담 시간 {formatCounselTimeLeft(timeLeft)} (세션 {purchasedMinutes || COUNSEL_IAP_MINUTES}분)
             </div>
           )}
           {sessionExpired && (
@@ -716,14 +728,16 @@ export default function CounselPanel({
       <PaymentModal
         open={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
-        onSuccess={(mins) => {
-          if (open && sessionStartedAt) {
-            // 시간 연장
-            setPurchasedMinutes(prev => prev + mins);
+        onSuccess={() => {
+          const granted = COUNSEL_IAP_MINUTES;
+          if (open && sessionStartedAt && !sessionExpired) {
+            setPurchasedMinutes((prev) => (prev || COUNSEL_IAP_MINUTES) + granted);
             setSessionExpired(false);
           } else {
-            // 처음 결제
-            setPurchasedMinutes(mins);
+            setPurchasedMinutes(granted);
+            setSessionStartedAt(Date.now());
+            setSessionExpired(false);
+            setTimeLeft(counselSessionLimitSecs(granted));
             setOpen(true);
           }
           setShowPaymentModal(false);

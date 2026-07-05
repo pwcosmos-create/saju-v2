@@ -1092,7 +1092,10 @@ export default function Home() {
           <a href="/privacy" style={{ color:'var(--muted)', textDecoration:'underline' }}>개인정보처리방침</a>
         </p>
       </footer>
-      <CounselPanel result={result} aiSummaryReady={aiFortuneComplete} />
+      <CounselPanel
+        result={result}
+        aiSummaryReady={APPS_IN_TOSS ? Boolean(result) : aiFortuneComplete}
+      />
       </div>{/* /z-index wrapper */}
     </div>
   );

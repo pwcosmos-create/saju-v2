@@ -1,6 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import type { IapProductListItem } from '@apps-in-toss/web-framework';
+import { COUNSEL_IAP_MINUTES, COUNSEL_IAP_SUPPLY_PRICE_10MIN } from '../../core/counsel-iap';
+import {
+  fetchCounselIapProducts,
+  purchaseCounselMinutes,
+} from '../../lib/toss-counsel-iap';
+
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
 interface PaymentModalProps {
   open: boolean;
@@ -9,35 +17,72 @@ interface PaymentModalProps {
 }
 
 export default function PaymentModal({ open, onSuccess, onClose }: PaymentModalProps) {
-  const [minutes, setMinutes] = useState(10);
+  const minutes = COUNSEL_IAP_MINUTES;
   const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState<IapProductListItem[]>([]);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
-  const amount = (minutes / 10) * 990;
+  const amount = 990;
+
+  useEffect(() => {
+    if (!open || !APPS_IN_TOSS) return;
+    void fetchCounselIapProducts().then(setProducts).catch(() => setProducts([]));
+    return () => {
+      cleanupRef.current?.();
+      cleanupRef.current = null;
+    };
+  }, [open]);
+
+  useEffect(() => () => {
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+  }, []);
 
   if (!open) return null;
+
+  const productForMinutes = (m: number) =>
+    products.find((p) => p.displayName.includes(`${m}분`) || p.description.includes(`${m}분`));
+
+  const displayPrice = APPS_IN_TOSS
+    ? (productForMinutes(minutes)?.displayAmount ?? `${amount.toLocaleString()}원`)
+    : `${amount.toLocaleString()}원`;
 
   const handlePayment = async () => {
     setLoading(true);
     try {
-      // @apps-in-toss/web-framework를 동적으로 불러옴 (서버 사이드 렌더링 방지 및 토스 환경 대응)
-      let sdk: any;
-      try {
-        sdk = (await import('@apps-in-toss/web-framework')) as any;
-      } catch (e) {
-        console.warn('Toss web-framework SDK is not available. Falling back to mock payment.');
+      if (APPS_IN_TOSS) {
+        cleanupRef.current?.();
+        cleanupRef.current = purchaseCounselMinutes(
+          minutes,
+          (purchased) => {
+            setLoading(false);
+            cleanupRef.current = null;
+            if (purchased) onSuccess(COUNSEL_IAP_MINUTES);
+          },
+          (msg) => {
+            setLoading(false);
+            cleanupRef.current = null;
+            if (msg) alert(msg);
+          },
+          productForMinutes(minutes)?.sku,
+        );
+        return;
       }
 
-      if (sdk && sdk.checkoutPayment) {
-        // 토스 미니앱 네이티브 결제 브릿지 호출
+      let sdk: { checkoutPayment?: (opts: object) => Promise<{ paymentKey?: string; orderId?: string }> };
+      try {
+        sdk = (await import('@apps-in-toss/web-framework')) as typeof sdk;
+      } catch {
+        sdk = {};
+      }
+
+      if (sdk.checkoutPayment) {
         const response = await sdk.checkoutPayment({
           amount,
           orderId: 'ORDER_' + Date.now(),
           orderName: `AI 심층 상담 ${minutes}분`,
         });
-        
-        // 결제가 성공적으로 이루어졌다고 가정
         if (response) {
-          // 서버 검증이 필요한 경우 아래와 같이 API 호출 (현재는 모킹)
           const res = await fetch('/api/payments/confirm', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -45,18 +90,16 @@ export default function PaymentModal({ open, onSuccess, onClose }: PaymentModalP
               paymentKey: response.paymentKey || 'native_payment_key',
               orderId: response.orderId || 'ORDER_' + Date.now(),
               amount,
-            })
+            }),
           });
           const data = await res.json();
-          if (data.success) {
-            onSuccess(minutes);
-          } else {
-            alert('결제 승인 실패');
-          }
+          if (data.success) onSuccess(COUNSEL_IAP_MINUTES);
+          else alert('결제 승인 실패');
         }
       } else {
-        // PC 웹 브라우저 등 테스트 환경용 모의 결제
-        const proceed = window.confirm(`[테스트 환경] 실제 결제창이 뜰 수 없습니다.\n${amount}원을 결제하시겠습니까?`);
+        const proceed = window.confirm(
+          `[테스트 환경] 실제 결제창이 뜰 수 없습니다.\n${amount}원을 결제하시겠습니까?`,
+        );
         if (proceed) {
           const res = await fetch('/api/payments/confirm', {
             method: 'POST',
@@ -65,37 +108,35 @@ export default function PaymentModal({ open, onSuccess, onClose }: PaymentModalP
               paymentKey: 'mock_test_key',
               orderId: 'ORDER_' + Date.now(),
               amount,
-            })
+            }),
           });
           const data = await res.json();
-          if (data.success) {
-            onSuccess(minutes);
-          }
+          if (data.success) onSuccess(COUNSEL_IAP_MINUTES);
         }
       }
     } catch (error) {
       console.error('Payment error:', error);
       alert('결제 진행 중 오류가 발생했거나 취소되었습니다.');
     } finally {
-      setLoading(false);
+      if (!APPS_IN_TOSS) setLoading(false);
     }
   };
 
   return (
     <>
-      <div 
+      <div
         style={{
           position: 'fixed', inset: 0, zIndex: 9998,
-          background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(4px)'
-        }} 
-        onClick={onClose} 
+          background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(4px)',
+        }}
+        onClick={onClose}
       />
-      <div 
+      <div
         role="dialog"
         style={{
           position: 'fixed', inset: 0, zIndex: 9999,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          pointerEvents: 'none', padding: 16
+          pointerEvents: 'none', padding: 16,
         }}
       >
         <div style={{
@@ -104,59 +145,62 @@ export default function PaymentModal({ open, onSuccess, onClose }: PaymentModalP
           background: '#fff', borderRadius: 16,
           overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
           display: 'flex', flexDirection: 'column',
-          maxHeight: '90vh'
+          maxHeight: '90vh',
         }}>
-          {/* 헤더 */}
           <div style={{
             padding: '16px 20px', borderBottom: '1px solid #eee',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
-            <h2 style={{ margin: 0, fontSize: '1.1rem', color: '#333' }}>AI 심층 상담 시간 충전</h2>
+            <h2 style={{ margin: 0, fontSize: '1.1rem', color: '#333' }}>AI 심층 상담 이용권</h2>
             <button onClick={onClose} style={{
-              background: 'none', border: 'none', fontSize: '1.5rem', 
-              color: '#999', cursor: 'pointer'
+              background: 'none', border: 'none', fontSize: '1.5rem',
+              color: '#999', cursor: 'pointer',
             }}>✕</button>
           </div>
 
-          {/* 컨텐츠 */}
           <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
-            <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#666' }}>상담 시간을 선택해주세요. (10분당 990원)</p>
-            <div style={{ display: 'flex', gap: 10 }}>
-              {[10, 20, 30].map(m => (
-                <button
-                  key={m}
-                  onClick={() => setMinutes(m)}
-                  style={{
-                    flex: 1, padding: '10px 0', borderRadius: 8,
-                    border: minutes === m ? '2px solid #3182f6' : '1px solid #ddd',
-                    background: minutes === m ? '#e8f3ff' : '#fff',
-                    color: minutes === m ? '#3182f6' : '#333',
-                    fontWeight: minutes === m ? 'bold' : 'normal',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {m}분
-                </button>
-              ))}
+            <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#666' }}>
+              {APPS_IN_TOSS
+                ? '토스 인앱결제로 10분 상담 이용권을 구매합니다.'
+                : 'AI 심층 상담 10분 이용권 (990원)'}
+            </p>
+            <div style={{
+              padding: '14px 16px', borderRadius: 10,
+              background: '#f5f8ff', border: '1px solid #d6e4ff',
+              textAlign: 'center',
+            }}>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#3182f6' }}>
+                AI 심층 상담 {COUNSEL_IAP_MINUTES}분
+              </div>
+              <div style={{ marginTop: 6, fontSize: '.85rem', color: '#666' }}>
+                사주 기반 1:1 AI 상담 · 세션당 {COUNSEL_IAP_MINUTES}분
+              </div>
             </div>
-            <div style={{ textAlign: 'right', marginTop: 15, fontSize: '1.1rem', fontWeight: 'bold', color: '#333' }}>
-              결제 금액: {amount.toLocaleString()}원
+            <div style={{
+              textAlign: 'right', marginTop: 15,
+              fontSize: '1.1rem', fontWeight: 'bold', color: '#333',
+            }}>
+              결제 금액: {displayPrice}
             </div>
+            {APPS_IN_TOSS && (
+              <p style={{ marginTop: 10, fontSize: '.78rem', color: '#888', lineHeight: 1.6 }}>
+                콘솔 등록 예시 — 공급가 {COUNSEL_IAP_SUPPLY_PRICE_10MIN.toLocaleString()}원 (판매가 990원)
+              </p>
+            )}
           </div>
 
-          {/* 하단 결제 버튼 */}
           <div style={{ padding: '16px 20px', borderTop: '1px solid #eee' }}>
             <button
-              onClick={handlePayment}
+              onClick={() => void handlePayment()}
               disabled={loading}
               style={{
                 width: '100%', padding: '14px', borderRadius: 8, border: 'none',
                 background: '#3182f6', color: '#fff', fontSize: '1rem', fontWeight: 'bold',
                 cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.7 : 1
+                opacity: loading ? 0.7 : 1,
               }}
             >
-              {loading ? '토스페이로 결제 중...' : `${amount.toLocaleString()}원 결제하기`}
+              {loading ? '결제 진행 중...' : `${displayPrice} 결제하기`}
             </button>
           </div>
         </div>

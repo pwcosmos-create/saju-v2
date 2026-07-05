@@ -8,6 +8,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { prepareTextForTts } from '../../lib/prepare-text-for-tts';
 import { primeBrowserTtsVoices, speakPausedBrowserReading } from '../../lib/browser-tts-voice';
+import { primeSpeechAudio } from '../../lib/korean-tts';
 import { splitForPausedReading } from '../../lib/tts-paused-reading';
 import { tossTts } from '../../lib/toss-http';
 import { playServerTtsAudio } from '../../lib/server-tts-playback';
@@ -26,6 +27,7 @@ export function useTts(counselor: string) {
 
   const primeAudio = useCallback(async () => {
     primeBrowserTtsVoices();
+    await primeSpeechAudio();
   }, []);
 
   const stop = useCallback(() => {
@@ -54,6 +56,8 @@ export function useTts(counselor: string) {
     if (typeof window === 'undefined') return;
     if (!APPS_IN_TOSS && !window.speechSynthesis) return;
     stop();
+
+    await primeSpeechAudio();
 
     const units = splitForPausedReading(ttsText);
     if (units.length === 0) return;
@@ -113,6 +117,9 @@ export function useTts(counselor: string) {
               }, { once: true });
             });
           }
+        }
+        if (!allOk && !ac.signal.aborted && window.speechSynthesis) {
+          await speakPausedBrowserReading(units, counselorRef.current, ac.signal);
         }
       } else {
         await speakPausedBrowserReading(units, counselorRef.current, ac.signal);

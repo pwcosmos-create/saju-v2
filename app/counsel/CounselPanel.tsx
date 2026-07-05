@@ -107,8 +107,8 @@ export default function CounselPanel({
     if (content === lastAutoSpokenRef.current) return;
     lastAutoSpokenRef.current = content;
     setSpeakingContent(content);
-    void speak(content);
-  }, [msgs, open, enabled, loading, speak]);
+    void primeAudio().then(() => speak(content));
+  }, [msgs, open, enabled, loading, speak, primeAudio]);
 
   /** STT 콜백에서 안전하게 호출하기 위한 ref (클로저 스테일 방지) */
   const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => { });
@@ -356,10 +356,23 @@ export default function CounselPanel({
   const borderColor = 'rgba(255,255,255,0.1)';
 
   function toggleTts() {
-    setEnabled((v) => {
-      if (!v) setTtsHintDismissed(true);
-      return !v;
-    });
+    const turningOn = !enabled;
+    setEnabled(turningOn);
+    if (turningOn) {
+      setTtsHintDismissed(true);
+      void primeAudio().then(() => {
+        const lastAssistant = [...msgs].reverse().find(
+          (m) => m.role === 'assistant' && m.content.trim().length > 6 && !isSajuWaitingMessage(m.content),
+        );
+        if (lastAssistant && lastAssistant.content !== lastAutoSpokenRef.current) {
+          lastAutoSpokenRef.current = lastAssistant.content;
+          setSpeakingContent(lastAssistant.content);
+          void speak(lastAssistant.content, { manual: true });
+        }
+      });
+    } else {
+      stop();
+    }
   }
 
   function VoiceBtn() {

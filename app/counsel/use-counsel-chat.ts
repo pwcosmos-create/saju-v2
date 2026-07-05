@@ -21,14 +21,11 @@ import { tossSajuCounsel } from '../../lib/toss-http';
 
 export type Msg = { role: 'user' | 'assistant'; content: string; thought?: string };
 
-const TIMEOUT_MS = 90_000;
-/** 답변 표시 전 최소 대기(ms) — 즉시 튀어나오는 느낌 완화 */
-const REPLY_MIN_DELAY_MS = 1000;
+const TIMEOUT_MS = 60_000;
 
-function waitMinReplyDelay(startedAt: number): Promise<void> {
-  const remain = REPLY_MIN_DELAY_MS - (Date.now() - startedAt);
-  if (remain <= 0) return Promise.resolve();
-  return new Promise((resolve) => window.setTimeout(resolve, remain));
+function isShortCounselInput(text: string): boolean {
+  const t = text.trim();
+  return t.length > 0 && t.length <= 24;
 }
 /** 인트로 말풍선은 API에 포함하지 않음 */
 const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
@@ -78,13 +75,20 @@ export function useCounselChat(
       { role: 'user', content: trimmed },
     ];
 
-    const withLoading: Msg[] = [...current, userMsg, { role: 'assistant', content: '', thought: '사주 분석을 시작합니다...' }];
+    const withLoading: Msg[] = [
+      ...current,
+      userMsg,
+      {
+        role: 'assistant',
+        content: '',
+        thought: isShortCounselInput(trimmed) ? undefined : '사주 분석을 시작합니다...',
+      },
+    ];
     applyMsgs(withLoading);
     setLoading(true);
 
     const ac = new AbortController();
     const timeoutId = window.setTimeout(() => ac.abort(), TIMEOUT_MS);
-    const startedAt = Date.now();
 
     try {
       const sajuContext = buildChatContext(result);
@@ -117,8 +121,6 @@ export function useCounselChat(
 
       const content = payload.content.trim();
       if (!content) throw new Error('빈 응답');
-
-      await waitMinReplyDelay(startedAt);
 
       const finalMsgs = [...msgsRef.current];
       const last = finalMsgs[finalMsgs.length - 1];

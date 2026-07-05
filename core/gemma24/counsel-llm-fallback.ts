@@ -25,11 +25,21 @@ function hasLlmApiKeys(): boolean {
 /** 카드·엔진으로 답 못 줄 때 Groq/Gemini 사용 여부 */
 export function shouldUseCounselLlmFallback(): boolean {
   if (isCounselGeminiOnlyMode()) {
-    return Boolean(process.env.GOOGLE_AI_API_KEY?.trim());
+    return Boolean(getCounselGeminiApiKey());
   }
   if (process.env.GEMMA24_COUNSEL_CARD_ONLY === '1') return false;
   const mode = counselLlmFallbackMode();
   if (mode === '0') return false;
   if (mode === '1') return true;
   return hasLlmApiKeys();
+}
+
+/** 유료 상담 LLM — 풀이용 GOOGLE_AI_API_KEY 와 분리 (429·지연 완화) */
+export function getCounselGeminiApiKey(): string {
+  return (
+    process.env.GOOGLE_AI_COUNSEL_API_KEY?.trim()
+    || process.env.GEMINI_COUNSEL_COACH_API_KEY?.trim()
+    || process.env.GOOGLE_AI_API_KEY?.trim()
+    || ''
+  );
 }

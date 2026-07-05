@@ -7,6 +7,7 @@
 // 외부 API 설정 단일 진실 모듈 — 값은 환경변수에서만 읽음 (서버 전용)
 
 import { splitFortunePromptIntoSections } from '../ai-templates/fortune-sections';
+import { getCounselGeminiApiKey } from '../gemma24/counsel-llm-fallback';
 import { LLM_USER_OVERLOAD_MESSAGE } from '../user-messages';
 
 function requireEnv(name: string): string {
@@ -53,12 +54,13 @@ async function callGroqCompletion(
 async function callGeminiCompletion(
   geminiKey: string,
   upstreamBody: Record<string, unknown>,
+  timeoutMs = 600_000,
 ): Promise<{ ok: boolean; status: number; text: string }> {
   const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${geminiKey}` },
     body: JSON.stringify({ model: 'gemini-2.5-flash', ...upstreamBody }),
-    signal: AbortSignal.timeout(600000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
@@ -321,13 +323,17 @@ async function completeWithGroq(upstreamBody: Record<string, unknown>): Promise<
   return '';
 }
 
-async function completeWithGemini(upstreamBody: Record<string, unknown>): Promise<string> {
-  const geminiKey = process.env.GOOGLE_AI_API_KEY ?? '';
+async function completeWithGemini(
+  upstreamBody: Record<string, unknown>,
+  options?: { apiKey?: string; timeoutMs?: number },
+): Promise<string> {
+  const geminiKey = options?.apiKey?.trim() || process.env.GOOGLE_AI_API_KEY || '';
   if (!geminiKey) return '';
-  for (const waitMs of [0, 3000]) {
+  const timeoutMs = options?.timeoutMs ?? 600_000;
+  for (const waitMs of [0, 1500]) {
     if (waitMs > 0) await sleep(waitMs);
     try {
-      const result = await callGeminiCompletion(geminiKey, upstreamBody);
+      const result = await callGeminiCompletion(geminiKey, upstreamBody, timeoutMs);
       if (result.ok && result.text) return result.text;
       if (result.status === 429) {
         console.warn(waitMs === 0 ? 'Gemini 429, retrying in 3s.' : 'Gemini 429 on retry.');
@@ -366,11 +372,16 @@ export async function fetchLlmStream(body: any): Promise<Response> {
 
   const geminiOnly = Boolean(body.geminiOnly);
   const geminiFirst = Boolean(body.geminiFirst);
+  const counselSession = Boolean(body.counselSession);
+  const counselGeminiOpts = counselSession
+    ? { apiKey: getCounselGeminiApiKey(), timeoutMs: 45_000 }
+    : undefined;
+  const gemini = () => completeWithGemini(upstreamBody, counselGeminiOpts);
   draftText = geminiOnly
-    ? await completeWithGemini(upstreamBody)
+    ? await gemini()
     : geminiFirst
-      ? ((await completeWithGemini(upstreamBody)) || (await completeWithGroq(upstreamBody)))
-      : ((await completeWithGroq(upstreamBody)) || (await completeWithGemini(upstreamBody)));
+      ? ((await gemini()) || (await completeWithGroq(upstreamBody)))
+      : ((await completeWithGroq(upstreamBody)) || (await gemini()));
   if (!draftText && GROQ_KEYS.length === 0 && !process.env.GOOGLE_AI_API_KEY) {
     console.error('GOOGLE_AI_API_KEY missing; cannot fall back from Groq.');
   }

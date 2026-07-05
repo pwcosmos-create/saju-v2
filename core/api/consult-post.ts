@@ -1,9 +1,10 @@
 import { fetchLlmStream } from '../config/llm';
-import { tryCouncilCounselReply } from '../gemma24/council-counsel-reply';
+import { tryCouncilCounselReply, type CouncilCounselReply } from '../gemma24/council-counsel-reply';
 import { applyCounselGeminiCoach } from '../gemma24/counsel-gemini-coach';
 import {
   buildGreetingReply,
   isCounselGreetingMessage,
+  isCounselGreetingReply,
 } from '../gemma24/council-counsel-reply';
 import {
   isCounselGeminiOnlyMode,
@@ -29,6 +30,22 @@ function llmCounselFallbackEnabled(): boolean {
 }
 
 const checkConsultRateLimit = makeRateLimiter(20, 60_000);
+
+function isInstantCounselReply(userMessage: string, reply: CouncilCounselReply): boolean {
+  if (isCounselGreetingMessage(userMessage) || isCounselGreetingReply(reply.content)) return true;
+  return reply.cardCount === 0 && reply.draftCardCount === 0 && reply.content.trim().length <= 300;
+}
+
+function counselJsonHeaders(reply: CouncilCounselReply, extra?: Record<string, string>): Record<string, string> {
+  return {
+    'X-Gemma24-Knowledge-Count': String(reply.cardCount),
+    'X-Saju-Council-Badge': reply.draftCardCount > 0 ? 'reviewed' : 'certified',
+    'X-Saju-Counsel-Mode': reply.mode,
+    ...(reply.draftCardCount > 0 ? { 'X-Saju-Card-Draft-Count': String(reply.draftCardCount) } : {}),
+    ...(reply.draftCardCount > 0 ? { 'X-Saju-Card-Request-Queued': '1' } : {}),
+    ...extra,
+  };
+}
 
 function extractCompletionText(json: unknown): string {
   const j = json as {
@@ -138,6 +155,12 @@ ${compareSajuContext}
     });
 
     if (cardReply) {
+      if (isInstantCounselReply(lastUserMessage, cardReply)) {
+        return Response.json(
+          { content: cardReply.content },
+          { headers: counselJsonHeaders(cardReply) },
+        );
+      }
       const finalReply = await applyCounselGeminiCoach({
         reply: cardReply,
         userMessage: lastUserMessage,
@@ -164,24 +187,14 @@ ${compareSajuContext}
     }
 
     if (isCounselGreetingMessage(lastUserMessage)) {
-      const greetingReply = await applyCounselGeminiCoach({
-        reply: {
-          content: buildGreetingReply(counselorName),
-          cardCount: 0,
-          draftCardCount: 0,
-          mode: 'council-counsel',
-        },
-        userMessage: lastUserMessage,
-        counselorName,
-      });
+      const greetingContent = buildGreetingReply(counselorName);
       return Response.json(
-        { content: greetingReply.content },
+        { content: greetingContent },
         {
           headers: {
             'X-Gemma24-Knowledge-Count': '0',
             'X-Saju-Council-Badge': 'certified',
             'X-Saju-Counsel-Mode': 'council-counsel',
-            ...(greetingReply.geminiCoached ? { 'X-Saju-Counsel-Coached': '1' } : {}),
           },
         },
       );
@@ -265,6 +278,7 @@ ${sajuContext}`;
     /** 심층 상담 — Gemini 2.5 Flash 전용 (Groq/Llama 폴백 없음) */
     geminiFirst: true,
     geminiOnly: true,
+    counselSession: Boolean(sessionStartedAt),
   });
 
   if (!upstream.ok) {

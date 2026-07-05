@@ -22,9 +22,15 @@ function hasLlmApiKeys(): boolean {
   );
 }
 
+/** 유료 상담 세션·GEMINI_ONLY — 카드 조합 대신 Gemini 2.5 Flash로 답변 */
+export function useCounselGeminiLlm(sessionStartedAt: number | null): boolean {
+  if (isCounselGeminiOnlyMode()) return true;
+  return sessionStartedAt != null && Number.isFinite(sessionStartedAt) && sessionStartedAt > 0;
+}
+
 /** 카드·엔진으로 답 못 줄 때 Groq/Gemini 사용 여부 */
-export function shouldUseCounselLlmFallback(): boolean {
-  if (isCounselGeminiOnlyMode()) {
+export function shouldUseCounselLlmFallback(sessionStartedAt: number | null = null): boolean {
+  if (useCounselGeminiLlm(sessionStartedAt)) {
     return Boolean(getCounselGeminiApiKey());
   }
   if (process.env.GEMMA24_COUNSEL_CARD_ONLY === '1') return false;

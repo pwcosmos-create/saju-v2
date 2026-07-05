@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { postConsult, type ConsultRequestBody } from '../../../core/api/consult-post';
 import { tossBridgeHtml } from '../../../core/http-client/toss-bridge-html';
 
-/** 토스 WebView: AI 심층 상담 — 카드 우선 postConsult (geminiOnly 강제 없음) */
+/** 토스 WebView: AI 심층 상담 — 결제 세션은 Gemini 2.5 Flash (카드 RAG 포함) */
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
   let body: ConsultRequestBody;

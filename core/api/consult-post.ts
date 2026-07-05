@@ -7,8 +7,9 @@ import {
   isCounselGreetingReply,
 } from '../counsel-greeting';
 import {
-  isCounselGeminiOnlyMode,
+  getCounselGeminiApiKey,
   shouldUseCounselLlmFallback,
+  useCounselGeminiLlm,
 } from '../gemma24/counsel-llm-fallback';
 import {
   formatDailyFortuneCounselForLlm,
@@ -25,8 +26,8 @@ import {
   isCounselSessionExpired,
 } from '../counsel-session';
 
-function llmCounselFallbackEnabled(): boolean {
-  return shouldUseCounselLlmFallback();
+function llmCounselFallbackEnabled(sessionStartedAt: number | null): boolean {
+  return shouldUseCounselLlmFallback(sessionStartedAt);
 }
 
 const checkConsultRateLimit = makeRateLimiter(20, 60_000);
@@ -158,7 +159,7 @@ ${compareSajuContext}
       ? body.dailyFortune
       : null;
 
-  const geminiOnlyCounsel = isCounselGeminiOnlyMode();
+  const geminiOnlyCounsel = useCounselGeminiLlm(sessionStartedAt);
 
   if (!geminiOnlyCounsel) {
     const cardReply = await tryCouncilCounselReply(sajuContext, lastUserMessage, {
@@ -202,9 +203,14 @@ ${compareSajuContext}
 
   }
 
-  if (!llmCounselFallbackEnabled()) {
+  if (!llmCounselFallbackEnabled(sessionStartedAt)) {
+    const missingKey = useCounselGeminiLlm(sessionStartedAt) && !getCounselGeminiApiKey();
     return Response.json(
-      { content: SAJU_WAITING_LABEL },
+      {
+        content: missingKey
+          ? '상담 AI(Gemini) 키가 설정되지 않았습니다. 잠시 후 다시 시도해 주세요.'
+          : SAJU_WAITING_LABEL,
+      },
       {
         headers: {
           'X-Gemma24-Knowledge-Count': '0',
@@ -215,13 +221,11 @@ ${compareSajuContext}
     );
   }
 
-  const cardKnowledge = geminiOnlyCounsel
-    ? { systemAppend: '', badge: 'none' as const, cardCount: 0 }
-    : buildConsultCouncilKnowledgeResult(
-      sajuContext,
-      lastUserMessage,
-      chatMode === 'compatibility' ? compareSajuContext : '',
-    );
+  const cardKnowledge = buildConsultCouncilKnowledgeResult(
+    sajuContext,
+    lastUserMessage,
+    chatMode === 'compatibility' ? compareSajuContext : '',
+  );
 
   let dailyFortuneBlock = '';
   if (geminiOnlyCounsel) {
@@ -234,7 +238,7 @@ ${compareSajuContext}
     }
   }
 
-  const counselModeHeader = geminiOnlyCounsel ? 'gemini' : 'llm';
+  const counselModeHeader = 'gemini';
 
   const system = `【오늘 날짜 및 시간】
 - 현재 날짜·시각(KST): ${todayStr}

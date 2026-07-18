@@ -251,7 +251,41 @@ export function normalizeFortuneLine(line: string): string {
     .trimEnd();
 }
 
-/** 본문 전역 정리 (면책 중복·빈 격국 괄호·←) */
+const PARTICLE_RULES = [
+  { pattern: /이\(가\)|가\(이\)/g, withBatchim: '이', noBatchim: '가' },
+  { pattern: /을\(를\)|를\(을\)/g, withBatchim: '을', noBatchim: '를' },
+  { pattern: /은\(는\)|는\(은\)/g, withBatchim: '은', noBatchim: '는' },
+  { pattern: /와\(과\)|과\(와\)/g, withBatchim: '과', noBatchim: '와' },
+] as const;
+
+export function resolveKoreanParticles(text: string): string {
+  let result = text;
+  
+  for (const rule of PARTICLE_RULES) {
+    result = result.replace(new RegExp("([가-힣a-zA-Z0-9\\s()（）\\u4e00-\\u9fff]+)(" + rule.pattern.source + ")", "g"), (match, preceding) => {
+      const koChars = preceding.match(/[가-힣]/g);
+      if (!koChars || koChars.length === 0) return match;
+      const lastKo = koChars[koChars.length - 1];
+      const code = lastKo.charCodeAt(0) - 0xAC00;
+      const hasJong = code % 28 !== 0;
+      return preceding + (hasJong ? rule.withBatchim : rule.noBatchim);
+    });
+  }
+
+  result = result.replace(/([가-힣a-zA-Z0-9\s()（）\u4e00-\u9fff]+)(으로\(로\)|로\(으로\))/g, (match, preceding) => {
+    const koChars = preceding.match(/[가-힣]/g);
+    if (!koChars || koChars.length === 0) return match;
+    const lastKo = koChars[koChars.length - 1];
+    const code = lastKo.charCodeAt(0) - 0xAC00;
+    const jong = code % 28;
+    const useEuro = jong !== 0 && jong !== 8;
+    return preceding + (useEuro ? '으로' : '로');
+  });
+
+  return result;
+}
+
+/** 본문 전역 정리 (면책 중복·빈 격국 괄호·←·조사 보정) */
 export function polishFortuneText(text: string): string {
   let out = stripFortuneFooters(text);
   out = out
@@ -276,8 +310,10 @@ export function polishFortuneText(text: string): string {
       return `— ${stem} 일간의 강점을 살리되, 용신 ${label}을(를) 일상 습관으로 옮기는 것이 핵심입니다.`;
     },
   );
+  out = resolveKoreanParticles(out);
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
+
 
 /** 중복 면책·푸터 제거 */
 export function stripFortuneFooters(text: string): string {

@@ -2,11 +2,28 @@
 
 import React, { useEffect, useRef } from 'react';
 
-interface KakaoAdProps {
-  className?: string;
+// Expand Window interface locally for Kakao AdFit
+declare global {
+  interface Window {
+    adfit?: {
+      destroy: (unit: string) => void;
+    };
+  }
 }
 
-export default function KakaoAd({ className }: KakaoAdProps) {
+interface KakaoAdProps {
+  className?: string;
+  unit?: string;
+  width?: number | string;
+  height?: number | string;
+}
+
+export default function KakaoAd({
+  className,
+  unit = 'DAN-JQne2FQbiyiDWP3v',
+  width = 300,
+  height = 250,
+}: KakaoAdProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
@@ -22,9 +39,9 @@ export default function KakaoAd({ className }: KakaoAdProps) {
     const ins = document.createElement('ins');
     ins.className = 'kakao_ad_area';
     ins.style.display = 'none';
-    ins.setAttribute('data-ad-unit', 'DAN-JQne2FQbiyiDWP3v');
-    ins.setAttribute('data-ad-width', '300');
-    ins.setAttribute('data-ad-height', '250');
+    ins.setAttribute('data-ad-unit', unit);
+    ins.setAttribute('data-ad-width', width.toString());
+    ins.setAttribute('data-ad-height', height.toString());
 
     const script = document.createElement('script');
     script.type = 'text/javascript';
@@ -38,10 +55,17 @@ export default function KakaoAd({ className }: KakaoAdProps) {
       if (container) {
         container.innerHTML = '';
       }
+      if (typeof window !== 'undefined' && window.adfit && typeof window.adfit.destroy === 'function') {
+        window.adfit.destroy(unit);
+      }
     };
-  }, [APPS_IN_TOSS]);
+  }, [APPS_IN_TOSS, unit, width, height]);
 
   if (APPS_IN_TOSS) return null;
+
+  const widthNum = Number(width);
+  const isNumeric = !isNaN(widthNum);
+  const cssHeight = typeof height === 'number' ? `${height}px` : (isNaN(Number(height)) ? height : `${height}px`);
 
   return (
     <div
@@ -53,7 +77,7 @@ export default function KakaoAd({ className }: KakaoAdProps) {
         justifyContent: 'center',
         margin: '24px auto',
         padding: '16px 12px 12px 12px',
-        maxWidth: 340,
+        maxWidth: isNumeric ? `${widthNum + 40}px` : width,
         borderRadius: 20,
         background: 'rgba(255, 255, 255, 0.03)',
         backdropFilter: 'blur(10px)',
@@ -77,8 +101,8 @@ export default function KakaoAd({ className }: KakaoAdProps) {
       <div
         ref={containerRef}
         style={{
-          width: 300,
-          height: 250,
+          width: isNumeric ? `${widthNum}px` : width,
+          height: cssHeight,
           background: 'rgba(0, 0, 0, 0.2)',
           display: 'flex',
           alignItems: 'center',
@@ -88,3 +112,4 @@ export default function KakaoAd({ className }: KakaoAdProps) {
     </div>
   );
 }
+

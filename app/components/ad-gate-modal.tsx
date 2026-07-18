@@ -2,6 +2,15 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
+// Expand Window interface locally for Kakao AdFit
+declare global {
+  interface Window {
+    adfit?: {
+      destroy: (unit: string) => void;
+    };
+  }
+}
+
 interface AdGateModalProps {
   /** 모달이 열려있는지 여부 */
   open: boolean;
@@ -56,6 +65,9 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
       setReady(false);
       adLoadedRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
+      if (typeof window !== 'undefined' && window.adfit && typeof window.adfit.destroy === 'function') {
+        window.adfit.destroy(AD_UNIT);
+      }
       return;
     }
 
@@ -82,6 +94,9 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (typeof window !== 'undefined' && window.adfit && typeof window.adfit.destroy === 'function') {
+        window.adfit.destroy(AD_UNIT);
+      }
     };
   }, [open, injectAd]);
 

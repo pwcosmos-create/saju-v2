@@ -12,6 +12,8 @@ import { COUNSELOR_NAMES } from '../../core/counselor-config';
 import { useTts } from './use-tts';
 import { useStt } from './use-stt';
 import {
+  COUNSEL_LEAVE_CONFIRM_MESSAGE,
+  COUNSEL_LEAVE_SESSION_NOTICE,
   COUNSEL_SESSION_EXPIRED_MESSAGE,
   counselSessionLimitMs,
   counselSessionLimitSecs,
@@ -21,17 +23,20 @@ import {
 import { isSajuWaitingMessage } from '../../core/user-messages';
 import { useCounselChat } from './use-counsel-chat';
 import { renderCounselContent } from './render-counsel-content';
+import PaymentModal from '../components/payment-modal';
+import { restorePendingCounselPurchases } from '../../lib/toss-counsel-iap';
+import { COUNSEL_IAP_MINUTES } from '../../core/counsel-iap';
+import { buildGreetingReply, isCounselTtsReadRequest } from '../../core/counsel-greeting';
+
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
 function pickCounselor(): string {
   return COUNSELOR_NAMES[Math.floor(Math.random() * COUNSELOR_NAMES.length)];
 }
 
-const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
-
-function buildIntro(counselor: string, result: SajuResult): string {
-  return (
-    `${INTRO_PREFIX}.\n이번 세션의 배정 상담사는 「${counselor}」입니다.\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n한 세션당 상담 시간은 10분입니다.\n\n사주나 운세에 관해 궁금한 점을 편하게 물어보세요.`
-  );
+function buildIntro(counselor: string, result: SajuResult, sessionMinutes: number): string {
+  const greeting = buildGreetingReply(counselor);
+  return `${greeting}\n\n${result.input.year}년생 ${result.input.gender}성분의 사주를 분석했습니다.\n이번 상담 시간은 ${sessionMinutes}분입니다.`;
 }
 
 export default function CounselPanel({
@@ -42,10 +47,12 @@ export default function CounselPanel({
   aiSummaryReady: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [purchasedMinutes, setPurchasedMinutes] = useState(0);
   const [input, setInput] = useState('');
   const [counselor] = useState(pickCounselor);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState(counselSessionLimitSecs());
+  const [timeLeft, setTimeLeft] = useState(counselSessionLimitSecs(purchasedMinutes));
   const [sessionExpired, setSessionExpired] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,16 +62,53 @@ export default function CounselPanel({
     aiSummaryReady,
     counselor,
     sessionStartedAt,
+    purchasedMinutes || COUNSEL_IAP_MINUTES,
   );
   const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
 
+  useEffect(() => {
+    if (!APPS_IN_TOSS || !result) return;
+    void restorePendingCounselPurchases((total) => {
+      if (total <= 0) return;
+      setPurchasedMinutes(total);
+      setSessionStartedAt(Date.now());
+      setSessionExpired(false);
+      setTimeLeft(counselSessionLimitSecs(total));
+      setOpen(true);
+    });
+  }, [result]);
+
   /** 현재 TTS로 읽히는 메시지 콘텐츠 추적 (버블 강조 용) */
   const [speakingContent, setSpeakingContent] = useState<string | null>(null);
+  const [ttsHintDismissed, setTtsHintDismissed] = useState(false);
+  const lastAutoSpokenRef = useRef('');
 
   // playing이 끌리면 강조 해제
   useEffect(() => {
     if (!playing) setSpeakingContent(null);
   }, [playing]);
+
+  useEffect(() => {
+    if (!open) {
+      lastAutoSpokenRef.current = '';
+      setTtsHintDismissed(false);
+      return;
+    }
+    void primeAudio();
+  }, [open, primeAudio]);
+
+  /** AI 답변(인트로 포함) — Gemini TTS 자동 읽기 */
+  useEffect(() => {
+    if (!open || !enabled || loading) return;
+    const last = msgs[msgs.length - 1];
+    if (last?.role !== 'assistant') return;
+    const content = last.content.trim();
+    if (content.length < 6 || isSajuWaitingMessage(content)) return;
+    if (content === lastAutoSpokenRef.current) return;
+    lastAutoSpokenRef.current = content;
+    setSpeakingContent(content);
+    void primeAudio().then(() => speak(content));
+  }, [msgs, open, enabled, loading, speak, primeAudio]);
 
   /** STT 콜백에서 안전하게 호출하기 위한 ref (클로저 스테일 방지) */
   const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => { });
@@ -143,11 +187,25 @@ export default function CounselPanel({
   }, [open, stop]);
 
 
+  /** 상담 열림 시 뒤 페이지 스크롤·하단 노출 차단 */
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [open]);
+
+
   useEffect(() => {
     if (!aiSummaryReady) {
-      stop(); reset(); setOpen(false);
+      stop(); reset(); setOpen(false); setShowPaymentModal(false);
       setSessionStartedAt(null);
-      setTimeLeft(counselSessionLimitSecs());
+      setTimeLeft(counselSessionLimitSecs(purchasedMinutes));
       setSessionExpired(false);
     }
   }, [aiSummaryReady, reset, stop]);
@@ -155,23 +213,17 @@ export default function CounselPanel({
   useEffect(() => {
     if (!open) {
       setSessionStartedAt(null);
-      setTimeLeft(counselSessionLimitSecs());
+      setTimeLeft(counselSessionLimitSecs(purchasedMinutes || COUNSEL_IAP_MINUTES));
       setSessionExpired(false);
-      return;
     }
-    if (aiSummaryReady && !sessionStartedAt) {
-      setSessionStartedAt(Date.now());
-      setSessionExpired(false);
-      setTimeLeft(counselSessionLimitSecs());
-    }
-  }, [open, aiSummaryReady, sessionStartedAt]);
+  }, [open, purchasedMinutes]);
 
   useEffect(() => {
     if (!open || !sessionStartedAt || sessionExpired) return;
     const timer = window.setInterval(() => {
       const remainingSecs = Math.max(
         0,
-        Math.floor((sessionStartedAt + counselSessionLimitMs() - Date.now()) / 1000),
+        Math.floor((sessionStartedAt + counselSessionLimitMs(purchasedMinutes) - Date.now()) / 1000),
       );
       setTimeLeft(remainingSecs);
       if (remainingSecs <= 0) {
@@ -180,13 +232,16 @@ export default function CounselPanel({
       }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [open, sessionStartedAt, sessionExpired]);
+  }, [open, sessionStartedAt, sessionExpired, purchasedMinutes]);
 
   useEffect(() => {
     if (open && result && msgs.length === 0) {
-      applyMsgs([{ role: 'assistant', content: buildIntro(counselor, result) }]);
+      applyMsgs([{
+        role: 'assistant',
+        content: buildIntro(counselor, result, purchasedMinutes || COUNSEL_IAP_MINUTES),
+      }]);
     }
-  }, [open, result, counselor, msgs.length, applyMsgs]);
+  }, [open, result, counselor, msgs.length, applyMsgs, purchasedMinutes]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -202,20 +257,38 @@ export default function CounselPanel({
   /** 전송 공통 로직 — 텍스트 직접 받음 (input state 타이밍 무관) */
   async function handleSendWithText(trimmed: string) {
     if (!trimmed || !result || !aiSummaryReady || loading || sessionExpired) return;
-    if (sessionStartedAt && isCounselSessionExpired(sessionStartedAt)) {
+    if (sessionStartedAt && isCounselSessionExpired(sessionStartedAt, purchasedMinutes)) {
       setSessionExpired(true);
       return;
     }
+
+    if (isCounselTtsReadRequest(trimmed)) {
+      const lastAssistant = [...msgs].reverse().find(
+        (m) => m.role === 'assistant' && m.content.trim().length > 6 && !isSajuWaitingMessage(m.content),
+      );
+      stop();
+      setInput('');
+      if (!lastAssistant) {
+        applyMsgs([
+          ...msgs,
+          { role: 'user', content: trimmed },
+          { role: 'assistant', content: '먼저 상담 답변이 있어야 음성으로 들려 드릴 수 있어요. 질문을 입력해 주세요.' },
+        ]);
+        return;
+      }
+      applyMsgs([...msgs, { role: 'user', content: trimmed }]);
+      setEnabled(true);
+      setTtsHintDismissed(true);
+      setSpeakingContent(lastAssistant.content);
+      await primeAudio();
+      void speak(lastAssistant.content, { manual: true });
+      return;
+    }
+
     stop();
     setInput('');
-    const responseContent = await send(trimmed);
-    if (enabled && responseContent) {
-      lastInputViaVoiceRef.current = false;
-      setSpeakingContent(responseContent);
-      void speak(responseContent);
-    } else {
-      lastInputViaVoiceRef.current = false;
-    }
+    await send(trimmed);
+    lastInputViaVoiceRef.current = false;
     inputRef.current?.focus();
   }
 
@@ -238,10 +311,69 @@ export default function CounselPanel({
     }
   }
 
+  function openExtendPayment() {
+    setShowPaymentModal(true);
+  }
+
+  function attemptCloseCounselPanel() {
+    if (sessionStartedAt && !sessionExpired && timeLeft > 0) {
+      if (!window.confirm(COUNSEL_LEAVE_CONFIRM_MESSAGE)) return;
+    }
+    stop();
+    setOpen(false);
+  }
+
+  function handlePurchaseSuccess(_granted: number) {
+    const minutesGranted = COUNSEL_IAP_MINUTES;
+    if (open && sessionStartedAt) {
+      if (sessionExpired || timeLeft <= 0) {
+        setSessionStartedAt(Date.now());
+        setPurchasedMinutes(minutesGranted);
+        setTimeLeft(counselSessionLimitSecs(minutesGranted));
+      } else {
+        const nextMinutes = (purchasedMinutes || COUNSEL_IAP_MINUTES) + minutesGranted;
+        setPurchasedMinutes(nextMinutes);
+        setTimeLeft(Math.max(
+          0,
+          Math.floor((sessionStartedAt + counselSessionLimitMs(nextMinutes) - Date.now()) / 1000),
+        ));
+      }
+      setSessionExpired(false);
+    } else {
+      setPurchasedMinutes(minutesGranted);
+      setSessionStartedAt(Date.now());
+      setSessionExpired(false);
+      setTimeLeft(counselSessionLimitSecs(minutesGranted));
+      setOpen(true);
+    }
+    setShowPaymentModal(false);
+  }
+
+  const paymentMode = sessionStartedAt ? 'extend' : 'purchase';
   const GOLD = '#e8c97e';
   const PURPLE = '#8b6fc6';
-  const panelBg = 'rgba(14,11,28,0.97)';
+  const panelBg = '#0e0b1c';
   const borderColor = 'rgba(255,255,255,0.1)';
+
+  function toggleTts() {
+    const turningOn = !enabled;
+    setEnabled(turningOn);
+    if (turningOn) {
+      setTtsHintDismissed(true);
+      void primeAudio().then(() => {
+        const lastAssistant = [...msgs].reverse().find(
+          (m) => m.role === 'assistant' && m.content.trim().length > 6 && !isSajuWaitingMessage(m.content),
+        );
+        if (lastAssistant && lastAssistant.content !== lastAutoSpokenRef.current) {
+          lastAutoSpokenRef.current = lastAssistant.content;
+          setSpeakingContent(lastAssistant.content);
+          void speak(lastAssistant.content, { manual: true });
+        }
+      });
+    } else {
+      stop();
+    }
+  }
 
   function VoiceBtn() {
     if (playing) {
@@ -254,14 +386,14 @@ export default function CounselPanel({
       );
     }
     return (
-      <button id="counsel-tts-toggle" onClick={() => setEnabled(v => !v)} title={enabled ? '음성 끄기' : '음성 켜기'} style={{
+      <button id="counsel-tts-toggle" onClick={toggleTts} title={enabled ? '음성 끄기' : '음성 켜기'} style={{
         background: enabled ? 'rgba(74,158,255,.15)' : 'rgba(255,255,255,.06)',
         border: `1px solid ${enabled ? 'rgba(74,158,255,.4)' : 'rgba(255,255,255,.15)'}`,
         borderRadius: 8, padding: '3px 10px',
-        color: enabled ? '#7bbfff' : 'rgba(255,255,255,.35)',
+        color: enabled ? '#7bbfff' : 'rgba(255,255,255,.55)',
         cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
       }}>
-        {enabled ? '🔊 음성' : '🔇 음소거'}
+        {enabled ? '🔊 음성' : '🔊 음성 켜기'}
       </button>
     );
   }
@@ -270,7 +402,7 @@ export default function CounselPanel({
   const FabButton = (
     <button
       id="counsel-panel-fab"
-      onClick={() => setOpen(true)}
+      onClick={() => setShowPaymentModal(true)}
       aria-label="AI 심층 상담 열기"
       style={{
         position: 'fixed',
@@ -305,33 +437,69 @@ export default function CounselPanel({
         0%, 100% { box-shadow: 0 0 10px rgba(139,111,198,.25), inset 0 0 6px rgba(139,111,198,.06); }
         50%       { box-shadow: 0 0 22px rgba(139,111,198,.55), inset 0 0 12px rgba(139,111,198,.15); }
       }
+      @media (max-width: 520px) {
+        #counsel-panel {
+          inset: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          height: 100dvh !important;
+          min-height: 100dvh !important;
+          margin: 0 !important;
+          border-radius: 0 !important;
+          border-left: none !important;
+          border-right: none !important;
+        }
+      }
     `}</style>
+    {open && (
+      <div
+        id="counsel-panel-backdrop"
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9099,
+          background: panelBg,
+        }}
+      />
+    )}
     <div
       id="counsel-panel"
       role="dialog"
       aria-label="AI 심층 상담"
       style={{
         position: 'fixed',
-        /* 모바일: 거의 전체화면, 데스크톱: 우측 고정 패널 */
-        top: 'env(safe-area-inset-top, 0px)',
-        bottom: 'env(safe-area-inset-bottom, 0px)',
-        right: 0,
-        left: 0,
-        /* 데스크톱에서만 작은 패널 */
-        maxWidth: 'min(420px, 100vw)',
-        marginLeft: 'auto',
-        marginRight: 0,
-        /* 데스크톱 여백 */
-        borderRadius: 'clamp(0px, calc((100vw - 480px) * 9999), 20px)',
-        margin: 'clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 80px)',
+        ...(APPS_IN_TOSS
+          ? {
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              width: '100%',
+              maxWidth: '100%',
+              height: '100dvh',
+              minHeight: '100dvh',
+              margin: 0,
+              borderRadius: 0,
+            }
+          : {
+              top: 'env(safe-area-inset-top, 0px)',
+              bottom: 'env(safe-area-inset-bottom, 0px)',
+              right: 0,
+              left: 0,
+              maxWidth: 'min(420px, 100vw)',
+              marginLeft: 'auto',
+              marginRight: 0,
+              borderRadius: 'clamp(0px, calc((100vw - 480px) * 9999), 20px)',
+              margin: 'clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 12px) clamp(0px, calc((100vw - 480px) * 9999), 80px)',
+            }),
         zIndex: 9100,
         display: 'flex',
         flexDirection: 'column',
         background: panelBg,
-        border: `1px solid ${borderColor}`,
-        boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
+        border: APPS_IN_TOSS ? 'none' : `1px solid ${borderColor}`,
+        boxShadow: APPS_IN_TOSS ? 'none' : '0 8px 40px rgba(0,0,0,0.7)',
         overflow: 'hidden',
-        backdropFilter: 'blur(24px)',
       }}
     >
       {/* ── 헤더 ── */}
@@ -350,6 +518,30 @@ export default function CounselPanel({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <VoiceBtn />
+          {sessionStartedAt && (
+            <button
+              type="button"
+              onClick={openExtendPayment}
+              title="상담 시간 연장"
+              style={{
+                background: sessionExpired
+                  ? 'linear-gradient(90deg, #7c4fc4, #3a7bd5)'
+                  : 'rgba(255,255,255,.08)',
+                border: sessionExpired
+                  ? 'none'
+                  : `1px solid ${borderColor}`,
+                borderRadius: 8,
+                padding: '4px 10px',
+                color: sessionExpired ? '#fff' : 'rgba(255,255,255,.65)',
+                fontSize: '.68rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ⏱ {sessionExpired ? '연장하기' : '시간 추가'}
+            </button>
+          )}
           {sessionStartedAt && !sessionExpired && (
             <span style={{
               fontSize: '.68rem',
@@ -367,7 +559,7 @@ export default function CounselPanel({
           }}>{counselor}</span>
           <button
             id="counsel-panel-close"
-            onClick={() => { stop(); setOpen(false); }}
+            onClick={attemptCloseCounselPanel}
             aria-label="닫기"
             style={{
               background: 'rgba(255,255,255,.08)', border: 'none',
@@ -378,6 +570,60 @@ export default function CounselPanel({
           >✕</button>
         </div>
       </div>
+
+      {aiSummaryReady && sessionStartedAt && !enabled && !ttsHintDismissed && (
+        <div
+          role="note"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            margin: '0 12px',
+            marginTop: 10,
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: 'rgba(74,158,255,.1)',
+            border: '1px solid rgba(74,158,255,.25)',
+            flexShrink: 0,
+          }}
+        >
+          <button
+            type="button"
+            onClick={toggleTts}
+            style={{
+              flex: 1,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              textAlign: 'left',
+              color: 'rgba(200,225,255,.95)',
+              fontSize: '.78rem',
+              lineHeight: 1.45,
+              cursor: 'pointer',
+            }}
+          >
+            🔊 누르면 답변을 음성으로 들을 수 있어요
+          </button>
+          <button
+            type="button"
+            onClick={() => setTtsHintDismissed(true)}
+            aria-label="안내 닫기"
+            style={{
+              flexShrink: 0,
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255,255,255,.45)',
+              cursor: 'pointer',
+              fontSize: '.9rem',
+              lineHeight: 1,
+              padding: 4,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── guard ── */}
       {!aiSummaryReady && (
@@ -397,6 +643,7 @@ export default function CounselPanel({
       {aiSummaryReady && (
         <div style={{
           flex: 1,
+          minHeight: 0,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           padding: '12px 14px',
@@ -445,7 +692,9 @@ export default function CounselPanel({
                         <span style={{ animation: 'dot-blink 1.2s .0s infinite', display: 'inline-block' }}>●</span>
                         <span style={{ animation: 'dot-blink 1.2s .2s infinite', display: 'inline-block' }}>●</span>
                         <span style={{ animation: 'dot-blink 1.2s .4s infinite', display: 'inline-block' }}>●</span>
-                        <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>잠시만 기다리세요.. 확인중입니다</span>
+                        <span style={{ opacity: 0.6, fontSize: '.78rem', marginLeft: 4 }}>
+                          {msg.thought || '잠시만 기다리세요.. 확인중입니다'}
+                        </span>
                       </span>
                       {/* 후원 안내 배너 — 로딩 중 노출 */}
                       {false && (
@@ -477,6 +726,9 @@ export default function CounselPanel({
                                 fontSize: '.72rem',
                                 fontWeight: 700,
                                 textDecoration: 'none',
+                                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                                // @ts-ignore
+                                style: { textDecoration: 'none' }
                               }}
                             >
                               💸 토스 후원
@@ -505,6 +757,18 @@ export default function CounselPanel({
                     </div>
                   ) : (
                     <>
+                      {msg.thought && (
+                        <div style={{
+                          fontSize: '.78rem',
+                          color: 'rgba(255,255,255,.45)',
+                          fontStyle: 'italic',
+                          marginBottom: 8,
+                          paddingBottom: 6,
+                          borderBottom: '1px dashed rgba(255,255,255,.1)'
+                        }}>
+                          💡 생각 과정: {msg.thought}
+                        </div>
+                      )}
                       {isUser ? msg.content : renderCounselContent(msg.content)}
                       {!isUser && !isError && msg.content.length > 10 && (
                         <button
@@ -514,7 +778,7 @@ export default function CounselPanel({
                             } else {
                               void primeAudio().then(() => {
                                 setSpeakingContent(msg.content);
-                                void speak(msg.content);
+                                void speak(msg.content, { manual: true });
                               });
                             }
                           }}
@@ -544,23 +808,35 @@ export default function CounselPanel({
       {aiSummaryReady && (
         <div style={{
           padding: '10px 12px',
-          paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))',
+          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
           borderTop: `1px solid ${borderColor}`,
           display: 'flex',
           flexDirection: 'column',
           gap: 8,
           flexShrink: 0,
           background: panelBg,
+          boxShadow: '0 -8px 24px rgba(0,0,0,0.35)',
         }}>
           {sessionStartedAt && !loading && !sessionExpired && (
+            <>
             <div style={{
               fontSize: '.72rem',
               color: timeLeft <= 60 ? '#ff8a8a' : 'rgba(255,255,255,.45)',
               textAlign: 'center',
               fontVariantNumeric: 'tabular-nums',
             }}>
-              남은 상담 시간 {formatCounselTimeLeft(timeLeft)} (세션 10분)
+              남은 상담 시간 {formatCounselTimeLeft(timeLeft)} (세션 {purchasedMinutes || COUNSEL_IAP_MINUTES}분)
             </div>
+            <div style={{
+              fontSize: '.7rem',
+              color: 'rgba(255,200,120,.85)',
+              textAlign: 'center',
+              lineHeight: 1.5,
+              padding: '0 4px',
+            }}>
+              ⚠️ {COUNSEL_LEAVE_SESSION_NOTICE}
+            </div>
+            </>
           )}
           {sessionExpired && (
             <div style={{
@@ -572,6 +848,26 @@ export default function CounselPanel({
               {COUNSEL_SESSION_EXPIRED_MESSAGE}
             </div>
           )}
+          {sessionExpired ? (
+            <button
+              type="button"
+              onClick={openExtendPayment}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: 10,
+                border: 'none',
+                background: 'linear-gradient(135deg, #7c4fc4, #3a7bd5)',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: '.95rem',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(124,79,196,0.35)',
+              }}
+            >
+              ⏱ 시간 연장하고 대화 이어가기
+            </button>
+          ) : (
           <div style={{ display: 'flex', gap: 8 }}>
           {/* 마이크 버튼 — STT 지원 브라우저에서만 표시 */}
           {sttSupported && (
@@ -615,7 +911,7 @@ export default function CounselPanel({
             onKeyDown={handleKeyDown}
             placeholder={
               sessionExpired
-                ? '상담 제한 시간(10분)이 종료되었습니다.'
+                ? '시간 연장 후 대화를 이어갈 수 있어요.'
                 : (listening ? '듣는 중…' : '질문을 입력하세요…')
             }
             disabled={loading || sessionExpired}
@@ -656,6 +952,7 @@ export default function CounselPanel({
             }}
           >전송</button>
           </div>
+          )}
         </div>
       )}
 
@@ -677,6 +974,12 @@ export default function CounselPanel({
     <>
       {!open && result && FabButton}
       {open && Panel}
+      <PaymentModal
+        open={showPaymentModal}
+        mode={paymentMode}
+        onClose={() => setShowPaymentModal(false)}
+        onSuccess={handlePurchaseSuccess}
+      />
     </>
   );
 }

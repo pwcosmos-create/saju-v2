@@ -41,6 +41,12 @@ import {
 import { fetchStream } from '../../core/http-client/stream-fetcher';
 import { dailyFortune } from '../../core/daily-fortune';
 import type { DailyFortuneResult } from '../../core/daily-fortune';
+import {
+  buildDailyLuckyNumbersLines,
+  parseKstDateString,
+  STEM_KO_LABELS,
+  YONGSIN_ELEM_CHARS,
+} from '../../core/daily-fortune/lucky-numbers';
 import { calcStrength, getSipsin, classifyElements } from '../../core/daily-fortune/classifier';
 import { buildMonthlyBriefs } from '../../core/daily-fortune/monthly-brief';
 import type { MonthlyBrief } from '../../core/daily-fortune/monthly-brief';
@@ -48,6 +54,7 @@ import type { OhaengResult } from '../../core/pillar-calc/five-phase-breakdown';
 import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
 import { preloadSajuRewardedAd, showSajuRewardedAd } from '../../lib/toss-rewarded-ad';
+import CounselPanel from '../counsel/CounselPanel';
 
 // 음력 변환 (클라이언트 전용)
 type MsLib = { lunarToSolar: (y:number,m:number,d:number,leap:boolean)=>{year:number,month:number,day:number} };
@@ -946,7 +953,7 @@ export default function Home() {
 
           <PillarGrid pillars={result.pillars} />
           <ScoreCards ds={ds} />
-          {fortuneResult && <DailyFortuneCard fortune={fortuneResult} />}
+          {fortuneResult && <DailyFortuneCard fortune={fortuneResult} dayStemIdx={ds} />}
           {dp&&<IljooCard dp={dp} yearBranch={result.pillars[0]?.b ?? 0} />}
           <OhaengCard ohaeng={result.ohaeng} />
           {!APPS_IN_TOSS && <KakaoAd />}
@@ -1085,6 +1092,10 @@ export default function Home() {
           <a href="/privacy" style={{ color:'var(--muted)', textDecoration:'underline' }}>개인정보처리방침</a>
         </p>
       </footer>
+      <CounselPanel
+        result={result}
+        aiSummaryReady={APPS_IN_TOSS ? Boolean(result) : aiFortuneComplete}
+      />
       </div>{/* /z-index wrapper */}
     </div>
   );
@@ -1193,7 +1204,7 @@ function OhaengCard({ ohaeng }: { ohaeng:OhaengResult }) {
   );
 }
 
-function DailyFortuneCard({ fortune }: { fortune: DailyFortuneResult }) {
+function DailyFortuneCard({ fortune, dayStemIdx }: { fortune: DailyFortuneResult; dayStemIdx: number }) {
   const levelColors: Record<string, string> = {
     '매우 좋음': '#4cbe82', '좋음': '#82d9a8', '보통': '#e8c46a', '주의': '#e09050', '매우 주의': '#e05555',
   };
@@ -1203,6 +1214,11 @@ function DailyFortuneCard({ fortune }: { fortune: DailyFortuneResult }) {
   const color = levelColors[fortune.level] ?? 'var(--muted)';
   const dots  = levelDots[fortune.level] ?? 3;
   const cls   = fortune.classification;
+  const luckyLines = useMemo(() => {
+    const yongsinElem = YONGSIN_ELEM_CHARS[cls.yongsin] ?? '토';
+    const stemKo = STEM_KO_LABELS[dayStemIdx] ?? null;
+    return buildDailyLuckyNumbersLines(yongsinElem, stemKo, parseKstDateString(fortune.date));
+  }, [cls.yongsin, dayStemIdx, fortune.date]);
 
   return (
     <div style={{ background:'linear-gradient(135deg,rgba(74,158,255,.08),rgba(139,111,198,.08))',
@@ -1282,6 +1298,13 @@ function DailyFortuneCard({ fortune }: { fortune: DailyFortuneResult }) {
         <span style={{ fontSize:'.7rem', color:'var(--muted)', marginLeft:4 }}>기신</span>
         {cls.gisin.map(e => <ElemBadge key={e} idx={e} />)}
       </div>
+
+      {/* 오늘의 추천 숫자 — AI 심층 풀이 10번과 동일 형식 */}
+      {luckyLines.length > 0 && (
+        <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid var(--border)' }}>
+          {renderFortuneLines(luckyLines)}
+        </div>
+      )}
     </div>
   );
 }

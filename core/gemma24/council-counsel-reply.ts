@@ -41,23 +41,11 @@ import {
 
 const MAX_CARDS_IN_REPLY = 4;
 
-const GREETING_RE =
-  /^(안녕|안뇽|하이|헬로|hello|hi|반가|ㅎㅇ|하이요|안녕하세요|안녕하십니까|반갑)[\s!.?~]*$/i;
-
-/** 인사만 — 코칭·LLM 확장 제외 */
-export function isCounselGreetingMessage(message: string): boolean {
-  const t = message.trim();
-  return t.length > 0 && t.length <= 24 && GREETING_RE.test(t);
-}
-
-export function isCounselGreetingReply(content: string): boolean {
-  const t = content.trim();
-  return (
-    t.length <= 280
-    && /사주·운세 상담을 도와드립니다|편하게 말씀해 주세요|궁금한 점을 편하게/.test(t)
-  );
-}
-
+import {
+  buildGreetingReply,
+  isCounselGreetingMessage,
+  isCounselGreetingReply,
+} from '../counsel-greeting';
 const OFF_TOPIC_RE =
   /맛집|맛있는\s*집|날씨|주식\s*(추천|종목)|코딩|프로그래밍|레시피|영화\s*추천|드라마\s*추천|번역해|코드\s*짜|숙제\s*해/;
 
@@ -161,13 +149,11 @@ function formatCardSection(card: Gemma24SajuCard): string {
   return `◆ ${sub}\n${body}`;
 }
 
-export function buildGreetingReply(counselorName: string): string {
-  const who = counselorName ? `『${counselorName}』입니다. ` : '';
-  return [
-    `안녕하세요. ${who}사주·운세 상담을 도와드립니다.`,
-    '연애, 재물, 직업, 올해·시기 운세처럼 궁금한 점을 편하게 말씀해 주세요.',
-  ].join('\n');
-}
+export {
+  buildGreetingReply,
+  isCounselGreetingMessage,
+  isCounselGreetingReply,
+} from '../counsel-greeting';
 
 function buildOffTopicReply(): string {
   return [
@@ -238,8 +224,6 @@ export async function tryCouncilCounselReply(
     dailyFortune?: DailyFortuneCounselPayload | null;
   },
 ): Promise<CouncilCounselReply | null> {
-  if (isCounselGeminiOnlyMode()) return null;
-
   const trimmed = userMessage.trim();
   if (!trimmed) return null;
 
@@ -250,6 +234,8 @@ export async function tryCouncilCounselReply(
   if (isCounselGreetingMessage(trimmed)) {
     return { content: buildGreetingReply(counselorName), cardCount: 0, draftCardCount: 0, mode: 'council-counsel' };
   }
+
+  if (isCounselGeminiOnlyMode()) return null;
 
   if (isLikelyOffTopic(trimmed)) {
     return { content: buildOffTopicReply(), cardCount: 0, draftCardCount: 0, mode: 'council-counsel' };

@@ -13,34 +13,32 @@ import {
   COUNSEL_SESSION_EXPIRED_MESSAGE,
   isCounselSessionExpired,
 } from '../../core/counsel-session';
-import { SAJU_WAITING_LABEL } from '../../core/user-messages';
 import { buildChatContext } from './build-saju-context';
 import { dailyFortune } from '../../core/daily-fortune';
 import { dailyFortuneToCounselPayload } from '../../core/daily-fortune/counsel-format';
+import { kstCalendarDatePlusDays } from '../../core/daily-fortune/kst-date';
 import { resolveDailyFortuneDate } from '../../core/gemma24/is-today-fortune-question';
-import { tossChat } from '../../lib/toss-http';
+import { buildGreetingReply, isCounselGreetingMessage, isCounselGreetingReply } from '../../core/counsel-greeting';
+import { buildDayFortuneCounselReply } from '../../core/daily-fortune/counsel-format';
+import { parseDayFortuneTarget } from '../../core/gemma24/is-today-fortune-question';
+import { tossSajuCounsel } from '../../lib/toss-http';
 
-const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+export type Msg = { role: 'user' | 'assistant'; content: string; thought?: string };
 
-export type Msg = { role: 'user' | 'assistant'; content: string };
+const TIMEOUT_MS = 60_000;
 
-const API_PATH = '/api/saju-chat';
-const TIMEOUT_MS = 90_000;
-/** 답변 표시 전 최소 대기(ms) — 즉시 튀어나오는 느낌 완화 */
-const REPLY_MIN_DELAY_MS = 1000;
-
-function waitMinReplyDelay(startedAt: number): Promise<void> {
-  const remain = REPLY_MIN_DELAY_MS - (Date.now() - startedAt);
-  if (remain <= 0) return Promise.resolve();
-  return new Promise((resolve) => window.setTimeout(resolve, remain));
+function isShortCounselInput(text: string): boolean {
+  const t = text.trim();
+  return t.length > 0 && t.length <= 24;
 }
 /** 인트로 말풍선은 API에 포함하지 않음 */
-const INTRO_PREFIX = '안녕하세요! AI 심층 상담입니다';
-
 function buildApiMessages(msgs: Msg[]): { role: string; content: string }[] {
   return msgs.filter(
     m => m.content.trim().length > 0 &&
-      !(m.role === 'assistant' && m.content.startsWith(INTRO_PREFIX)),
+      !(m.role === 'assistant' && (
+        m.content.includes('이번 상담 시간은')
+        || isCounselGreetingReply(m.content)
+      )),
   );
 }
 
@@ -49,6 +47,7 @@ export function useCounselChat(
   aiSummaryReady: boolean,
   counselorName: string,
   sessionStartedAt: number | null,
+  purchasedMinutes = 10,
 ) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,92 +69,102 @@ export function useCounselChat(
   const send = useCallback(async (text: string): Promise<string | null> => {
     const trimmed = text.trim();
     if (!trimmed || !result || !aiSummaryReady || loading) return null;
-    if (sessionStartedAt && isCounselSessionExpired(sessionStartedAt)) {
+    if (sessionStartedAt && isCounselSessionExpired(sessionStartedAt, purchasedMinutes)) {
       throw new Error(COUNSEL_SESSION_EXPIRED_MESSAGE);
     }
 
     const current = msgsRef.current;
+
+    if (isCounselGreetingMessage(trimmed)) {
+      const userMsg: Msg = { role: 'user', content: trimmed };
+      const greeting = buildGreetingReply(counselorRef.current);
+      applyMsgs([...current, userMsg, { role: 'assistant', content: greeting }]);
+      return greeting;
+    }
+
+    const dayTarget = parseDayFortuneTarget(trimmed);
+    if (dayTarget && !sessionStartedAt) {
+      try {
+        const fortuneWhen = dayTarget.kind === 'date'
+          ? dayTarget.date
+          : kstCalendarDatePlusDays(dayTarget.offset);
+        const payload = dailyFortuneToCounselPayload(dailyFortune(result, fortuneWhen));
+        const reply = buildDayFortuneCounselReply(
+          payload,
+          counselorRef.current,
+          dayTarget.label,
+        );
+        const userMsg: Msg = { role: 'user', content: trimmed };
+        applyMsgs([...current, userMsg, { role: 'assistant', content: reply }]);
+        return reply;
+      } catch {
+        /* 일운 계산 실패 시 API 폴백 */
+      }
+    }
+
     const userMsg: Msg = { role: 'user', content: trimmed };
     const apiMessages = [
       ...buildApiMessages(current),
       { role: 'user', content: trimmed },
     ];
 
-    const withLoading: Msg[] = [...current, userMsg, { role: 'assistant', content: '' }];
+    const withLoading: Msg[] = [
+      ...current,
+      userMsg,
+      {
+        role: 'assistant',
+        content: '',
+        thought: dayTarget
+          ? `${dayTarget.label}를 살펴보고 있습니다...`
+          : isShortCounselInput(trimmed)
+            ? undefined
+            : '사주 분석을 시작합니다...',
+      },
+    ];
     applyMsgs(withLoading);
     setLoading(true);
 
     const ac = new AbortController();
     const timeoutId = window.setTimeout(() => ac.abort(), TIMEOUT_MS);
-    const startedAt = Date.now();
 
     try {
-      let content = '';
-      if (APPS_IN_TOSS) {
-        const payload = {
-          messages: apiMessages,
-          sajuContext: buildChatContext(result),
-          chatMode: 'single',
-          counselorName: counselorRef.current,
-          sessionStartedAt: sessionStartedAt ?? undefined,
-          dailyFortune: (() => {
-            const targetDate = resolveDailyFortuneDate(trimmed);
-            if (!targetDate) return null;
-            try {
-              return dailyFortuneToCounselPayload(dailyFortune(result, targetDate));
-            } catch {
-              return null;
-            }
-          })(),
-        };
-        const bridged = await tossChat(payload);
-        if (!bridged.ok) throw new Error(bridged.error);
-        content = bridged.content.trim();
-      } else {
-        const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
-        const res = await fetch(`${base}${API_PATH}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
-          signal: ac.signal,
-          body: JSON.stringify({
-            messages: apiMessages,
-            sajuContext: buildChatContext(result),
-            chatMode: 'single',
-            counselorName: counselorRef.current,
-            sessionStartedAt: sessionStartedAt ?? undefined,
-            dailyFortune: (() => {
-              const targetDate = resolveDailyFortuneDate(trimmed);
-              if (!targetDate) return null;
-              try {
-                return dailyFortuneToCounselPayload(dailyFortune(result, targetDate));
-              } catch {
-                return null;
-              }
-            })(),
-          }),
-        });
-
-        const raw = await res.text();
-        if (!res.ok) {
-          let errMsg = `서버 오류 (${res.status})`;
-          try { errMsg = (JSON.parse(raw) as { error?: string }).error ?? errMsg; } catch { /* noop */ }
-          throw new Error(errMsg);
+      const sajuContext = buildChatContext(result);
+      const fortuneWhen = resolveDailyFortuneDate(trimmed);
+      let dailyFortunePayload = null;
+      if (fortuneWhen) {
+        try {
+          dailyFortunePayload = dailyFortuneToCounselPayload(dailyFortune(result, fortuneWhen));
+        } catch {
+          /* 일운 질문이 아니거나 계산 불가 */
         }
-
-        const data = JSON.parse(raw) as { content?: string; error?: string };
-        if (data.error) throw new Error(data.error);
-        content = (data.content ?? '').trim();
       }
 
+      const payload = await tossSajuCounsel({
+        messages: apiMessages,
+        sajuContext,
+        counselorName: counselorRef.current,
+        chatMode: 'single',
+        sessionStartedAt: sessionStartedAt ?? undefined,
+        dailyFortune: dailyFortunePayload,
+      });
+
+      if (ac.signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
+      if (!payload.ok) {
+        throw new Error(payload.error);
+      }
+
+      const content = payload.content.trim();
       if (!content) throw new Error('빈 응답');
 
-      await waitMinReplyDelay(startedAt);
-
-      const answered: Msg[] = [...msgsRef.current];
-      const last = answered[answered.length - 1];
-      if (last?.role === 'assistant') answered[answered.length - 1] = { role: 'assistant', content };
-      applyMsgs(answered);
+      const finalMsgs = [...msgsRef.current];
+      const last = finalMsgs[finalMsgs.length - 1];
+      if (last?.role === 'assistant') {
+        finalMsgs[finalMsgs.length - 1] = { role: 'assistant', content };
+      }
+      applyMsgs(finalMsgs);
       return content;
     } catch (e) {
       const isAbort = e instanceof DOMException && e.name === 'AbortError';
@@ -164,7 +173,9 @@ export function useCounselChat(
         ? msg
         : isAbort
           ? '응답 시간이 초과되었습니다. 잠시 후 다시 질문해 주세요.'
-          : '답변을 불러오지 못했습니다. 일일 사용 한도가 초과되었을 수 있습니다.';
+          : msg.includes('429') || msg.includes('한도')
+            ? '지금은 상담 요청이 많습니다. 잠시 후 다시 질문해 주세요.'
+            : msg || '답변을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
 
       const errored: Msg[] = [...msgsRef.current];
       const last = errored[errored.length - 1];
@@ -175,7 +186,7 @@ export function useCounselChat(
       window.clearTimeout(timeoutId);
       setLoading(false);
     }
-  }, [result, aiSummaryReady, loading, applyMsgs, sessionStartedAt]);
+  }, [result, aiSummaryReady, loading, applyMsgs, sessionStartedAt, purchasedMinutes]);
 
   return { msgs, loading, send, reset, applyMsgs };
 }

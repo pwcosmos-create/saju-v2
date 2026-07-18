@@ -1,20 +1,27 @@
 import { fetchLlmStream } from '../config/llm';
-import { tryCouncilCounselReply } from '../gemma24/council-counsel-reply';
+import { tryCouncilCounselReply, type CouncilCounselReply } from '../gemma24/council-counsel-reply';
 import { applyCounselGeminiCoach } from '../gemma24/counsel-gemini-coach';
 import {
   buildGreetingReply,
   isCounselGreetingMessage,
-} from '../gemma24/council-counsel-reply';
+  isCounselGreetingReply,
+  isCounselTtsReadRequest,
+} from '../counsel-greeting';
 import {
-  isCounselGeminiOnlyMode,
+  getCounselGeminiApiKey,
+  isPaidCounselSession,
   shouldUseCounselLlmFallback,
+  useCounselGeminiLlm,
 } from '../gemma24/counsel-llm-fallback';
 import {
   formatDailyFortuneCounselForLlm,
+  formatDailyFortuneFactsForPaidLlm,
+  buildDayFortuneCounselReply,
   type DailyFortuneCounselPayload,
 } from '../daily-fortune/counsel-format';
 import { tryDailyFortuneFromSajuContext } from '../daily-fortune/from-saju-context';
-import { resolveDailyFortuneDate } from '../gemma24/is-today-fortune-question';
+import { kstCalendarDatePlusDays } from '../daily-fortune/kst-date';
+import { parseDayFortuneTarget, resolveDailyFortuneDate } from '../gemma24/is-today-fortune-question';
 import { buildConsultCouncilKnowledgeResult } from '../gemma24/saju-knowledge';
 import { SAJU_WAITING_LABEL } from '../user-messages';
 import { makeRateLimiter } from '../http-client/rate-limit';
@@ -24,11 +31,27 @@ import {
   isCounselSessionExpired,
 } from '../counsel-session';
 
-function llmCounselFallbackEnabled(): boolean {
-  return shouldUseCounselLlmFallback();
+function llmCounselFallbackEnabled(sessionStartedAt: number | null): boolean {
+  return shouldUseCounselLlmFallback(sessionStartedAt);
 }
 
 const checkConsultRateLimit = makeRateLimiter(20, 60_000);
+
+function isInstantCounselReply(userMessage: string, reply: CouncilCounselReply): boolean {
+  if (isCounselGreetingMessage(userMessage) || isCounselGreetingReply(reply.content)) return true;
+  return reply.cardCount === 0 && reply.draftCardCount === 0 && reply.content.trim().length <= 300;
+}
+
+function counselJsonHeaders(reply: CouncilCounselReply, extra?: Record<string, string>): Record<string, string> {
+  return {
+    'X-Gemma24-Knowledge-Count': String(reply.cardCount),
+    'X-Saju-Council-Badge': reply.draftCardCount > 0 ? 'reviewed' : 'certified',
+    'X-Saju-Counsel-Mode': reply.mode,
+    ...(reply.draftCardCount > 0 ? { 'X-Saju-Card-Draft-Count': String(reply.draftCardCount) } : {}),
+    ...(reply.draftCardCount > 0 ? { 'X-Saju-Card-Request-Queued': '1' } : {}),
+    ...extra,
+  };
+}
 
 function extractCompletionText(json: unknown): string {
   const j = json as {
@@ -120,14 +143,71 @@ ${compareSajuContext}
 
   const lastUserMessage = [...chatMessages].reverse().find((m) => m.role === 'user')?.content?.trim() ?? '';
 
-  const compareCtx = chatMode === 'compatibility' ? compareSajuContext : '';
+  if (isCounselGreetingMessage(lastUserMessage)) {
+    const greetingContent = buildGreetingReply(counselorName);
+    return Response.json(
+      { content: greetingContent },
+      {
+        headers: {
+          'X-Gemma24-Knowledge-Count': '0',
+          'X-Saju-Council-Badge': 'certified',
+          'X-Saju-Counsel-Mode': 'council-counsel',
+        },
+      },
+    );
+  }
+
+  if (isCounselTtsReadRequest(lastUserMessage)) {
+    return Response.json(
+      {
+        content: '방금 답변은 상담창의 「읽기」 버튼을 누르시면 음성으로 들으실 수 있어요.',
+      },
+      {
+        headers: {
+          'X-Gemma24-Knowledge-Count': '0',
+          'X-Saju-Council-Badge': 'certified',
+          'X-Saju-Counsel-Mode': 'council-counsel',
+        },
+      },
+    );
+  }
 
   const dailyFortune =
     body.dailyFortune && typeof body.dailyFortune === 'object' && body.dailyFortune.date
       ? body.dailyFortune
       : null;
 
-  const geminiOnlyCounsel = isCounselGeminiOnlyMode();
+  const paidCounsel = isPaidCounselSession(sessionStartedAt);
+
+  const dayTarget = parseDayFortuneTarget(lastUserMessage);
+  if (dayTarget && !paidCounsel) {
+    const fortuneWhen = dayTarget.kind === 'date' ? dayTarget.date : dayTarget.offset;
+    const fortunePayload =
+      dailyFortune
+      ?? tryDailyFortuneFromSajuContext(sajuContext, fortuneWhen);
+    if (fortunePayload) {
+      const content = buildDayFortuneCounselReply(
+        fortunePayload,
+        counselorName,
+        dayTarget.label,
+      );
+      return Response.json(
+        { content },
+        {
+          headers: counselJsonHeaders({
+            content,
+            cardCount: 0,
+            draftCardCount: 0,
+            mode: 'council-counsel',
+          }),
+        },
+      );
+    }
+  }
+
+  const compareCtx = chatMode === 'compatibility' ? compareSajuContext : '';
+
+  const geminiOnlyCounsel = useCounselGeminiLlm(sessionStartedAt);
 
   if (!geminiOnlyCounsel) {
     const cardReply = await tryCouncilCounselReply(sajuContext, lastUserMessage, {
@@ -138,6 +218,12 @@ ${compareSajuContext}
     });
 
     if (cardReply) {
+      if (isInstantCounselReply(lastUserMessage, cardReply)) {
+        return Response.json(
+          { content: cardReply.content },
+          { headers: counselJsonHeaders(cardReply) },
+        );
+      }
       const finalReply = await applyCounselGeminiCoach({
         reply: cardReply,
         userMessage: lastUserMessage,
@@ -163,34 +249,16 @@ ${compareSajuContext}
       );
     }
 
-    if (isCounselGreetingMessage(lastUserMessage)) {
-      const greetingReply = await applyCounselGeminiCoach({
-        reply: {
-          content: buildGreetingReply(counselorName),
-          cardCount: 0,
-          draftCardCount: 0,
-          mode: 'council-counsel',
-        },
-        userMessage: lastUserMessage,
-        counselorName,
-      });
-      return Response.json(
-        { content: greetingReply.content },
-        {
-          headers: {
-            'X-Gemma24-Knowledge-Count': '0',
-            'X-Saju-Council-Badge': 'certified',
-            'X-Saju-Counsel-Mode': 'council-counsel',
-            ...(greetingReply.geminiCoached ? { 'X-Saju-Counsel-Coached': '1' } : {}),
-          },
-        },
-      );
-    }
   }
 
-  if (!llmCounselFallbackEnabled()) {
+  if (!llmCounselFallbackEnabled(sessionStartedAt)) {
+    const missingKey = useCounselGeminiLlm(sessionStartedAt) && !getCounselGeminiApiKey();
     return Response.json(
-      { content: SAJU_WAITING_LABEL },
+      {
+        content: missingKey
+          ? '상담 AI(Gemini) 키가 설정되지 않았습니다. 잠시 후 다시 시도해 주세요.'
+          : SAJU_WAITING_LABEL,
+      },
       {
         headers: {
           'X-Gemma24-Knowledge-Count': '0',
@@ -201,7 +269,7 @@ ${compareSajuContext}
     );
   }
 
-  const cardKnowledge = geminiOnlyCounsel
+  const cardKnowledge = paidCounsel
     ? { systemAppend: '', badge: 'none' as const, cardCount: 0 }
     : buildConsultCouncilKnowledgeResult(
       sajuContext,
@@ -211,16 +279,29 @@ ${compareSajuContext}
 
   let dailyFortuneBlock = '';
   if (geminiOnlyCounsel) {
-    const fortuneWhen = resolveDailyFortuneDate(lastUserMessage);
+    const fortuneWhen = dayTarget
+      ? (dayTarget.kind === 'date' ? dayTarget.date : kstCalendarDatePlusDays(dayTarget.offset))
+      : resolveDailyFortuneDate(lastUserMessage);
     const fortunePayload =
       dailyFortune
       ?? (fortuneWhen ? tryDailyFortuneFromSajuContext(sajuContext, fortuneWhen) : null);
     if (fortunePayload) {
-      dailyFortuneBlock = `\n${formatDailyFortuneCounselForLlm(fortunePayload)}\n`;
+      dailyFortuneBlock = paidCounsel && dayTarget
+        ? `\n${formatDailyFortuneFactsForPaidLlm(fortunePayload, dayTarget.label)}\n`
+        : `\n${formatDailyFortuneCounselForLlm(fortunePayload)}\n`;
     }
   }
 
-  const counselModeHeader = geminiOnlyCounsel ? 'gemini' : 'llm';
+  const dayFortuneGuide = paidCounsel && dayTarget
+    ? `【유료 실시간 일운 상담 — 필수】
+- 사주 카드·정해진 템플릿·저장된 해석 문구를 쓰지 마세요. 아래 실시간 일운 계산과 명식만으로 **지금 대화하듯** 답하세요.
+- 사용자 질문 주제: 「${dayTarget.label}」 — **이 날짜의 일운**만 다루세요. 월운·세운·올해 전체 설명은 1문장 이내로만 언급하고 오늘 일진 중심으로 쓰세요.
+- **5~7문장**, 상담사 말투. 반드시 **완결된 마지막 문장**으로 끝내세요. 문장 중간에서 끊지 마세요.
+
+`
+    : '';
+
+  const counselModeHeader = paidCounsel ? 'counsel-gemini' : 'gemini';
 
   const system = `【오늘 날짜 및 시간】
 - 현재 날짜·시각(KST): ${todayStr}
@@ -246,7 +327,7 @@ ${counselorPersona}
 
 사용자가 한국어로 질문하면 한국어로, 다른 언어로 질문하면 그 언어로 답변하세요. 단, 사주 용어는 한국 명리학 용어를 기준으로 유지하세요.
 
-${modeGuide}
+${dayFortuneGuide}${modeGuide}
 ${cardKnowledge.systemAppend ? `\n${cardKnowledge.systemAppend}\n` : ''}${dailyFortuneBlock}【사주 데이터】
 ${sajuContext}`;
 
@@ -256,15 +337,26 @@ ${sajuContext}`;
     ...chatMessages.slice(-10),
   ];
   const streamRequested = body.stream !== false;
+  const isDayFortuneAsk = Boolean(dayTarget);
+  const counselShortInput = lastUserMessage.length <= 40 && !isDayFortuneAsk;
+
+  const counselMaxTokens = isDayFortuneAsk
+    ? 4096
+    : paidCounsel
+      ? 4096
+      : counselShortInput
+        ? 720
+        : 8192;
 
   const upstream = await fetchLlmStream({
     stream: streamRequested,
-    max_tokens: 8192,
+    max_tokens: counselMaxTokens,
     temperature: 0.7,
     messages: llmMessages,
     /** 심층 상담 — Gemini 2.5 Flash 전용 (Groq/Llama 폴백 없음) */
     geminiFirst: true,
     geminiOnly: true,
+    counselSession: Boolean(sessionStartedAt),
   });
 
   if (!upstream.ok) {

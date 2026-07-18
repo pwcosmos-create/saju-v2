@@ -1,22 +1,26 @@
-/** AI 심층 상담 세션 — 기본 10분 (환경변수로 분 단위 조정 가능) */
+/** AI 심층 상담 세션 — 동적 구매 시간 지원 (기본 10분) */
 
 export const COUNSEL_SESSION_EXPIRED_MESSAGE =
-  '상담 제한 시간(10분)이 종료되었습니다. 패널을 닫았다가 다시 열면 새 세션으로 상담할 수 있습니다.';
+  '구매하신 상담 시간이 모두 소진되었습니다. 대화를 계속하시려면 시간을 연장해 주세요.';
 
-export function counselSessionLimitMs(): number {
-  const raw = (process.env.GEMMA24_COUNSEL_SESSION_MINUTES ?? '10').trim();
-  const mins = Number.parseInt(raw, 10);
-  if (!Number.isFinite(mins) || mins <= 0) return 10 * 60_000;
-  return Math.min(mins, 120) * 60_000;
+/** 결제 후 상담창 이탈 시 안내 */
+export const COUNSEL_LEAVE_SESSION_NOTICE =
+  '상담창을 나가면 남은 시간과 대화가 저장되지 않으며, 다시 이용하시려면 결제가 필요합니다.';
+
+export const COUNSEL_LEAVE_CONFIRM_MESSAGE =
+  '상담창을 나가시겠어요?\n\n남은 상담 시간은 사라지며, 다시 들어오시면 새로 결제하셔야 합니다.';
+
+export function counselSessionLimitMs(purchasedMinutes = 10): number {
+  return Math.max(1, purchasedMinutes) * 60_000;
 }
 
-export function counselSessionLimitSecs(): number {
-  return Math.floor(counselSessionLimitMs() / 1000);
+export function counselSessionLimitSecs(purchasedMinutes = 10): number {
+  return Math.floor(counselSessionLimitMs(purchasedMinutes) / 1000);
 }
 
-export function isCounselSessionExpired(sessionStartedAt: number, now = Date.now()): boolean {
+export function isCounselSessionExpired(sessionStartedAt: number, purchasedMinutes = 10, now = Date.now()): boolean {
   if (!Number.isFinite(sessionStartedAt) || sessionStartedAt <= 0) return false;
-  return now - sessionStartedAt >= counselSessionLimitMs();
+  return now - sessionStartedAt >= counselSessionLimitMs(purchasedMinutes);
 }
 
 export function formatCounselTimeLeft(totalSecs: number): string {

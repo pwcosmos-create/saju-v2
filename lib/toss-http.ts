@@ -118,6 +118,15 @@ export async function tossChat(body: Record<string, unknown>): Promise<BridgePay
   return postJsonFetch('/api/chat', body);
 }
 
+/** AI 심층 상담 — 카드 우선 /api/saju-chat (agent ReAct 루프 사용 안 함) */
+export async function tossSajuCounsel(body: Record<string, unknown>): Promise<BridgePayload> {
+  const payload = { ...body, stream: false };
+  if (APPS_IN_TOSS) {
+    return postViaIframe('/api/saju-chat-bridge', payload);
+  }
+  return postJsonFetch('/api/saju-chat', payload);
+}
+
 export async function tossFortune(prompt: string): Promise<BridgePayload> {
   const trimmed = prompt.slice(0, 16_000);
   if (APPS_IN_TOSS) {

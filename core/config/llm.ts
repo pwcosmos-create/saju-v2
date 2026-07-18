@@ -7,6 +7,7 @@
 // 외부 API 설정 단일 진실 모듈 — 값은 환경변수에서만 읽음 (서버 전용)
 
 import { splitFortunePromptIntoSections } from '../ai-templates/fortune-sections';
+import { getCounselGeminiApiKey } from '../gemma24/counsel-llm-fallback';
 import { LLM_USER_OVERLOAD_MESSAGE } from '../user-messages';
 
 function requireEnv(name: string): string {
@@ -53,12 +54,13 @@ async function callGroqCompletion(
 async function callGeminiCompletion(
   geminiKey: string,
   upstreamBody: Record<string, unknown>,
-): Promise<{ ok: boolean; status: number; text: string }> {
+  timeoutMs = 600_000,
+): Promise<{ ok: boolean; status: number; text: string; finishReason?: string }> {
   const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${geminiKey}` },
     body: JSON.stringify({ model: 'gemini-2.5-flash', ...upstreamBody }),
-    signal: AbortSignal.timeout(600000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
@@ -66,8 +68,10 @@ async function callGeminiCompletion(
     return { ok: false, status: response.status, text: '' };
   }
   const data = await response.json();
-  const text = data.choices?.[0]?.message?.content ?? '';
-  return { ok: Boolean(text), status: response.status, text };
+  const choice = data.choices?.[0];
+  const text = choice?.message?.content ?? '';
+  const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+  return { ok: Boolean(text), status: response.status, text, finishReason };
 }
 
 let keyIndex = 0;
@@ -267,15 +271,19 @@ export function streamTextToOpenAiSse(text: string): ReadableStream {
   });
 }
 
-const UPSTREAM_INTERNAL_KEYS = new Set(['geminiOnly', 'geminiFirst']);
+const UPSTREAM_INTERNAL_KEYS = new Set(['geminiOnly', 'geminiFirst', 'counselSession']);
+const DEFAULT_UPSTREAM_MAX_TOKENS = 3000;
+const COUNSEL_UPSTREAM_MAX_TOKENS = 8192;
 
 function prepareUpstreamBody(body: Record<string, unknown>): Record<string, unknown> {
+  const geminiOnly = Boolean(body.geminiOnly);
   const upstreamBody: Record<string, unknown> = { ...body, stream: false };
   for (const key of UPSTREAM_INTERNAL_KEYS) {
     delete upstreamBody[key];
   }
-  if (upstreamBody.max_tokens && (upstreamBody.max_tokens as number) > 3000) {
-    upstreamBody.max_tokens = 3000;
+  const tokenCap = geminiOnly ? COUNSEL_UPSTREAM_MAX_TOKENS : DEFAULT_UPSTREAM_MAX_TOKENS;
+  if (upstreamBody.max_tokens && (upstreamBody.max_tokens as number) > tokenCap) {
+    upstreamBody.max_tokens = tokenCap;
   }
   if (Array.isArray(upstreamBody.messages)) {
     upstreamBody.messages = (upstreamBody.messages as { role: string; content: string }[]).map((m) => ({
@@ -321,14 +329,44 @@ async function completeWithGroq(upstreamBody: Record<string, unknown>): Promise<
   return '';
 }
 
-async function completeWithGemini(upstreamBody: Record<string, unknown>): Promise<string> {
-  const geminiKey = process.env.GOOGLE_AI_API_KEY ?? '';
+async function completeWithGemini(
+  upstreamBody: Record<string, unknown>,
+  options?: { apiKey?: string; timeoutMs?: number; allowContinuation?: boolean },
+): Promise<string> {
+  const geminiKey = options?.apiKey?.trim() || process.env.GOOGLE_AI_API_KEY || '';
   if (!geminiKey) return '';
-  for (const waitMs of [0, 3000]) {
+  const timeoutMs = options?.timeoutMs ?? 600_000;
+  for (const waitMs of [0, 1500]) {
     if (waitMs > 0) await sleep(waitMs);
     try {
-      const result = await callGeminiCompletion(geminiKey, upstreamBody);
-      if (result.ok && result.text) return result.text;
+      const result = await callGeminiCompletion(geminiKey, upstreamBody, timeoutMs);
+      if (result.ok && result.text) {
+        let text = result.text;
+        if (
+          options?.allowContinuation
+          && result.finishReason === 'length'
+          && Array.isArray(upstreamBody.messages)
+        ) {
+          const cont = await callGeminiCompletion(
+            geminiKey,
+            {
+              ...upstreamBody,
+              messages: [
+                ...(upstreamBody.messages as { role: string; content: string }[]),
+                { role: 'assistant', content: text },
+                {
+                  role: 'user',
+                  content: '방금 답변이 중간에 끊겼습니다. 끊긴 부분부터 이어서 마지막 문장까지 완성해 주세요. 앞 내용을 반복하지 마세요.',
+                },
+              ],
+              max_tokens: Math.min(2048, (upstreamBody.max_tokens as number) || 2048),
+            },
+            timeoutMs,
+          );
+          if (cont.ok && cont.text.trim()) text += cont.text;
+        }
+        return text;
+      }
       if (result.status === 429) {
         console.warn(waitMs === 0 ? 'Gemini 429, retrying in 3s.' : 'Gemini 429 on retry.');
         continue;
@@ -366,11 +404,16 @@ export async function fetchLlmStream(body: any): Promise<Response> {
 
   const geminiOnly = Boolean(body.geminiOnly);
   const geminiFirst = Boolean(body.geminiFirst);
+  const counselSession = Boolean(body.counselSession);
+  const counselGeminiOpts = counselSession
+    ? { apiKey: getCounselGeminiApiKey(), timeoutMs: 60_000, allowContinuation: true }
+    : undefined;
+  const gemini = () => completeWithGemini(upstreamBody, counselGeminiOpts);
   draftText = geminiOnly
-    ? await completeWithGemini(upstreamBody)
+    ? await gemini()
     : geminiFirst
-      ? ((await completeWithGemini(upstreamBody)) || (await completeWithGroq(upstreamBody)))
-      : ((await completeWithGroq(upstreamBody)) || (await completeWithGemini(upstreamBody)));
+      ? ((await gemini()) || (await completeWithGroq(upstreamBody)))
+      : ((await completeWithGroq(upstreamBody)) || (await gemini()));
   if (!draftText && GROQ_KEYS.length === 0 && !process.env.GOOGLE_AI_API_KEY) {
     console.error('GOOGLE_AI_API_KEY missing; cannot fall back from Groq.');
   }

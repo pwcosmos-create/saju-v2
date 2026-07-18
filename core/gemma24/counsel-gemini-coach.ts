@@ -9,8 +9,8 @@ import {
 import {
   isCounselGreetingMessage,
   isCounselGreetingReply,
-  type CouncilCounselReply,
-} from './council-counsel-reply';
+} from '../counsel-greeting';
+import type { CouncilCounselReply } from './council-counsel-reply';
 import { counselIntentTopicLabel } from './parse-counsel-intent';
 
 /** 상담 코칭 전용 — GOOGLE_AI_API_KEY 와 분리 */
@@ -38,8 +38,12 @@ export function shouldCoachCounselReply(
 ): boolean {
   const mode = counselGeminiCoachMode();
   if (mode === '0' || !hasCounselCoachKey()) return false;
+  /** 인사·짧은 고정 답 — 카드 즉시 반환 (유료 상담 실시간 응답) */
   if (isCounselGreetingMessage(userMessage) || isCounselGreetingReply(reply.content)) {
-    return true;
+    return false;
+  }
+  if (reply.cardCount === 0 && reply.draftCardCount === 0 && reply.content.trim().length <= 300) {
+    return false;
   }
   if (mode === '1') return true;
 

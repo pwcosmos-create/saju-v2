@@ -29,7 +29,8 @@ async function moveDir(src, dest) {
   try {
     await fs.rename(src, dest);
   } catch (e) {
-    if (e?.code !== 'EPERM' && e?.code !== 'EXDEV') throw e;
+    if (e?.code !== 'EPERM' && e?.code !== 'EXDEV' && e?.code !== 'EACCES' && e?.code !== 'EBUSY') throw e;
+    console.warn(`[build-toss] rename 실패(${e.code}) — copy+rm 폴백`);
     await fs.cp(src, dest, { recursive: true });
     await fs.rm(src, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
@@ -40,6 +41,20 @@ async function nestExportUnderOutWeb() {
   const outRoot = path.join(root, 'out');
   const outWeb = path.join(outRoot, 'web');
   const staging = path.join(root, '.toss-out-staging');
+  const tossDist = path.join(root, '.next-toss');
+
+  // distDir=.next-toss 일 때 Next export 가 out/ 대신 .next-toss 에 풀리는 경우 복구
+  if (!(await exists(outRoot)) && (await exists(path.join(tossDist, 'index.html')))) {
+    console.warn('[build-toss] export 가 .next-toss 에 있음 → out/ 로 옮깁니다.');
+    await fs.mkdir(outRoot, { recursive: true });
+    // export 산출물만 복사 (캐시 디렉터리 제외)
+    for (const name of await fs.readdir(tossDist)) {
+      if (name === 'cache' || name === 'types' || name === 'diagnostics' || name === 'trace' || name === 'server' || name === 'package.json' || name === 'build-manifest.json' || name === 'react-loadable-manifest.json' || name === 'export-marker.json' || name === 'images-manifest.json' || name === 'prerender-manifest.json' || name === 'routes-manifest.json' || name === 'app-path-routes-manifest.json' || name.endsWith('.nft.json')) {
+        continue;
+      }
+      await fs.cp(path.join(tossDist, name), path.join(outRoot, name), { recursive: true });
+    }
+  }
 
   if (!(await exists(outRoot))) {
     throw new Error('[build-toss] out/ 폴더가 없습니다. next export 가 실패했을 수 있습니다.');
@@ -139,7 +154,7 @@ async function main() {
       process.exit(1);
     }
     console.warn('[build-toss] 이전 스태시 폴더를 app/api 로 복구합니다.');
-    await fs.rename(stashDir, apiDir);
+    await moveDir(stashDir, apiDir);
   }
   if (!(await exists(apiDir))) {
     console.error('[build-toss] app/api 가 없습니다:', apiDir);
@@ -150,9 +165,11 @@ async function main() {
   let exitCode = 0;
   try {
     const nextDir = path.join(root, '.next');
+    const tossNextDir = path.join(root, '.next-toss');
     await fs.rm(nextDir, { recursive: true, force: true });
+    await fs.rm(tossNextDir, { recursive: true, force: true });
 
-    await fs.rename(apiDir, stashDir);
+    await moveDir(apiDir, stashDir);
     stashed = true;
 
     await bundleTossAnalyze();
@@ -176,7 +193,7 @@ async function main() {
     }
   } finally {
     if (stashed) {
-      await fs.rename(stashDir, apiDir).catch((e) => {
+      await moveDir(stashDir, apiDir).catch((e) => {
         console.error('[build-toss] app/api 복구 실패 — 수동으로 폴더명을 되돌려 주세요.', e);
         exitCode = 1;
       });

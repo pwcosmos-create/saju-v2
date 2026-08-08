@@ -3,16 +3,23 @@
  * `globals.css` 의 :root 변수와 맞출 때는 이 값을 기준으로 양쪽을 함께 수정하세요.
  */
 export const BRAND = {
-  gold: '#e8c97e',
-  purple: '#8b6fc6',
-  bg: '#0d0b1e',
-  navGlass: 'rgba(13, 11, 30, 0.85)',
-  navGlassSaju: 'rgba(13, 11, 30, 0.8)',
-  borderNav: 'rgba(139, 111, 198, 0.2)',
+  // New Design System V1 Tokens
+  bg: '#0A1931',
+  cta: '#B8860B',
+  highlight: '#ADD8E6',
+  text: '#FFFFFF',
+  
+  // Legacy Tokens (mapped to prevent breakage)
+  gold: '#B8860B',
+  purple: '#0A1931',
+  
+  navGlass: 'rgba(10, 25, 49, 0.85)',
+  navGlassSaju: 'rgba(10, 25, 49, 0.8)',
+  borderNav: 'rgba(173, 216, 230, 0.2)',
 
-  /** 스파클 SVG +「AI사주」워드마크 — 동일 라벤더 팔레트 */
-  wordmarkGradient: 'linear-gradient(135deg, #f2ecff 0%, #dcccff 45%, #a78bff 100%)',
-  sparkleMain: '#ebe4ff',
-  sparkleMid: '#c4b5ff',
-  sparkleDeep: '#9b82eb',
+  /** 스파클 SVG +「AI사주」워드마크 — 새로운 테마에 맞춤 */
+  wordmarkGradient: 'linear-gradient(135deg, #ffffff 0%, #add8e6 45%, #b8860b 100%)',
+  sparkleMain: '#ffffff',
+  sparkleMid: '#add8e6',
+  sparkleDeep: '#b8860b',
 } as const;

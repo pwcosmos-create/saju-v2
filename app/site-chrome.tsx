@@ -63,6 +63,8 @@ export function PrimaryCtaLink({ href, children }: PrimaryCtaProps) {
 
 type SiteNavVariant = 'landing' | 'saju';
 
+const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+
 export function SiteNav({ variant }: { variant: SiteNavVariant }) {
   if (variant === 'landing') {
     return (
@@ -84,7 +86,6 @@ export function SiteNav({ variant }: { variant: SiteNavVariant }) {
         }}
       >
         <BrandMarkLink />
-        <PrimaryCtaLink href="/saju">무료로 보기</PrimaryCtaLink>
       </nav>
     );
   }

@@ -17,7 +17,6 @@ import {
 } from '../lib/support-account';
 import { FooterBrandRow, SiteNav } from './site-chrome';
 import { BRAND } from './ui-brand';
-import KakaoAd from './components/kakao-ad';
 
 const APP_VERSION = packageJson.version;
 
@@ -129,7 +128,7 @@ export default function HomePageClient() {
     <div style={{
       minHeight: '100vh',
       background: BRAND.bg,
-      color: '#e0cfff',
+      color: '#FFFFFF',
       fontFamily: "'Apple SD Gothic Neo','Noto Sans KR',sans-serif",
       overflowX: 'hidden',
     }}>
@@ -153,17 +152,17 @@ export default function HomePageClient() {
           70% { transform: translate(-3px, 2px); }
         }
         @keyframes htGlowMain {
-          0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 8px rgba(196,168,255,.35)); }
-          38% { opacity: .62; transform: scale(1.14) rotate(10deg); filter: drop-shadow(0 0 18px rgba(196,168,255,.95)); }
-          72% { opacity: .88; transform: scale(.94) rotate(-6deg); filter: drop-shadow(0 0 10px rgba(139,111,198,.55)); }
+          0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 8px rgba(173,216,230,.35)); }
+          38% { opacity: .62; transform: scale(1.14) rotate(10deg); filter: drop-shadow(0 0 18px rgba(173,216,230,.95)); }
+          72% { opacity: .88; transform: scale(.94) rotate(-6deg); filter: drop-shadow(0 0 10px rgba(184,134,11,.55)); }
         }
         @keyframes htFloatSub1 {
           0%, 100% { transform: translate(0, 0); }
           50% { transform: translate(-5px, 4px); }
         }
         @keyframes htGlowSub1 {
-          0%, 100% { opacity: .85; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 4px rgba(139,111,198,.4)); }
-          42% { opacity: .45; transform: scale(1.25) rotate(-14deg); filter: drop-shadow(0 0 12px rgba(196,168,255,.75)); }
+          0%, 100% { opacity: .85; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 4px rgba(184,134,11,.4)); }
+          42% { opacity: .45; transform: scale(1.25) rotate(-14deg); filter: drop-shadow(0 0 12px rgba(173,216,230,.75)); }
           68% { opacity: .95; transform: scale(.88) rotate(8deg); }
         }
         @keyframes htFloatSub2 {
@@ -171,8 +170,8 @@ export default function HomePageClient() {
           55% { transform: translate(6px, -3px); }
         }
         @keyframes htGlowSub2 {
-          0%, 100% { opacity: .88; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 5px rgba(139,111,198,.45)); }
-          48% { opacity: .5; transform: scale(1.22) rotate(16deg); filter: drop-shadow(0 0 14px rgba(196,168,255,.8)); }
+          0%, 100% { opacity: .88; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 5px rgba(184,134,11,.45)); }
+          48% { opacity: .5; transform: scale(1.22) rotate(16deg); filter: drop-shadow(0 0 14px rgba(173,216,230,.8)); }
           74% { opacity: .92; transform: scale(.9) rotate(-10deg); }
         }
         .ht-main-float { animation: htFloatMain 5.4s ease-in-out infinite; transform-origin: 12px 11px; transform-box: fill-box; }
@@ -245,7 +244,7 @@ export default function HomePageClient() {
           fontSize: 'clamp(2.8rem, 8vw, 5.5rem)',
           fontWeight: 900, lineHeight: 1.1,
           letterSpacing: -2, marginBottom: 24,
-          background: 'linear-gradient(135deg, #e0cfff 0%, #b48fff 100%)',
+          background: 'linear-gradient(135deg, #FFFFFF 0%, #ADD8E6 100%)',
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
         }}>
           나의 AI사주를<br/>알아보세요
@@ -253,7 +252,7 @@ export default function HomePageClient() {
 
         <p style={{
           fontSize: 'clamp(1rem, 2.5vw, 1.2rem)',
-          color: '#8b6fc6', maxWidth: 520, lineHeight: 1.7, marginBottom: 48,
+          color: 'var(--highlight)', maxWidth: 520, lineHeight: 1.7, marginBottom: 48,
         }}>
           생년월일과 태어난 시간을 입력하면<br/>
           AI 심층 풀이로 내 운세를 깊이 있게 분석해 드립니다
@@ -265,12 +264,13 @@ export default function HomePageClient() {
             disabled={aiLoading}
             className={aiLoading ? "analyzing-btn" : ""}
             style={{
-              background: aiLoading ? 'linear-gradient(135deg, #6b46c1, #3182ce)' : 'linear-gradient(135deg, #805ad5, #4299e1)',
+              background: 'var(--cta)',
               color: '#fff', border: 'none', padding: '16px 40px', borderRadius: 16,
               fontSize: '1.05rem', fontWeight: 700, cursor: aiLoading ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.3s',
-              boxShadow: '0 0 40px rgba(139,111,198,0.4)',
-              position: 'relative', overflow: 'hidden'
+              boxShadow: '0 0 40px rgba(184,134,11,0.4)',
+              position: 'relative', overflow: 'hidden',
+              animation: aiLoading ? 'none' : 'ctaPulse 2s ease-in-out infinite',
             }}
           >
             {aiLoading ? (
@@ -283,7 +283,7 @@ export default function HomePageClient() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
                 </svg>
-                사주팔자 무료 분석하기
+                운명의 통제권 확보하기
               </>
             )}
             {aiLoading && <div className="btn-shine" />}
@@ -294,17 +294,17 @@ export default function HomePageClient() {
           <svg className="hero-twinkle-cluster" width="120" height="120" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
             <g className="ht-main-float">
               <g className="ht-layer-glow ht-main-glow">
-                <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="#c4a8ff"/>
+                <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="var(--highlight)"/>
               </g>
             </g>
             <g className="ht-sub1-float">
               <g className="ht-layer-glow ht-sub1-glow">
-                <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="#8b6fc6"/>
+                <path d="M18.5 15.5L19.5 18L22 19L19.5 20L18.5 22.5L17.5 20L15 19L17.5 18L18.5 15.5Z" fill="var(--cta)"/>
               </g>
             </g>
             <g className="ht-sub2-float">
               <g className="ht-layer-glow ht-sub2-glow">
-                <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="#8b6fc6"/>
+                <path d="M5.5 16L6 17.5L7.5 18L6 18.5L5.5 20L5 18.5L3.5 18L5 17.5L5.5 16Z" fill="var(--cta)"/>
               </g>
             </g>
           </svg>
@@ -319,8 +319,8 @@ export default function HomePageClient() {
             { num: '7가지', label: '분석 탭' },
           ].map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#e8c97e' }}>{s.num}</div>
-              <div style={{ fontSize: '.82rem', color: '#6b6490', marginTop: 4 }}>{s.label}</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 900, color: 'var(--cta)' }}>{s.num}</div>
+              <div style={{ fontSize: '.82rem', color: 'var(--highlight)', marginTop: 4 }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -436,11 +436,11 @@ export default function HomePageClient() {
       <section style={{ padding: '80px 24px', maxWidth: 1000, margin: '0 auto' }}>
         <h2 style={{
           textAlign: 'center', fontSize: 'clamp(1.8rem, 4vw, 2.5rem)',
-          fontWeight: 900, marginBottom: 12, color: '#e0cfff',
+          fontWeight: 900, marginBottom: 12, color: '#FFFFFF',
         }}>
           무엇을 알 수 있나요?
         </h2>
-        <p style={{ textAlign: 'center', color: '#6b6490', marginBottom: 56, fontSize: '.95rem' }}>
+        <p style={{ textAlign: 'center', color: 'var(--highlight)', marginBottom: 56, fontSize: '.95rem' }}>
           사주팔자의 모든 것을 한 번에 분석합니다
         </p>
 
@@ -477,7 +477,7 @@ export default function HomePageClient() {
               <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: f.color, marginBottom: 10 }}>
                 {f.title}
               </h3>
-              <p style={{ fontSize: '.88rem', color: '#8b6fc6', lineHeight: 1.7 }}>{f.desc}</p>
+              <p style={{ fontSize: '.88rem', color: '#FFFFFF', opacity: 0.8, lineHeight: 1.7 }}>{f.desc}</p>
             </div>
           ))}
         </div>
@@ -493,11 +493,11 @@ export default function HomePageClient() {
         <div style={{ maxWidth: 800, margin: '0 auto', textAlign: 'center' }}>
           <h2 style={{
             fontSize: 'clamp(1.8rem, 4vw, 2.5rem)',
-            fontWeight: 900, marginBottom: 12, color: '#e0cfff',
+            fontWeight: 900, marginBottom: 12, color: '#FFFFFF',
           }}>
             3단계로 끝납니다
           </h2>
-          <p style={{ color: '#6b6490', marginBottom: 56, fontSize: '.95rem' }}>
+          <p style={{ color: 'var(--highlight)', marginBottom: 56, fontSize: '.95rem' }}>
             복잡한 가입 없이 바로 시작하세요
           </p>
 
@@ -510,16 +510,16 @@ export default function HomePageClient() {
                 borderRadius: 16, padding: '24px 28px', textAlign: 'left',
               }}>
                 <div style={{
-                  fontSize: '1.6rem', fontWeight: 900, color: '#8b6fc6',
-                  minWidth: 48, opacity: 0.6,
+                  fontSize: '1.6rem', fontWeight: 900, color: 'var(--cta)',
+                  minWidth: 48, opacity: 0.8,
                 }}>
                   {s.num}
                 </div>
                 <div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#c4a8ff', marginBottom: 6 }}>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--highlight)', marginBottom: 6 }}>
                     {s.title}
                   </div>
-                  <div style={{ fontSize: '.9rem', color: '#6b6490', lineHeight: 1.6 }}>{s.desc}</div>
+                  <div style={{ fontSize: '.9rem', color: '#FFFFFF', opacity: 0.7, lineHeight: 1.6 }}>{s.desc}</div>
                 </div>
               </div>
             ))}
@@ -547,27 +547,27 @@ export default function HomePageClient() {
         </div>
         <h2 style={{
           fontSize: 'clamp(1.8rem, 4vw, 2.8rem)',
-          fontWeight: 900, marginBottom: 16, color: '#e0cfff',
+          fontWeight: 900, marginBottom: 16, color: '#FFFFFF',
         }}>
           지금 바로 내 사주를<br/>확인해보세요
         </h2>
-        <p style={{ color: '#6b6490', marginBottom: 40, fontSize: '.95rem' }}>
+        <p style={{ color: 'var(--highlight)', marginBottom: 40, fontSize: '.95rem' }}>
           무료 분석 후 심층 풀이까지 상세하게 확인해 보세요
         </p>
         <Link href="/saju" data-saju-go="true" style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,
           padding: '18px 48px', borderRadius: 16,
-          background: '#8b6fc6', color: '#fff',
+          background: 'var(--cta)', color: '#fff',
           fontSize: '1.1rem', fontWeight: 700, textDecoration: 'none',
-          boxShadow: '0 0 60px rgba(139,111,198,0.35)',
+          boxShadow: '0 0 60px rgba(184,134,11,0.35)',
+          animation: 'ctaPulse 2s ease-in-out infinite',
         }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 2L13.5 9L21 10.5L13.5 12L12 19L10.5 12L3 10.5L10.5 9L12 2Z" fill="currentColor"/>
           </svg>
-          무료로 사주팔자 보기
+          운명의 통제권 확보하기
         </Link>
       </section>
-      {!APPS_IN_TOSS && <KakaoAd />}
 
       {/* 푸터 */}
       <footer style={{

@@ -15,7 +15,7 @@ export default defineConfig({
   appName: 'saju-coupax',
   brand: {
     displayName: 'AI사주',
-    primaryColor: '#0d0b1e',
+    primaryColor: '#0A1931',
     icon: 'https://saju.coupax.co.kr/icon',
   },
   web: {

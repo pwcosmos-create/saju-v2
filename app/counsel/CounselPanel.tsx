@@ -4,12 +4,11 @@
  *
  * - STT 마이크 버튼 (Web Speech API, ko-KR)
  * - Wake Lock: 상담 중 화면 꺼짐 방지
- * - iOS AudioContext 잠금 해제
+ * - TTS(답변 읽어주기)는 사용하지 않음
  */
 import { useState, useEffect, useRef } from 'react';
 import type { SajuResult } from '../../core/pillar-calc/main-calculator';
 import { COUNSELOR_NAMES } from '../../core/counselor-config';
-import { useTts } from './use-tts';
 import { useStt } from './use-stt';
 import {
   COUNSEL_LEAVE_CONFIRM_MESSAGE,
@@ -26,7 +25,7 @@ import { renderCounselContent } from './render-counsel-content';
 import PaymentModal from '../components/payment-modal';
 import { restorePendingCounselPurchases } from '../../lib/toss-counsel-iap';
 import { COUNSEL_IAP_MINUTES } from '../../core/counsel-iap';
-import { buildGreetingReply, isCounselTtsReadRequest } from '../../core/counsel-greeting';
+import { buildGreetingReply } from '../../core/counsel-greeting';
 
 const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
 
@@ -64,8 +63,6 @@ export default function CounselPanel({
     sessionStartedAt,
     purchasedMinutes || COUNSEL_IAP_MINUTES,
   );
-  const { playing, enabled, setEnabled, speak, stop, primeAudio } = useTts(counselor);
-
   useEffect(() => {
     if (!APPS_IN_TOSS || !result) return;
     void restorePendingCounselPurchases((total) => {
@@ -78,41 +75,8 @@ export default function CounselPanel({
     });
   }, [result]);
 
-  /** 현재 TTS로 읽히는 메시지 콘텐츠 추적 (버블 강조 용) */
-  const [speakingContent, setSpeakingContent] = useState<string | null>(null);
-  const [ttsHintDismissed, setTtsHintDismissed] = useState(false);
-  const lastAutoSpokenRef = useRef('');
-
-  // playing이 끌리면 강조 해제
-  useEffect(() => {
-    if (!playing) setSpeakingContent(null);
-  }, [playing]);
-
-  useEffect(() => {
-    if (!open) {
-      lastAutoSpokenRef.current = '';
-      setTtsHintDismissed(false);
-      return;
-    }
-    void primeAudio();
-  }, [open, primeAudio]);
-
-  /** AI 답변(인트로 포함) — Gemini TTS 자동 읽기 */
-  useEffect(() => {
-    if (!open || !enabled || loading) return;
-    const last = msgs[msgs.length - 1];
-    if (last?.role !== 'assistant') return;
-    const content = last.content.trim();
-    if (content.length < 6 || isSajuWaitingMessage(content)) return;
-    if (content === lastAutoSpokenRef.current) return;
-    lastAutoSpokenRef.current = content;
-    setSpeakingContent(content);
-    void primeAudio().then(() => speak(content));
-  }, [msgs, open, enabled, loading, speak, primeAudio]);
-
   /** STT 콜백에서 안전하게 호출하기 위한 ref (클로저 스테일 방지) */
   const sendVoiceRef = useRef<(text: string) => Promise<void>>(async () => { });
-  /** 마이크로 보낸 직후 TTS는 답 본문만 읽기 */
   const lastInputViaVoiceRef = useRef(false);
 
   const { listening, supported: sttSupported, start: startStt } = useStt((text) => {
@@ -153,17 +117,14 @@ export default function CounselPanel({
     videoRef.current.play().catch(() => { });
   }, [open]);
 
-  /** 탭 닫기·앱 전환·화면 꺼짐 → TTS 정지 + Wake Lock 해제 */
+  /** 탭 닫기·앱 전환·화면 꺼짐 → Wake Lock 해제 */
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.hidden) {
-        // 페이지가 숨겨질 때 (탭 전환, 홈 버튼, 앱 전환 등)
-        stop();
         wakeLockRef.current?.release().catch(() => { });
         wakeLockRef.current = null;
         videoRef.current?.pause();
       } else if (open) {
-        // 다시 보일 때 Wake Lock 재획득
         if ('wakeLock' in navigator) {
           (navigator as Navigator & { wakeLock: { request: (type: string) => Promise<WakeLockSentinel> } })
             .wakeLock.request('screen')
@@ -174,8 +135,6 @@ export default function CounselPanel({
       }
     }
     function handlePageHide() {
-      // 브라우저 탭 닫기 / 새로고침 / 페이지 이탈
-      stop();
       wakeLockRef.current?.release().catch(() => { });
     }
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -184,7 +143,7 @@ export default function CounselPanel({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [open, stop]);
+  }, [open]);
 
 
   /** 상담 열림 시 뒤 페이지 스크롤·하단 노출 차단 */
@@ -203,12 +162,12 @@ export default function CounselPanel({
 
   useEffect(() => {
     if (!aiSummaryReady) {
-      stop(); reset(); setOpen(false); setShowPaymentModal(false);
+      reset(); setOpen(false); setShowPaymentModal(false);
       setSessionStartedAt(null);
       setTimeLeft(counselSessionLimitSecs(purchasedMinutes));
       setSessionExpired(false);
     }
-  }, [aiSummaryReady, reset, stop]);
+  }, [aiSummaryReady, reset, purchasedMinutes]);
 
   useEffect(() => {
     if (!open) {
@@ -262,30 +221,6 @@ export default function CounselPanel({
       return;
     }
 
-    if (isCounselTtsReadRequest(trimmed)) {
-      const lastAssistant = [...msgs].reverse().find(
-        (m) => m.role === 'assistant' && m.content.trim().length > 6 && !isSajuWaitingMessage(m.content),
-      );
-      stop();
-      setInput('');
-      if (!lastAssistant) {
-        applyMsgs([
-          ...msgs,
-          { role: 'user', content: trimmed },
-          { role: 'assistant', content: '먼저 상담 답변이 있어야 음성으로 들려 드릴 수 있어요. 질문을 입력해 주세요.' },
-        ]);
-        return;
-      }
-      applyMsgs([...msgs, { role: 'user', content: trimmed }]);
-      setEnabled(true);
-      setTtsHintDismissed(true);
-      setSpeakingContent(lastAssistant.content);
-      await primeAudio();
-      void speak(lastAssistant.content, { manual: true });
-      return;
-    }
-
-    stop();
     setInput('');
     await send(trimmed);
     lastInputViaVoiceRef.current = false;
@@ -297,7 +232,6 @@ export default function CounselPanel({
     const trimmed = input.trim();
     if (!trimmed) return;
     lastInputViaVoiceRef.current = false;
-    await primeAudio();
     await handleSendWithText(trimmed);
   }
 
@@ -319,7 +253,6 @@ export default function CounselPanel({
     if (sessionStartedAt && !sessionExpired && timeLeft > 0) {
       if (!window.confirm(COUNSEL_LEAVE_CONFIRM_MESSAGE)) return;
     }
-    stop();
     setOpen(false);
   }
 
@@ -354,80 +287,6 @@ export default function CounselPanel({
   const PURPLE = '#8b6fc6';
   const panelBg = '#0e0b1c';
   const borderColor = 'rgba(255,255,255,0.1)';
-
-  function toggleTts() {
-    const turningOn = !enabled;
-    setEnabled(turningOn);
-    if (turningOn) {
-      setTtsHintDismissed(true);
-      void primeAudio().then(() => {
-        const lastAssistant = [...msgs].reverse().find(
-          (m) => m.role === 'assistant' && m.content.trim().length > 6 && !isSajuWaitingMessage(m.content),
-        );
-        if (lastAssistant && lastAssistant.content !== lastAutoSpokenRef.current) {
-          lastAutoSpokenRef.current = lastAssistant.content;
-          setSpeakingContent(lastAssistant.content);
-          void speak(lastAssistant.content, { manual: true });
-        }
-      });
-    } else {
-      stop();
-    }
-  }
-
-  function VoiceBtn() {
-    if (playing) {
-      return (
-        <button id="counsel-tts-stop" onClick={stop} title="음성 정지" style={{
-          background: 'rgba(220,80,80,.2)', border: '1px solid rgba(220,80,80,.4)',
-          borderRadius: 8, padding: '3px 10px',
-          color: 'rgba(255,160,160,.9)', cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
-        }}>⏹ 정지</button>
-      );
-    }
-    return (
-      <button id="counsel-tts-toggle" onClick={toggleTts} title={enabled ? '음성 끄기' : '음성 켜기'} style={{
-        background: enabled ? 'rgba(74,158,255,.15)' : 'rgba(255,255,255,.06)',
-        border: `1px solid ${enabled ? 'rgba(74,158,255,.4)' : 'rgba(255,255,255,.15)'}`,
-        borderRadius: 8, padding: '3px 10px',
-        color: enabled ? '#7bbfff' : 'rgba(255,255,255,.55)',
-        cursor: 'pointer', fontSize: '.72rem', fontWeight: 700,
-      }}>
-        {enabled ? '🔊 음성' : '🔊 음성 켜기'}
-      </button>
-    );
-  }
-
-  /* ─── 플로팅 버튼 ─── */
-  const FabButton = (
-    <button
-      id="counsel-panel-fab"
-      onClick={() => setShowPaymentModal(true)}
-      aria-label="AI 심층 상담 열기"
-      style={{
-        position: 'fixed',
-        bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
-        right: 16,
-        zIndex: 9000,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '12px 18px',
-        background: 'linear-gradient(135deg, #6b4fa0, #3a7bd5)',
-        border: 'none',
-        borderRadius: 100,
-        color: '#fff',
-        fontWeight: 700,
-        fontSize: '.85rem',
-        cursor: 'pointer',
-        boxShadow: '0 4px 20px rgba(107,79,160,0.5)',
-        WebkitTapHighlightColor: 'transparent',
-      }}
-    >
-      <span>✦</span>
-      AI 심층 상담
-    </button>
-  );
 
   /* ─── 패널 ─── */
   const Panel = (
@@ -517,7 +376,6 @@ export default function CounselPanel({
           <span style={{ fontWeight: 800, fontSize: '.95rem' }}>AI 심층 상담</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <VoiceBtn />
           {sessionStartedAt && (
             <button
               type="button"
@@ -571,60 +429,6 @@ export default function CounselPanel({
         </div>
       </div>
 
-      {aiSummaryReady && sessionStartedAt && !enabled && !ttsHintDismissed && (
-        <div
-          role="note"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            margin: '0 12px',
-            marginTop: 10,
-            padding: '10px 12px',
-            borderRadius: 10,
-            background: 'rgba(74,158,255,.1)',
-            border: '1px solid rgba(74,158,255,.25)',
-            flexShrink: 0,
-          }}
-        >
-          <button
-            type="button"
-            onClick={toggleTts}
-            style={{
-              flex: 1,
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              textAlign: 'left',
-              color: 'rgba(200,225,255,.95)',
-              fontSize: '.78rem',
-              lineHeight: 1.45,
-              cursor: 'pointer',
-            }}
-          >
-            🔊 누르면 답변을 음성으로 들을 수 있어요
-          </button>
-          <button
-            type="button"
-            onClick={() => setTtsHintDismissed(true)}
-            aria-label="안내 닫기"
-            style={{
-              flexShrink: 0,
-              background: 'none',
-              border: 'none',
-              color: 'rgba(255,255,255,.45)',
-              cursor: 'pointer',
-              fontSize: '.9rem',
-              lineHeight: 1,
-              padding: 4,
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       {/* ── guard ── */}
       {!aiSummaryReady && (
         <div style={{
@@ -659,7 +463,6 @@ export default function CounselPanel({
               msg.content.startsWith('응답 시간이')
             );
             const isEmpty = !isUser && msg.content === '';
-            const isReading = playing && !isUser && speakingContent === msg.content;
             return (
               <div key={i} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
                 <div style={{
@@ -668,22 +471,17 @@ export default function CounselPanel({
                   borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                   background: isUser
                     ? `linear-gradient(135deg, ${PURPLE}, #3a7bd5)`
-                    : isError ? 'rgba(220,80,80,.15)' : isWaiting ? 'rgba(139,111,198,.12)' : isReading ? 'rgba(139,111,198,.18)' : 'rgba(255,255,255,.07)',
+                    : isError ? 'rgba(220,80,80,.15)' : isWaiting ? 'rgba(139,111,198,.12)' : 'rgba(255,255,255,.07)',
                   border: isError
                     ? '1px solid rgba(220,80,80,.3)'
                     : isWaiting
                       ? '1px solid rgba(139,111,198,.35)'
-                    : isReading
-                      ? '1px solid rgba(139,111,198,.6)'
                       : '1px solid rgba(255,255,255,.08)',
-                  boxShadow: isReading ? '0 0 16px rgba(139,111,198,.35), inset 0 0 8px rgba(139,111,198,.08)' : 'none',
                   color: isError ? 'rgba(255,180,180,.9)' : '#e8e8e8',
                   fontSize: '.88rem',
                   lineHeight: 1.75,
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
-                  animation: isReading ? 'reading-glow 2s ease-in-out infinite' : 'none',
-                  transition: 'border 0.3s, box-shadow 0.3s, background 0.3s',
                 }}>
                   {isEmpty ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -770,30 +568,6 @@ export default function CounselPanel({
                         </div>
                       )}
                       {isUser ? msg.content : renderCounselContent(msg.content)}
-                      {!isUser && !isError && msg.content.length > 10 && (
-                        <button
-                          onClick={() => {
-                            if (playing) {
-                              stop();
-                            } else {
-                              void primeAudio().then(() => {
-                                setSpeakingContent(msg.content);
-                                void speak(msg.content, { manual: true });
-                              });
-                            }
-                          }}
-                          style={{
-                            display: 'block', marginTop: 8,
-                            background: 'none', border: 'none',
-                            color: isReading ? 'rgba(180,140,255,.8)' : 'rgba(255,255,255,.4)',
-                            cursor: 'pointer',
-                            fontSize: '.72rem', padding: 0,
-                            WebkitTapHighlightColor: 'transparent',
-                          }}
-                        >
-                          {playing ? '⏹ 정지' : '🔊 읽기'}
-                        </button>
-                      )}
                     </>
                   )}
                 </div>
@@ -873,10 +647,7 @@ export default function CounselPanel({
           {sttSupported && (
             <button
               id="counsel-mic-btn"
-              onClick={async () => {
-                await primeAudio(); // 마이크 탭 = 사용자 제스처 → iOS AudioContext unlock
-                startStt();
-              }}
+              onClick={() => { startStt(); }}
               disabled={loading || sessionExpired}
               aria-label={listening ? '음성 입력 중지' : '음성으로 입력'}
               title={listening ? '듣는 중... (탭하여 중지)' : '마이크로 입력'}
@@ -972,7 +743,6 @@ export default function CounselPanel({
 
   return (
     <>
-      {!open && result && FabButton}
       {open && Panel}
       <PaymentModal
         open={showPaymentModal}

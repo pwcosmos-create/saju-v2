@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
       || (isTossBuild ? 'https://saju.coupax.co.kr' : ''),
   },
   ...(isTossBuild ? {
+    /** next dev 의 .next/dev 와 충돌 방지 (Windows EPERM·타입체크 깨짐) */
+    distDir: '.next-toss',
     output: 'export',
     /** 토스 .ait 번들 루트 = out/web — /web 접두사 없이 상대 경로로 로드 */
     assetPrefix: './',

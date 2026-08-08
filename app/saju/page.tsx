@@ -11,8 +11,6 @@
 import Link from 'next/link';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { SiteNav } from '../site-chrome';
-import KakaoAd from '../components/kakao-ad';
-import AdGateModal from '../components/ad-gate-modal';
 import { calculate, SajuResult } from '../../core/pillar-calc/main-calculator';
 import { readSajuFormFromDom, readInitialSajuForm } from '../../lib/toss-form-read';
 import { consumePendingResult, consumePendingForm } from '../../lib/toss-standalone-analyze';
@@ -55,6 +53,7 @@ import type { DaeunResult } from '../../core/pillar-calc/grand-fortune';
 import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
 import { preloadSajuRewardedAd, showSajuRewardedAd } from '../../lib/toss-rewarded-ad';
 import CounselPanel from '../counsel/CounselPanel';
+import StickyBannerAd from '../components/sticky-banner-ad';
 
 // 음력 변환 (클라이언트 전용)
 type MsLib = { lunarToSolar: (y:number,m:number,d:number,leap:boolean)=>{year:number,month:number,day:number} };
@@ -64,7 +63,7 @@ if (typeof window !== 'undefined') {
 }
 
 const THIS_YEAR = new Date().getFullYear();
-const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
+const APPS_IN_TOSS = true; // 토스 미니앱 전용으로 상시 켜짐
 
 function initTossFormValue<T>(pick: (f: NonNullable<ReturnType<typeof readInitialSajuForm>>) => T, fallback: T): T {
   if (typeof window === 'undefined' || !APPS_IN_TOSS) return fallback;
@@ -717,14 +716,7 @@ export default function Home() {
           생년월일·시간으로 60갑자 일주, 오행, 신살, 대운, {THIS_YEAR}년 운세를 상세하게 분석합니다.
         </p>
 
-        <button onClick={() => window.open('http://pf.kakao.com/_XMxdGb', '_blank')} style={{
-          padding:'9px 24px', marginBottom:40,
-          background: 'rgba(255,222,0,.15)', border: '1px solid rgba(255,222,0,.4)',
-          borderRadius:100, color: '#ffde00',
-          fontSize:'.9rem', fontWeight:800, cursor:'pointer', transition:'all .25s',
-        }}>
-          💛 카톡 채널 친구 추가하기
-        </button>
+
 
         <div className="form-card" style={{ background:'var(--card2)', border:'1px solid var(--border)',
           borderRadius:16, ...(process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1' ? {} : { backdropFilter:'blur(20px)' }), textAlign:'left' }}>
@@ -739,7 +731,7 @@ export default function Home() {
               <div style={{ display:'flex', gap:8 }}>
                 {(['남','여'] as const).map(g=>(
                   <button key={g} onClick={()=>setGender(g)}
-                    style={{ ...gBtnStyle, ...(gender===g?{borderColor:'var(--purple)',background:'rgba(139,111,198,.2)',color:'var(--text)'}:{}) }}>
+                    style={{ ...gBtnStyle, ...(gender===g?{borderColor:'var(--cta)',background:'rgba(184,134,11,.15)',color:'var(--cta)'}:{}) }}>
                     {g}성
                   </button>
                 ))}
@@ -751,13 +743,13 @@ export default function Home() {
               <div style={{ display:'flex', gap:6, marginBottom:8, alignItems:'center' }}>
                 {[false,true].map(isL=>(
                   <button key={String(isL)} onClick={()=>setLunar(isL)}
-                    style={{ ...calBtnStyle, ...(lunar===isL?{borderColor:'var(--purple)',background:'rgba(139,111,198,.2)',color:'var(--text)'}:{}) }}>
+                    style={{ ...calBtnStyle, ...(lunar===isL?{borderColor:'var(--cta)',background:'rgba(184,134,11,.15)',color:'var(--cta)'}:{}) }}>
                     {isL?'음력':'양력'}
                   </button>
                 ))}
                 {lunar&&(
                   <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:'.75rem', color:'var(--muted)', marginLeft:4, cursor:'pointer' }}>
-                    <input type="checkbox" checked={leapM} onChange={e=>setLeapM(e.target.checked)} style={{ accentColor:'var(--purple)' }} />
+                    <input type="checkbox" checked={leapM} onChange={e=>setLeapM(e.target.checked)} style={{ accentColor:'var(--cta)' }} />
                     윤달
                   </label>
                 )}
@@ -818,21 +810,16 @@ export default function Home() {
               {formError}
             </p>
           )}
-          {!APPS_IN_TOSS && <KakaoAd />}
-          <button type="button" data-saju-analyze onClick={APPS_IN_TOSS ? undefined : () => setAdGateOpen(true)} disabled={loading} style={{
+          <button type="button" data-saju-analyze onClick={(typeof window !== 'undefined' && window.navigator.userAgent.includes('Toss')) ? undefined : doAnalyze} disabled={loading} style={{
             width:'100%', marginTop: formError ? 12 : 20, padding:15,
-            background:'linear-gradient(135deg,#7c4fc4,#4a9eff)', border:'none',
+            background:'var(--cta)', border:'none',
             borderRadius:10, color:'#fff', fontSize:'.98rem', fontWeight:700,
             cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1,
-          }}>✦ 사주팔자 정밀 분석하기</button>
+            animation: loading ? 'none' : 'ctaPulse 2s ease-in-out infinite',
+            boxShadow: '0 4px 15px rgba(184,134,11,.2)',
+          }}>✦ 운명의 통제권 확보하기</button>
         </div>
-        {!APPS_IN_TOSS && (
-          <AdGateModal
-            open={adGateOpen}
-            onProceed={() => { setAdGateOpen(false); doAnalyze(); }}
-            onClose={() => setAdGateOpen(false)}
-          />
-        )}
+
       </section>
 
       {/* ── Loading ── */}
@@ -921,24 +908,8 @@ export default function Home() {
               {dp&&` — ${getIljooDesc(dp).split('.')[0]}`}
             </h2>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center', marginTop:14 }}>
-              <button onClick={() => window.open('http://pf.kakao.com/_XMxdGb', '_blank')} style={{
-                padding:'7px 18px',
-                background: 'rgba(255,222,0,.15)',
-                border: '1px solid rgba(255,222,0,.4)',
-                borderRadius:100, color: '#ffde00',
-                fontSize:'.8rem', fontWeight:700, cursor:'pointer', transition:'all .25s',
-              }}>
-                💛 카톡 채널 추가
-              </button>
-              <button onClick={shareResult} style={{
-                padding:'7px 18px',
-                background: 'rgba(255,222,0,.15)',
-                border: '1px solid rgba(255,222,0,.4)',
-                borderRadius:100, color: '#ffde00',
-                fontSize:'.8rem', fontWeight:700, cursor:'pointer', transition:'all .25s',
-              }}>
-                💬 카톡 공유하기
-              </button>
+
+
               <button onClick={copyResult} style={{
                 padding:'7px 18px',
                 background: copied ? 'rgba(76,190,130,.2)' : 'rgba(255,255,255,.07)',
@@ -956,16 +927,16 @@ export default function Home() {
           {fortuneResult && <DailyFortuneCard fortune={fortuneResult} dayStemIdx={ds} />}
           {dp&&<IljooCard dp={dp} yearBranch={result.pillars[0]?.b ?? 0} />}
           <OhaengCard ohaeng={result.ohaeng} />
-          {!APPS_IN_TOSS && <KakaoAd />}
+
 
           {/* 탭 */}
           <div style={{ display:'flex', gap:7, marginBottom:16, flexWrap:'wrap' }}>
             {TAB_NAMES.map(t=>(
               <button key={t} onClick={()=>setTab(t)} style={{
                 padding:'7px 15px', borderRadius:100, cursor:'pointer', fontSize:'.82rem', fontWeight:600,
-                border:`1px solid ${tab===t?'var(--purple)':'var(--border)'}`,
-                background: tab===t?'rgba(139,111,198,.2)':'var(--card)',
-                color: tab===t?'var(--text)':'var(--muted)',
+                border:`1px solid ${tab===t?'var(--cta)':'var(--border)'}`,
+                background: tab===t?'rgba(184,134,11,.15)':'var(--card)',
+                color: tab===t?'var(--cta)':'var(--muted)',
               }}>{t}</button>
             ))}
           </div>
@@ -981,8 +952,8 @@ export default function Home() {
           </div>
 
           {/* AI 풀이 */}
-          <div style={{ margin:'28px 0', background:'rgba(139,111,198,.1)',
-            border:'1px solid rgba(139,111,198,.3)', borderRadius:16, padding:28 }}>
+          <div style={{ margin:'28px 0', background:'rgba(184,134,11,.08)',
+            border:'1px solid rgba(184,134,11,.2)', borderRadius:16, padding:28 }}>
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
               <span style={{ fontSize:'1.3rem' }}>✦</span>
               <span style={{ fontWeight:800, fontSize:'1rem', color:'var(--gold)' }}>AI 심층 풀이</span>
@@ -1096,6 +1067,7 @@ export default function Home() {
         result={result}
         aiSummaryReady={APPS_IN_TOSS ? Boolean(result) : aiFortuneComplete}
       />
+      <StickyBannerAd visible={Boolean(result)} />
       </div>{/* /z-index wrapper */}
     </div>
   );
@@ -1163,7 +1135,7 @@ function ScoreCards({ ds }: { ds:number }) {
 function IljooCard({ dp, yearBranch }: { dp:Pillar; yearBranch:number }) {
   const ds=dp.s, idx=getPillarIdx(dp.s,dp.b);
   return (
-    <div className="iljoo-inner" style={{ background:'linear-gradient(135deg,rgba(139,111,198,.15),rgba(74,158,255,.1))',border:'1px solid rgba(139,111,198,.3)',borderRadius:16,padding:22,marginBottom:16 }}>
+    <div className="iljoo-inner" style={{ background:'linear-gradient(135deg,rgba(184,134,11,.12),rgba(173,216,230,.08))',border:'1px solid rgba(184,134,11,.25)',borderRadius:16,padding:22,marginBottom:16 }}>
       <div style={{ fontSize:'2rem',fontWeight:900,color:'var(--gold)',minWidth:70,textAlign:'center',lineHeight:1 }}>
         {STEM_ICONS[ds]}<small style={{ display:'block',fontSize:'.68rem',color:'var(--muted)',marginTop:3 }}>{STEMS[ds]}{BRANCHES[dp.b]}일주</small>
       </div>
@@ -1221,8 +1193,8 @@ function DailyFortuneCard({ fortune, dayStemIdx }: { fortune: DailyFortuneResult
   }, [cls.yongsin, dayStemIdx, fortune.date]);
 
   return (
-    <div style={{ background:'linear-gradient(135deg,rgba(74,158,255,.08),rgba(139,111,198,.08))',
-      border:'1px solid rgba(74,158,255,.3)', borderRadius:16, padding:22, marginBottom:16 }}>
+    <div style={{ background:'linear-gradient(135deg,rgba(173,216,230,.08),rgba(184,134,11,.08))',
+      border:'1px solid rgba(173,216,230,.25)', borderRadius:16, padding:22, marginBottom:16 }}>
       {/* 헤더 */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14, flexWrap:'wrap', gap:8 }}>
         <div>
@@ -1415,7 +1387,7 @@ function TabJob({ ds }: { ds:number }) {
       <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:12,color:'var(--gold)' }}>💼 적합 직업 & 진로</h3>
       <div style={{ marginBottom:16 }}>
         {JOBS_BY_STEM[ds].map(j=>(
-          <span key={j} style={{ display:'inline-block',background:'rgba(139,111,198,.15)',border:'1px solid rgba(139,111,198,.3)',borderRadius:100,padding:'4px 13px',margin:3,fontSize:'.82rem' }}>{j}</span>
+          <span key={j} style={{ display:'inline-block',background:'rgba(184,134,11,.12)',border:'1px solid rgba(184,134,11,.25)',borderRadius:100,padding:'4px 13px',margin:3,fontSize:'.82rem',color:'var(--cta)' }}>{j}</span>
         ))}
       </div>
       <div style={{ borderTop:'1px solid var(--border)',paddingTop:14,marginTop:6 }}>
@@ -2033,7 +2005,7 @@ function renderFortuneLines(lines: string[]): React.ReactNode[] {
       nodes.push(<div key={k++} style={{ height:1, background:'rgba(255,255,255,.08)', margin:'14px 0' }} />);
       continue;
     }
-    if (/^#{1,3}\s+/.test(trimmed)) {
+    if (/^#{1,5}\s+/.test(trimmed)) {
       nodes.push(renderFortuneSubheader(trimmed, k++));
       continue;
     }

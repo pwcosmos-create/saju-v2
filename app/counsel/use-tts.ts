@@ -1,131 +1,15 @@
 'use client';
 /**
- * useTts — 브라우저 Web Speech, 문장·단락마다 끊어 읽기
- *
- * 토스 WebView(APPS_IN_TOSS) 환경에서는 브라우저 speechSynthesis 대신
- * 서버 사이드 Gemini TTS 브릿지(tossTts + playServerTtsAudio)를 사용해 소리를 재생합니다.
+ * useTts — 비활성 (제품에서 TTS 미사용)
+ * 훅 시그니처만 유지해 기존 import 깨짐을 방지합니다.
  */
-import { useState, useRef, useCallback } from 'react';
-import { prepareTextForTts } from '../../lib/prepare-text-for-tts';
-import { primeBrowserTtsVoices, speakPausedBrowserReading } from '../../lib/browser-tts-voice';
-import { primeSpeechAudio } from '../../lib/korean-tts';
-import { splitForPausedReading } from '../../lib/tts-paused-reading';
-import { tossTts } from '../../lib/toss-http';
-import { playServerTtsAudio } from '../../lib/server-tts-playback';
-import { splitUnitForApi, SERVER_TTS_PLAYBACK_RATE } from '../../lib/natural-server-tts';
-
-const APPS_IN_TOSS = process.env.NEXT_PUBLIC_APPS_IN_TOSS === '1';
-
-export function useTts(counselor: string) {
-  const [playing, setPlaying] = useState(false);
-  const [enabled, setEnabled] = useState(false);
-
-  const abortRef = useRef<AbortController | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const counselorRef = useRef(counselor);
-  counselorRef.current = counselor;
-
-  const primeAudio = useCallback(async () => {
-    primeBrowserTtsVoices();
-    await primeSpeechAudio();
-  }, []);
-
-  const stop = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    
-    // Stop server TTS audio if playing
-    const audio = audioRef.current;
-    if (audio) {
-      try {
-        audio.pause();
-        audio.src = '';
-      } catch { /* noop */ }
-    }
-
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-    setPlaying(false);
-  }, []);
-
-  const speak = useCallback(async (text: string, options?: { manual?: boolean }) => {
-    const ttsText = prepareTextForTts(text);
-    if (!ttsText) return;
-    if (!options?.manual && !enabled) return;
-    if (typeof window === 'undefined') return;
-    if (!APPS_IN_TOSS && !window.speechSynthesis) return;
-    stop();
-
-    await primeSpeechAudio();
-    primeBrowserTtsVoices();
-
-    const units = splitForPausedReading(ttsText);
-    if (units.length === 0) return;
-
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setPlaying(true);
-
-    try {
-      if (APPS_IN_TOSS) {
-        let serverFailed = false;
-        for (let ui = 0; ui < units.length; ui++) {
-          if (ac.signal.aborted || serverFailed) break;
-          const unit = units[ui];
-          const apiChunks = splitUnitForApi(unit.text);
-          for (const chunk of apiChunks) {
-            if (ac.signal.aborted || serverFailed) break;
-            let bridged = await tossTts(chunk, counselorRef.current);
-            if (!bridged.ok) {
-              await new Promise<void>((r) => window.setTimeout(r, 400));
-              if (ac.signal.aborted) break;
-              bridged = await tossTts(chunk, counselorRef.current);
-            }
-            if (!bridged.ok || ac.signal.aborted) {
-              serverFailed = true;
-              break;
-            }
-            const ok = await playServerTtsAudio(
-              { mimeType: bridged.mimeType, audioBase64: bridged.audioBase64 },
-              {
-                audioRef,
-                shouldContinue: () => !ac.signal.aborted,
-                playbackRate: SERVER_TTS_PLAYBACK_RATE,
-              },
-            );
-            if (!ok || ac.signal.aborted) {
-              serverFailed = true;
-              break;
-            }
-          }
-          if (serverFailed || ac.signal.aborted) break;
-          if (unit.pauseAfterMs > 0 && ui < units.length - 1) {
-            await new Promise<void>((resolve, reject) => {
-              const timer = window.setTimeout(resolve, unit.pauseAfterMs);
-              ac.signal.addEventListener('abort', () => {
-                window.clearTimeout(timer);
-                reject(new DOMException('Aborted', 'AbortError'));
-              }, { once: true });
-            });
-          }
-        }
-        if (serverFailed && !ac.signal.aborted) {
-          primeBrowserTtsVoices();
-          await speakPausedBrowserReading(units, counselorRef.current, ac.signal);
-        }
-      } else {
-        await speakPausedBrowserReading(units, counselorRef.current, ac.signal);
-      }
-    } catch {
-      // ignore abort or other silent errors
-    } finally {
-      if (abortRef.current === ac) {
-        setPlaying(false);
-        abortRef.current = null;
-      }
-    }
-  }, [enabled, stop]);
-
-  return { playing, enabled, setEnabled, speak, stop, primeAudio };
+export function useTts(_counselor: string) {
+  return {
+    playing: false,
+    enabled: false,
+    setEnabled: (_v: boolean) => {},
+    speak: async (_text: string, _options?: { manual?: boolean }) => {},
+    stop: () => {},
+    primeAudio: async () => {},
+  };
 }

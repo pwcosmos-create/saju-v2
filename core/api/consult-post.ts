@@ -160,7 +160,7 @@ ${compareSajuContext}
   if (isCounselTtsReadRequest(lastUserMessage)) {
     return Response.json(
       {
-        content: '방금 답변은 상담창의 「읽기」 버튼을 누르시면 음성으로 들으실 수 있어요.',
+        content: '지금은 텍스트로만 상담을 진행해요. 궁금한 점을 글로 물어봐 주세요.',
       },
       {
         headers: {

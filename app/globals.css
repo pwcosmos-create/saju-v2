@@ -3,25 +3,29 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #0d0b1e;
+  --bg: #0A1931;
   --card: rgba(255,255,255,0.06);
   --card2: rgba(255,255,255,0.1);
   --border: rgba(255,255,255,0.12);
-  --text: #f0eeff;
+  --text: #FFFFFF;
   --muted: #9090b0;
-  --gold: #e8c97e;
-  --purple: #8b6fc6;
+  --cta: #B8860B;
+  --highlight: #ADD8E6;
+  
+  /* Legacy tokens mapped to new design system to prevent breakage */
+  --gold: #B8860B;
+  --purple: #0A1931;
   --red: #e05555;
   --green: #4cbe82;
-  --blue: #4a9eff;
+  --blue: #ADD8E6;
 }
 
 body {
   font-family: 'Pretendard', -apple-system, sans-serif;
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse at 20% 20%, rgba(100,60,180,.25) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(40,80,180,.2) 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 20%, rgba(184,134,11,.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(173,216,230,.1) 0%, transparent 50%);
   background-attachment: fixed;
   color: var(--text);
   min-height: 100vh;
@@ -180,6 +184,12 @@ select option {
 @keyframes aiBlink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+@keyframes ctaPulse {
+  0% { box-shadow: 0 0 0 0 rgba(184,134,11, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(184,134,11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(184,134,11, 0); }
 }
 
 .analyzing-btn {

@@ -21,7 +21,7 @@ interface AdGateModalProps {
 }
 
 const AD_UNIT = 'DAN-oIsF9hVzrc3FjgRa';
-const AD_WAIT_SEC = 5; // 최소 광고 노출 시간
+const AD_WAIT_SEC = process.env.NODE_ENV === 'development' ? 0 : 5; // 개발 환경에서는 대기 시간 생략
 
 export default function AdGateModal({ open, onProceed, onClose }: AdGateModalProps) {
   const adContainerRef = useRef<HTMLDivElement>(null);
@@ -184,10 +184,10 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
             pointerEvents: 'auto',
             width: '100%',
             maxWidth: 380,
-            background: 'linear-gradient(160deg, rgba(26,20,52,0.97) 0%, rgba(14,11,34,0.98) 100%)',
-            border: '1px solid rgba(124, 79, 196, 0.35)',
+            background: 'linear-gradient(160deg, rgba(10,25,49,0.97) 0%, rgba(5,13,26,0.98) 100%)',
+            border: '1px solid rgba(184, 134, 11, 0.35)',
             borderRadius: 24,
-            boxShadow: '0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(74, 158, 255, 0.08) inset',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(173, 216, 230, 0.1) inset',
             overflow: 'hidden',
             animation: 'adGateFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
           }}
@@ -213,7 +213,7 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
               <div style={{
                 fontSize: '1rem',
                 fontWeight: 800,
-                background: 'linear-gradient(90deg, #c9a0ff, #7c9fff)',
+                background: 'linear-gradient(90deg, #ADD8E6, #FFFFFF)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
               }}>
@@ -289,9 +289,7 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
               <div style={{
                 height: '100%',
                 width: `${progressPct}%`,
-                background: ready
-                  ? 'linear-gradient(90deg, #7c4fc4, #4a9eff)'
-                  : 'linear-gradient(90deg, #7c4fc4, #4a9eff)',
+                background: 'var(--highlight)',
                 borderRadius: 99,
                 transition: 'width 0.9s linear',
               }} />
@@ -308,8 +306,8 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
               minHeight: 20,
             }}>
               {ready
-                ? '✓ 준비 완료! 아래 버튼을 눌러 사주 풀이를 확인하세요.'
-                : `${countdown}초 후 풀이를 볼 수 있어요`}
+                ? '✓ 준비 완료! 아래 버튼을 눌러 운명의 통제권을 확보하세요.'
+                : `${countdown}초 후 분석이 완료됩니다.`}
             </div>
 
             <button
@@ -326,13 +324,14 @@ export default function AdGateModal({ open, onProceed, onClose }: AdGateModalPro
                 fontSize: '.98rem',
                 color: '#fff',
                 background: ready
-                  ? 'linear-gradient(135deg, #7c4fc4, #4a9eff)'
+                  ? 'var(--cta)'
                   : 'rgba(255,255,255,0.08)',
                 opacity: ready ? 1 : 0.6,
                 letterSpacing: '.02em',
+                animation: ready ? 'ctaPulse 2s ease-in-out infinite' : 'none',
               }}
             >
-              {ready ? '✦ 사주 풀이 보기' : `⏳ ${countdown}초 대기 중...`}
+              {ready ? '✦ 운명의 통제권 확보하기' : `⏳ ${countdown}초 대기 중...`}
             </button>
 
             <p style={{

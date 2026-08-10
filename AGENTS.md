@@ -22,6 +22,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `TOSS_BUILD=1` sets `NEXT_PUBLIC_APPS_IN_TOSS=1` and uses `distDir: '.next-toss'` + static `output: 'export'`.
 - Banner ads use `TossAds.attachBanner` (`lib/toss-banner-ad.ts`), not GoogleAdMob load/show (those are interstitial/rewarded only).
 - Rewarded ads use `loadFullScreenAd` / `showFullScreenAd` (`lib/toss-rewarded-ad.ts`).
+- **Mobile sticky banner**: full-bleed via `left/right:0` + `width:100%` (never `100vw`). Height `96px + env(safe-area-inset-bottom)`. Requires `viewportFit: 'cover'` in `app/layout.tsx`. Sets `--saju-sticky-banner-h` so `.results-section` / footer clear the bar on all phone widths.
 
 ### UI/UX Visual Consistency (비주얼 일관성 규칙)
 

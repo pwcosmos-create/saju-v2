@@ -2,8 +2,9 @@
 /**
  * StickyBannerAd
  * 사주 풀이 결과 화면 하단 고정 배너 (TossAds.attachBanner)
- * - 가로: 기기 화면 전폭 (width 100%)
+ * - 가로: 기기 화면 전폭 (left/right 0, width 100% — 100vw 금지)
  * - 세로: 96px + safe-area-inset-bottom
+ * - --saju-sticky-banner-h CSS 변수로 본문 padding 연동
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -16,7 +17,7 @@ import {
 const IS_PLACEHOLDER = SAJU_BANNER_AD_GROUP_ID.startsWith("PLACEHOLDER");
 
 /** 배너 본체 + 홈 인디케이터/제스처바 */
-const BANNER_BOX =
+export const SAJU_BANNER_BOX =
   `calc(${SAJU_BANNER_HEIGHT_PX}px + env(safe-area-inset-bottom, 0px))`;
 
 interface Props {
@@ -28,17 +29,30 @@ export default function StickyBannerAd({ visible }: Props) {
   const slotRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<BannerUiState>("idle");
   const hide = state === "unsupported" || state === "empty";
+  const active = visible && !hide;
 
   useEffect(() => {
-    if (!visible || hide) {
+    const root = document.documentElement;
+    if (!active) {
+      root.style.removeProperty("--saju-sticky-banner-h");
+      root.classList.remove("has-saju-sticky-banner");
       if (!visible) setState("idle");
       return;
     }
+    root.style.setProperty("--saju-sticky-banner-h", SAJU_BANNER_BOX);
+    root.classList.add("has-saju-sticky-banner");
+    return () => {
+      root.style.removeProperty("--saju-sticky-banner-h");
+      root.classList.remove("has-saju-sticky-banner");
+    };
+  }, [active, visible]);
+
+  useEffect(() => {
+    if (!active) return;
 
     let disposed = false;
     let cleanup: (() => void) | undefined;
 
-    // 레이아웃 커밋 후 ref 확보 (기종별 첫 페인트 타이밍 차이 대비)
     const raf = requestAnimationFrame(() => {
       if (disposed || !slotRef.current) return;
       cleanup = attachSajuBanner(slotRef.current, setState);
@@ -49,15 +63,15 @@ export default function StickyBannerAd({ visible }: Props) {
       cancelAnimationFrame(raf);
       cleanup?.();
     };
-  }, [visible, hide]);
+  }, [active]);
 
-  if (!visible || hide) return null;
+  if (!active) return null;
 
   const showPlaceholder = IS_PLACEHOLDER || state !== "ready";
 
   return (
     <>
-      <div style={{ height: BANNER_BOX }} aria-hidden />
+      <div className="saju-sticky-banner-spacer" style={{ height: SAJU_BANNER_BOX }} aria-hidden />
 
       <div
         id="saju-sticky-banner"
@@ -69,8 +83,7 @@ export default function StickyBannerAd({ visible }: Props) {
           left: 0,
           right: 0,
           width: "100%",
-          maxWidth: "100vw",
-          height: BANNER_BOX,
+          height: SAJU_BANNER_BOX,
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
           boxSizing: "border-box",
           zIndex: 8000,
@@ -82,7 +95,6 @@ export default function StickyBannerAd({ visible }: Props) {
           overflow: "hidden",
         }}
       >
-        {/* TossAds 부착 슬롯 — 내부 비움, 가로 100% */}
         <div
           ref={slotRef}
           id="saju-banner-ad-container"
@@ -105,7 +117,7 @@ export default function StickyBannerAd({ visible }: Props) {
               display: "flex",
               alignItems: "center",
               gap: 8,
-              padding: "0 16px",
+              padding: "0 max(16px, env(safe-area-inset-left, 16px)) 0 max(16px, env(safe-area-inset-right, 16px))",
               pointerEvents: "none",
               boxSizing: "border-box",
             }}

@@ -11,13 +11,21 @@
   --muted: #9090b0;
   --cta: #B8860B;
   --highlight: #ADD8E6;
-  
+
   /* Legacy tokens mapped to new design system to prevent breakage */
   --gold: #B8860B;
   --purple: #0A1931;
   --red: #e05555;
   --green: #4cbe82;
   --blue: #ADD8E6;
+
+  /* StickyBannerAd 가 켤 때 덮어씀 — 결과 본문이 배너에 가리지 않도록 */
+  --saju-sticky-banner-h: 0px;
+}
+
+html {
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 body {
@@ -28,9 +36,11 @@ body {
     radial-gradient(ellipse at 80% 80%, rgba(173,216,230,.1) 0%, transparent 50%);
   background-attachment: fixed;
   color: var(--text);
-  min-height: 100vh;
+  min-height: 100dvh;
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 input, select, button { font-family: inherit; }
@@ -60,7 +70,18 @@ select option {
 .results-section {
   max-width: 820px;
   margin: 0 auto;
-  padding: 0 20px 80px;
+  /* 하단 sticky 배너(기종별 너비·safe-area) 위로 본문이 올라오도록 */
+  padding: 0 20px calc(48px + var(--saju-sticky-banner-h, 0px));
+}
+
+.saju-page-root {
+  overflow-x: clip;
+  max-width: 100%;
+  width: 100%;
+}
+
+.saju-page-footer {
+  padding-bottom: calc(36px + var(--saju-sticky-banner-h, 0px));
 }
 .pillar-grid {
   display: grid;
@@ -138,7 +159,7 @@ select option {
     gap: 10px;
   }
   .results-section {
-    padding: 0 12px 60px;
+    padding: 0 12px calc(24px + var(--saju-sticky-banner-h, 0px));
   }
   .pillar-grid {
     grid-template-columns: repeat(2, 1fr);

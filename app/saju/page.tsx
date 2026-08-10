@@ -692,9 +692,9 @@ export default function Home() {
   const yearBranch = result?.pillars[0]?.b ?? 0;
 
   return (
-    <div>
+    <div className="saju-page-root">
       {result && !loading && <ZodiacBackground branch={yearBranch} />}
-      <div style={{ position:'relative', zIndex:1 }}>
+      <div style={{ position:'relative', zIndex:1, maxWidth:'100%', overflowX:'clip' }}>
       {/* ── Header ── */}
       <SiteNav variant="saju" />
 
@@ -1050,7 +1050,7 @@ export default function Home() {
         </div>
       )}
 
-      <footer style={{ textAlign:'center', padding:'36px 20px', color:'var(--muted)', fontSize:'.78rem', borderTop:'1px solid var(--border)', marginTop:40 }}>
+      <footer className="saju-page-footer" style={{ textAlign:'center', paddingTop:36, paddingLeft:20, paddingRight:20, color:'var(--muted)', fontSize:'.78rem', borderTop:'1px solid var(--border)', marginTop:40 }}>
         <p>사주팔자 무료 정밀 분석 | 본 결과는 전통 동양 철학 기반 참고용 정보입니다.</p>
         <p style={{ marginTop:8, fontSize:'.72rem', opacity:.6 }}>
           이 서비스는{' '}

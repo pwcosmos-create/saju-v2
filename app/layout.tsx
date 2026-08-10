@@ -5,6 +5,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  /** iOS/WebView에서 env(safe-area-inset-*) 활성화 */
+  viewportFit: 'cover',
   themeColor: '#0d0b1e',
 };
 import './globals.css';

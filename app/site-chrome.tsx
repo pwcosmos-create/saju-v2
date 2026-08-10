@@ -79,7 +79,9 @@ export function SiteNav({ variant }: { variant: SiteNavVariant }) {
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '0 24px',
-          height: 60,
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          height: 'calc(60px + env(safe-area-inset-top, 0px))',
+          boxSizing: 'border-box',
           background: BRAND.navGlass,
           backdropFilter: 'blur(16px)',
           borderBottom: `1px solid ${BRAND.borderNav}`,
@@ -97,12 +99,17 @@ export function SiteNav({ variant }: { variant: SiteNavVariant }) {
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: '18px 32px',
+        paddingTop: 'max(18px, env(safe-area-inset-top, 18px))',
+        paddingLeft: 'max(16px, env(safe-area-inset-left, 16px), 32px)',
+        paddingRight: 'max(16px, env(safe-area-inset-right, 16px), 32px)',
         borderBottom: '1px solid var(--border)',
         backdropFilter: 'blur(20px)',
         position: 'sticky',
         top: 0,
         zIndex: 100,
         background: BRAND.navGlassSaju,
+        boxSizing: 'border-box',
+        maxWidth: '100%',
       }}
     >
       <BrandMarkLink />

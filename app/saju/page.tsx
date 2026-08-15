@@ -54,6 +54,7 @@ import type { Shinsal } from '../../core/pillar-calc/celestial-relations';
 import { preloadSajuRewardedAd, showSajuRewardedAd } from '../../lib/toss-rewarded-ad';
 import CounselPanel from '../counsel/CounselPanel';
 import StickyBannerAd from '../components/sticky-banner-ad';
+import SajuRealtimeChat from '../components/saju-realtime-chat';
 
 // 음력 변환 (클라이언트 전용)
 type MsLib = { lunarToSolar: (y:number,m:number,d:number,leap:boolean)=>{year:number,month:number,day:number} };
@@ -512,7 +513,7 @@ export default function Home() {
     fetchStream(buildPrompt(lastResult.current), {
       onChunk: t => {
         fullText += t;
-        // 작성 중 단계에서는 진행률만 표시하거나 아주 가끔 업데이트 (사용자 안심용)
+        setAiText(fullText);
         if (fullText.length % 500 === 0) {
            setLoadingStep(2); 
         }
@@ -529,7 +530,7 @@ export default function Home() {
           });
           return;
         }
-        scheduleRevealFortune(() => finishAi(trimmed, true));
+        finishAi(trimmed, true);
       },
       onError: (err) => {
         console.error('AI Stream Error:', err);
@@ -539,8 +540,30 @@ export default function Home() {
           : errMsg.includes('초과') || errMsg.includes('혼잡') || errMsg.includes('받지 못')
             ? `${errMsg}\n\n잠시 후 「✦ AI 풀이 받기」를 다시 눌러 주세요.`
             : 'AI 분석 중 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.';
-        scheduleRevealFortune(() => finishAi(msg, Boolean(fullText.trim())));
+        finishAi(msg, Boolean(fullText.trim()));
       },
+    });
+  }
+
+  async function handleAdditionalQuestion(customPrompt: string) {
+    if (!lastResult.current || aiLoading) return;
+    setAiLoad(true);
+    const prevContext = aiText;
+    const promptPayload = `[추가 상담 질문]\n${customPrompt}\n\n[내담자 사주 명식 및 이전 풀이]\n${buildPrompt(lastResult.current)}\n${prevContext.slice(0, 1500)}`;
+    
+    let chunkAccum = '';
+    fetchStream(promptPayload, {
+      onChunk: t => {
+        chunkAccum += t;
+        setAiText(prev => prev + t);
+      },
+      onDone: () => {
+        setAiLoad(false);
+      },
+      onError: (err) => {
+        console.error('Additional question stream error:', err);
+        setAiLoad(false);
+      }
     });
   }
 
@@ -951,101 +974,30 @@ export default function Home() {
             {tab==='건강'&&<TabHealth ds={ds} />}
           </div>
 
-          {/* AI 풀이 */}
-          <div style={{ margin:'28px 0', background:'rgba(184,134,11,.08)',
-            border:'1px solid rgba(184,134,11,.2)', borderRadius:16, padding:28 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
-              <span style={{ fontSize:'1.3rem' }}>✦</span>
-              <span style={{ fontWeight:800, fontSize:'1rem', color:'var(--gold)' }}>AI 심층 풀이</span>
-              <span style={{ fontSize:'.72rem', color:'var(--muted)', background:'rgba(255,255,255,.07)', padding:'2px 8px', borderRadius:20 }}>
-                Gemini 2.5 Flash
-              </span>
-            </div>
-
-            {/* 사주 도표 */}
-            <div style={{ display:'flex', flexWrap:'wrap', gap:20, justifyContent:'center', alignItems:'center',
-              padding:'18px 12px', background:'rgba(0,0,0,.15)', borderRadius:12, marginBottom:18 }}>
-              <OhaengRadar counts={result.ohaeng.counts} />
-              <div style={{ width:1, background:'rgba(255,255,255,.08)', alignSelf:'stretch' }} />
-              <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', gap:24 }}>
-                <SinGangGauge pillars={result.pillars} dayStemIdx={ds} />
-                <SipsinGrid   pillars={result.pillars} dayStemIdx={ds} />
-              </div>
-            </div>
-
-
-            {aiLoading && (
-              <div style={{
-                marginTop: 14,
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.10)',
-                borderRadius: 14,
-                padding: '14px 16px',
-                maxWidth: 760,
-                marginLeft: 'auto',
-                marginRight: 'auto',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                  <div style={{ fontWeight: 800, fontSize: '.88rem' }}>지금 AI가 사주를 풀이하는 중이에요</div>
-                  <div style={{ fontSize: '.74rem', color: 'var(--muted)' }}>
-                    {steps[loadingStep - 1] || '초안 작성 준비 중...'}
-                  </div>
-                </div>
-
-                <div style={{ height: 10 }} />
-
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {waitFacts.slice(0, Math.min(waitFacts.length, Math.max(1, waitTick))).map((t, i) => (
-                    <div key={i} style={{
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'flex-start',
-                      padding: '10px 12px',
-                      borderRadius: 12,
-                      background: 'rgba(0,0,0,0.18)',
-                      border: '1px solid rgba(255,255,255,0.06)',
-                    }}>
-                      <span className="rotating-star" style={{ marginTop: 1, fontSize: '.9rem', lineHeight: 1 }}>✦</span>
-                      <div style={{ fontSize: '.84rem', color: 'rgba(248,246,255,.92)', lineHeight: 1.75 }}>
-                        {t}
-                      </div>
-                    </div>
-                  ))}
-
-                  {waitTick < waitFacts.length && (
-                    <div className="ai-wait-skeleton" style={{
-                      height: 44,
-                      borderRadius: 12,
-                      border: '1px solid rgba(255,255,255,0.06)',
-                      background: 'rgba(0,0,0,0.18)',
-                      overflow: 'hidden',
-                    }} />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* 프리미엄 게이트 모달 */}
-
-            {aiText && !aiLoading && (
-              <AiRenderer text={aiText} loading={false} result={result} />
-            )}
+          {/* 1:1 대화형 실시간 AI 사주 풀이 (하이브리드 0원 스트리머) */}
+          <div style={{ margin:'28px 0' }}>
+            <SajuRealtimeChat
+              result={result}
+              streamText={aiText}
+              isStreaming={aiLoading}
+              onSendAdditionalPrompt={handleAdditionalQuestion}
+            />
 
             {showFb&&!fbDone&&(
-              <div style={{ marginTop:16 }}>
-                <p style={{ fontSize:'.82rem', color:'var(--muted)', marginBottom:10 }}>이 풀이가 도움이 됐나요?</p>
+              <div style={{ marginTop:20, padding:'16px 20px', background:'rgba(255,255,255,.03)', borderRadius:14, border:'1px solid rgba(255,255,255,.07)' }}>
+                <p style={{ fontSize:'.82rem', color:'var(--muted)', marginBottom:10 }}>이 실시간 사주 풀이가 도움이 되셨나요?</p>
                 <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
                   <button onClick={()=>sendFeedback(1)} style={{ background:'rgba(76,190,130,.15)',border:'1px solid rgba(76,190,130,.4)',borderRadius:8,color:'#4cbe82',padding:'7px 18px',cursor:'pointer',fontSize:'.85rem',flexShrink:0 }}>👍 도움됐어요</button>
                   <button onClick={()=>sendFeedback(-1)} style={{ background:'rgba(224,85,85,.15)',border:'1px solid rgba(224,85,85,.4)',borderRadius:8,color:'#e05555',padding:'7px 18px',cursor:'pointer',fontSize:'.85rem',flexShrink:0 }}>👎 별로예요</button>
-                  <input placeholder="한마디 (선택)" value={comment} onChange={e=>setComment(e.target.value)}
+                  <input placeholder="한마디 남겨주세요 (선택)" value={comment} onChange={e=>setComment(e.target.value)}
                     style={{ flex:1,minWidth:160,background:'rgba(255,255,255,.06)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:'.85rem',outline:'none' }} />
                 </div>
                 <p style={{ fontSize:'.75rem', color:'#e05555', marginTop:10, wordBreak:'keep-all', fontWeight:500 }}>
-                  * 피드백 데이터는 AI 품질 개선 목적으로만 익명 수집됩니다. 이름, 연락처 등 개인정보를 입력하지 마세요.
+                  * 피드백 데이터는 AI 품질 개선 목적으로만 익명 수집됩니다. 개인정보는 입력하지 마세요.
                 </p>
               </div>
             )}
-            {fbDone&&<p style={{ marginTop:10, fontSize:'.82rem', color:'#4cbe82' }}>✓ 피드백 저장됐습니다. 감사합니다!</p>}
+            {fbDone&&<p style={{ marginTop:10, fontSize:'.82rem', color:'#4cbe82', textAlign:'center' }}>✓ 소중한 피드백이 저장되었습니다. 감사합니다!</p>}
           </div>
         </div>
       )}

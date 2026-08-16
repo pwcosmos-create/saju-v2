@@ -54,20 +54,21 @@ export async function POST(req: NextRequest) {
   if (!prompt) return tossBridgeHtml({ ok: false, error: 'prompt 없음' }, 400);
 
   try {
-    // 사주 카드 대신 Google Gemini 2.5 Flash AI를 통해 직접 심층 풀이 생성
+    // Google Gemini 2.5 Flash AI 우선 시도, 한도 소진 시 4개 고속 Groq 키로 자동 페일오버
     const text = await fetchLlmCompletionText(
       {
         max_tokens: 6000,
         temperature: 0.7,
         geminiFirst: true,
-        geminiOnly: true,
+        geminiOnly: false,
         messages: [
           { role: 'system', content: SYSTEM },
           { role: 'user', content: prompt },
         ],
       },
-      { geminiFirst: true, geminiOnly: true },
+      { geminiFirst: true, geminiOnly: false },
     );
+
     if (!text || isLlmUserOverloadText(text)) {
       return tossBridgeHtml({ ok: false, error: LLM_BUSY_ERROR }, 503);
     }

@@ -58,18 +58,19 @@ export async function POST(req: NextRequest) {
   const prompt = typeof body.prompt === 'string' ? body.prompt.slice(0, 20000) : '';
   if (!prompt) return new Response(JSON.stringify({ error: 'prompt 없음' }), { status: 400 });
 
-  // 사주 카드 대신 Google Gemini 2.5 Flash AI를 통해 직접 심층 풀이 스트리밍 수행
+  // Google Gemini 2.5 Flash AI 최우선 시도, 크레딧 소진 시 4개 고속 Groq 키로 자동 페일오버
   const upstream = await fetchLlmStream({
     stream: true,
     max_tokens: 6000,
     temperature: 0.7,
     geminiFirst: true,
-    geminiOnly: true,
+    geminiOnly: false,
     messages: [
       { role: 'system', content: SYSTEM },
       { role: 'user', content: prompt },
     ],
   });
+
 
   if (!upstream.ok || !upstream.body) {
     const err = await upstream.text().catch(() => 'Gemini API 호출 실패');

@@ -11,8 +11,8 @@ import {
   STEMS, BRANCHES, STEMS_H, BRANCHES_H,
   ELEM_NAMES, STEM_ELEM,
 } from '../pillar-calc/korean-calendar-engine';
-import { calcStrength, classifyElements } from '../daily-fortune/classifier';
-import { getIljooDesc, KEYWORDS_BY_STEM } from '../interpretation-db/matcher';
+import { calcStrength } from '../daily-fortune/classifier';
+import { KEYWORDS_BY_STEM } from '../interpretation-db/matcher';
 
 export async function streamOnDeviceSajuFortune(
   promptOrResult: string | SajuResult,
@@ -24,27 +24,44 @@ export async function streamOnDeviceSajuFortune(
   let dayBranchIdx = 0;
   let isWeak = false;
 
-  // 만약 prompt 문자열인 경우 정규식으로 일주/성별 등 파싱
-  if (typeof promptOrResult === 'string') {
-    const stemMatch = promptOrResult.match(/일주[:\s]+([가-힣]{2})/);
-    const m = stemMatch ? stemMatch[1] : '';
-    if (m && m.length === 2) {
-      dayStemIdx = Math.max(0, (STEMS as readonly string[]).indexOf(m[0]));
-      dayBranchIdx = Math.max(0, (BRANCHES as readonly string[]).indexOf(m[1]));
+  try {
+    if (typeof promptOrResult === 'string') {
+      // 프롬프트 내에서 천간(갑~계) 및 지지(자~해) 일주 탐색
+      let foundStem = -1;
+      let foundBranch = -1;
+      for (let s = 0; s < STEMS.length; s++) {
+        if (promptOrResult.includes(`${STEMS[s]}일간`) || promptOrResult.includes(`일간은 ${STEMS[s]}`) || promptOrResult.includes(`일주: ${STEMS[s]}`)) {
+          foundStem = s;
+          break;
+        }
+      }
+      for (let b = 0; b < BRANCHES.length; b++) {
+        if (promptOrResult.includes(`${BRANCHES[b]}일지`) || promptOrResult.includes(`일지는 ${BRANCHES[b]}`)) {
+          foundBranch = b;
+          break;
+        }
+      }
+      dayStemIdx = foundStem >= 0 ? foundStem : 0;
+      dayBranchIdx = foundBranch >= 0 ? foundBranch : 0;
+      isWeak = promptOrResult.includes('신약');
+    } else {
+      dayStemIdx = promptOrResult.pillars[2]?.s ?? 0;
+      dayBranchIdx = promptOrResult.pillars[2]?.b ?? 0;
+      const dayElem = STEM_ELEM[dayStemIdx];
+      const strength = calcStrength(promptOrResult.pillars, dayElem);
+      isWeak = strength.isWeak;
     }
-  } else {
-    dayStemIdx = promptOrResult.pillars[2]?.s ?? 0;
-    dayBranchIdx = promptOrResult.pillars[2]?.b ?? 0;
-    const dayElem = STEM_ELEM[dayStemIdx];
-    const strength = calcStrength(promptOrResult.pillars, dayElem);
-    isWeak = strength.isWeak;
+  } catch {
+    dayStemIdx = 0;
+    dayBranchIdx = 0;
+    isWeak = false;
   }
 
-  const sKo = STEMS[dayStemIdx];
-  const bKo = BRANCHES[dayBranchIdx];
-  const sH = STEMS_H[dayStemIdx];
-  const bH = BRANCHES_H[dayBranchIdx];
-  const elemName = ELEM_NAMES[STEM_ELEM[dayStemIdx]];
+  const sKo = STEMS[dayStemIdx] || '갑';
+  const bKo = BRANCHES[dayBranchIdx] || '자';
+  const sH = STEMS_H[dayStemIdx] || '甲';
+  const bH = BRANCHES_H[dayBranchIdx] || '子';
+  const elemName = ELEM_NAMES[STEM_ELEM[dayStemIdx]] || '목(木)';
   const keywords = KEYWORDS_BY_STEM[dayStemIdx] || ['주도적', '결단력', '통찰력'];
 
   const scriptParts = [
@@ -59,13 +76,13 @@ export async function streamOnDeviceSajuFortune(
   ];
 
   const fullText = scriptParts.join('');
-  const chunks = fullText.split('');
+  const chars = fullText.split('');
 
   // 15ms 간격으로 한 글자씩 실시간 타이핑 스트리밍
-  for (let i = 0; i < chunks.length; i++) {
-    onChunk(chunks[i]);
-    if (i % 3 === 0) {
-      await new Promise((r) => setTimeout(r, 12));
+  for (let i = 0; i < chars.length; i++) {
+    onChunk(chars[i]);
+    if (i % 4 === 0) {
+      await new Promise((r) => setTimeout(r, 10));
     }
   }
 

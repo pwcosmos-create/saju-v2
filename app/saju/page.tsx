@@ -833,7 +833,7 @@ export default function Home() {
               {formError}
             </p>
           )}
-          <button type="button" data-saju-analyze onClick={(typeof window !== 'undefined' && window.navigator.userAgent.includes('Toss')) ? undefined : doAnalyze} disabled={loading} style={{
+          <button type="button" data-saju-analyze onClick={doAnalyze} disabled={loading} style={{
             width:'100%', marginTop: formError ? 12 : 20, padding:15,
             background:'var(--cta)', border:'none',
             borderRadius:10, color:'#fff', fontSize:'.98rem', fontWeight:700,

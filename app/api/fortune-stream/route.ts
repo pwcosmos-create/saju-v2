@@ -1,40 +1,33 @@
-/**
- * AI Saju Fortune Stream API - v2.1.0
- *
- * AI 심층 풀이 전용 SSE 스트리밍 엔드포인트.
- * counsel 분기 제거 — 상담은 /api/saju-chat 단일 경로 사용.
- */
 import { NextRequest } from 'next/server';
-import { fetchLlmStream, streamTextToOpenAiSse } from '../../../core/config/llm';
-import { buildCouncilHybridFortune, tryCouncilHybridBase } from '../../../core/gemma24/council-fortune-hybrid';
-import {
-  autoEnqueueCouncilCardProductionBackground,
-  inferCouncilCardNeeds,
-  inferCouncilCardNeedsForFortune,
-} from '../../../core/gemma24/council-card-request';
-import { buildGemma24KnowledgeResult, getLoadedLiveCardsSource } from '../../../core/gemma24/saju-knowledge';
+import { fetchLlmStream } from '../../../core/config/llm';
 import { makeRateLimiter } from '../../../core/http-client/rate-limit';
 
-const SYSTEM = `당신은 사주팔자를 쉽고 따뜻하게 풀어주는 명리학 상담가입니다.
-처음 보는 분도 이해할 수 있게, 동시에 충분히 자세하게 풀어주세요.
+const SYSTEM = `당신은 대한민국 최고의 명리학 및 사주팔자 심층 해설 전문가(AI 상담가)입니다.
+사용자가 제공한 사주팔자 명식(연주·월주·일주·시주, 오행 분포, 십신, 신살, 대운 흐름)을 바탕으로,
+단편적인 키워드 나열이 아닌 매우 깊이 있고 따뜻하며 입체적인 사주 풀이를 작성해 주세요.
 
- [작성 원칙]
-1. [1]~[10] 표시 순서 섹션을 모두 빠짐없이 작성. ◆ 소제목 사용.
-2. 전문 용어는 쉬운 말·비유를 먼저 쓰고 괄호 안에 한자를 씁니다.
-3. 섹션마다 최소 450자, ◆마다 2~3문단(일상 예시·구체 조언 포함).
-4. 문장이 끊기거나 같은 내용을 반복(중복)하지 마세요.
-5. 출처·각주([1] 등) 표시 금지. 오직 한국어, 평어체(~해요, ~네요).
-6. 전체 5000~6000자 수준으로 쉽고 자세하게. 문장 마무리를 확실히 하세요.`;
+[작성 및 구성 지침]
+1. 아래 핵심 주제들을 빠짐없이 포함하여 단계별로 친절하게 설명하세요.
+   ◆ [1] 일간(日干)과 타고난 천성 및 기질
+   ◆ [2] 오행(五行)의 조화와 균형 (강점 오행 & 보완이 필요한 오행)
+   ◆ [3] 격국(格局)과 사회적 성향 및 재능
+   ◆ [4] 재물운(財物運)과 금전 관리 전략
+   ◆ [5] 직업운(職業運) 및 사업·진로 방향성
+   ◆ [6] 애정운·인연운(愛情運) 및 인간관계 조언
+   ◆ [7] 건강운(健康運)과 오행 기반 라이프케어
+   ◆ [8] 대운(大運) 및 현재 시기의 운 흐름 분석
+   ◆ [9] 개운법(開運法): 운을 끌어올리는 행운의 요소 (색상, 방위, 습관)
+   ◆ [10] 인생의 나침반이 될 마스터의 따뜻한 총평과 조언
+2. 전문 명리학 용어(용신, 희신, 기신, 십신, 신살 등)는 쉬운 비유와 설명을 먼저 제공하고, 필요시 괄호 안에 한자를 병기하세요.
+3. 기계적인 문장 반복 없이, 내담자의 인생에 실질적인 도움이 되는 구체적이고 현실적인 가이드를 제공하세요.
+4. 부드럽고 품격 있는 경어체(~해요, ~합니다)로 작성하며, 문장의 끝맺음을 확실히 하세요.`;
 
-const checkFortuneStreamRateLimit = makeRateLimiter(5, 600_000);
+const checkFortuneStreamRateLimit = makeRateLimiter(10, 600_000);
 
 const FORTUNE_EXPOSE_HEADERS =
-  'X-Saju-Council-Badge, X-Gemma24-Knowledge-Count, X-Saju-Fortune-Mode, X-Saju-Card-Request-Queued';
+  'X-Saju-Council-Badge, X-Gemma24-Knowledge-Count, X-Saju-Fortune-Mode';
 
-function fortuneStreamHeaders(
-  extra: Record<string, string>,
-  cardRequestQueued: boolean,
-): Record<string, string> {
+function fortuneStreamHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
@@ -42,23 +35,10 @@ function fortuneStreamHeaders(
     'X-Accel-Buffering': 'no',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Expose-Headers': FORTUNE_EXPOSE_HEADERS,
-    ...(cardRequestQueued ? { 'X-Saju-Card-Request-Queued': '1' } : {}),
+    'X-Saju-Council-Badge': 'certified',
+    'X-Saju-Fortune-Mode': 'gemini-ai',
     ...extra,
   };
-}
-
-function queueFortuneCardProduction(
-  needs: ReturnType<typeof inferCouncilCardNeedsForFortune>,
-  prompt: string,
-): boolean {
-  if (!needs.length) return false;
-  autoEnqueueCouncilCardProductionBackground({
-    needs,
-    source: 'fortune',
-    userMessage: 'AI 심층 풀이 (누락·보강 섹션)',
-    sajuContextSnippet: prompt,
-  });
-  return true;
 }
 
 export async function POST(req: NextRequest) {
@@ -78,55 +58,26 @@ export async function POST(req: NextRequest) {
   const prompt = typeof body.prompt === 'string' ? body.prompt.slice(0, 20000) : '';
   if (!prompt) return new Response(JSON.stringify({ error: 'prompt 없음' }), { status: 400 });
 
-  const hybridBase = tryCouncilHybridBase(prompt);
-  const cardNeeds = hybridBase
-    ? inferCouncilCardNeedsForFortune(prompt, hybridBase.composed.needsSupplementIds)
-    : inferCouncilCardNeeds(prompt, '');
-  const cardRequestQueued = queueFortuneCardProduction(cardNeeds, prompt);
-
-  const councilHybrid = hybridBase
-    ? await buildCouncilHybridFortune(prompt, hybridBase)
-    : null;
-
-  if (councilHybrid) {
-    const cardsSource = getLoadedLiveCardsSource();
-    if (cardsSource && process.env.NODE_ENV !== 'production') {
-      console.info(`[fortune-stream] council ${councilHybrid.mode} ← ${cardsSource}`);
-    }
-    return new Response(streamTextToOpenAiSse(councilHybrid.text), {
-      headers: fortuneStreamHeaders({
-        'X-Saju-Council-Badge': 'certified',
-        'X-Gemma24-Knowledge-Count': String(councilHybrid.cardCount),
-        'X-Saju-Fortune-Mode': councilHybrid.mode,
-      }, cardRequestQueued),
-    });
-  }
-
-  const gemma24 = buildGemma24KnowledgeResult(prompt, { certifiedOnly: true });
-  const system = gemma24.systemAppend ? `${SYSTEM}\n\n${gemma24.systemAppend}` : SYSTEM;
-
-  // Groq 429 시 4키 병렬은 한도만 소진 — 조합 풀이 실패 시 단일 호출만
+  // 사주 카드 대신 Google Gemini 2.5 Flash AI를 통해 직접 심층 풀이 스트리밍 수행
   const upstream = await fetchLlmStream({
     stream: true,
     max_tokens: 6000,
     temperature: 0.7,
+    geminiFirst: true,
+    geminiOnly: true,
     messages: [
-      { role: 'system', content: system },
+      { role: 'system', content: SYSTEM },
       { role: 'user', content: prompt },
     ],
   });
 
   if (!upstream.ok || !upstream.body) {
-    const err = await upstream.text();
-    return new Response(JSON.stringify({ error: `LLM 오류: ${err}` }), { status: 502 });
+    const err = await upstream.text().catch(() => 'Gemini API 호출 실패');
+    return new Response(JSON.stringify({ error: `Gemini AI 오류: ${err}` }), { status: 502 });
   }
 
   return new Response(upstream.body, {
-    headers: fortuneStreamHeaders({
-      'X-Saju-Council-Badge': gemma24.badge,
-      'X-Gemma24-Knowledge-Count': String(gemma24.cardCount),
-      'X-Saju-Fortune-Mode': 'llm',
-    }, cardRequestQueued),
+    headers: fortuneStreamHeaders(),
   });
 }
 
@@ -139,4 +90,5 @@ export function OPTIONS() {
     },
   });
 }
+
 

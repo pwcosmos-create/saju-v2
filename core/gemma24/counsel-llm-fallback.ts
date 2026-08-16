@@ -1,8 +1,7 @@
-/** 상담 LLM 폴백 — always / auto / off */
-
-/** 인증 카드·일운 카드 조합 없이 Gemini 2.5 Flash만 사용 */
+/** 인증 카드·일운 카드 조합 없이 Gemini 2.5 Flash AI만 사용 */
 export function isCounselGeminiOnlyMode(): boolean {
-  return process.env.GEMMA24_COUNSEL_GEMINI_ONLY === '1';
+  if (process.env.GEMMA24_COUNSEL_CARD_ONLY === '1') return false;
+  return true;
 }
 
 export type CounselLlmFallbackMode = '0' | '1' | 'auto';
@@ -13,6 +12,7 @@ export function counselLlmFallbackMode(): CounselLlmFallbackMode {
   if (raw === '0') return '0';
   return 'auto';
 }
+
 
 function hasLlmApiKeys(): boolean {
   return Boolean(

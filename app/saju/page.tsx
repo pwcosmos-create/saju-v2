@@ -2064,147 +2064,66 @@ function AiRenderer({ text, loading, result }: {
   text: string; loading: boolean; result?: SajuResult | null;
 }) {
   const ds = result?.pillars[2]?.s ?? 0;
-  const isCouncil = text.includes('사주위원회 인증');
-  const [openSections, setOpenSections] = useState<Set<string>>(
-    () => new Set(['1', '2', '4', '3', '5', '9', '8', '7', '6', '10']),
-  );
-  const monthlyBriefs: MonthlyBrief[] | null = useMemo(() => {
-    if (!result) return null;
-    const dayElem = STEM_ELEM[ds];
-    const { isWeak } = calcStrength(result.pillars, dayElem);
-    const cls = classifyElements(ds, isWeak, result.ohaeng.counts);
-    return buildMonthlyBriefs(result, cls, new Date().getFullYear());
-  }, [result, ds]);
-
-  const elemCls = useMemo(() => {
-    if (!result) return null;
-    const dayElem = STEM_ELEM[ds];
-    const { isWeak } = calcStrength(result.pillars, dayElem);
-    return classifyElements(ds, isWeak, result.ohaeng.counts);
-  }, [result, ds]);
-
-  const SECTION_EXTRAS: Record<string, React.ReactNode> = result ? {
-    '1': <div key="c1" style={{ margin:'8px 0 16px' }}><SinGangGauge pillars={result.pillars} dayStemIdx={ds} /></div>,
-    '4': <div key="c4" style={{ margin:'4px 0 12px', display:'flex', justifyContent:'center' }}><OhaengRadar counts={result.ohaeng.counts} /></div>,
-    '9': monthlyBriefs ? <MonthlyChart key="c9" briefs={monthlyBriefs} /> : null,
-    '8': <div key="c8" style={{ margin:'4px 0 14px' }}><WealthSipsinBar pillars={result.pillars} dayStemIdx={ds} /></div>,
-    '7': <div key="c7" style={{ margin:'4px 0 14px' }}><SpousePalaceCard pillars={result.pillars} dayStemIdx={ds} /></div>,
-    '6': <div key="c6" style={{ margin:'4px 0 14px' }}><SipsinGrid pillars={result.pillars} dayStemIdx={ds} /></div>,
-    '10': elemCls ? <div key="c10" style={{ margin:'4px 0 14px' }}><YongsinPracticeCard yongsin={elemCls.yongsin} dayStemIdx={ds} /></div> : null,
-  } : {};
-
-  const SECTION_LABELS: Record<string, { emoji: string; color: string }> = {
-    '1': { emoji:'🔮', color:'#c4a8ff' },
-    '2': { emoji:'💡', color:'#90b8f0' },
-    '3': { emoji:'🌟', color:'#f5d67a' },
-    '4': { emoji:'⚖️', color:'#5dce70' },
-    '5': { emoji:'✨', color:'#c4a8ff' },
-    '6': { emoji:'💼', color:'#f5d67a' },
-    '7': { emoji:'🤝', color:'#90b8f0' },
-    '8': { emoji:'💰', color:'#5dce70' },
-    '9': { emoji:'📅', color:'#ff9a7a' },
-    '10': { emoji:'🗺️', color:'#c4a8ff' },
-  };
-
-  function toggleSection(id: string) {
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  type Section = { id: string; title: string; lines: string[] };
-  const sections: Section[] = [];
-  let current: Section | null = null;
-  let headerlessPre: string[] = [];
-
-  for (const raw of text.split('\n')) {
-    const line = raw.trimEnd();
-    const trimmed = line.trim();
-    const sec = trimmed.match(/^\[(\d+)\]\s*(.*)/);
-    if (sec) {
-      if (current) sections.push(current);
-      current = { id: sec[1], title: sec[2].trim(), lines: [] };
-      continue;
-    }
-    const dotted = trimmed.match(/^(\d{1,2})\.\s+(.+)/);
-    if (dotted) {
-      const displayNum = Number.parseInt(dotted[1]!, 10);
-      const idFromOrder = ['1', '2', '4', '3', '5', '9', '8', '7', '6', '10'][displayNum - 1];
-      if (idFromOrder) {
-        if (current) sections.push(current);
-        current = { id: idFromOrder, title: dotted[2]!.trim(), lines: [] };
-        continue;
-      }
-    }
-    if (current) current.lines.push(line);
-    else headerlessPre.push(line);
-  }
-  if (current) sections.push(current);
-
-  function renderLines(lines: string[]) {
-    return renderFortuneLines(lines);
-  }
 
   return (
-    <div style={{ marginTop:20 }}>
-      {headerlessPre.filter((l) => l.trim()).length > 0 && (
-        <div style={{ padding:'16px 20px', marginBottom:12, background:'rgba(0,0,0,.2)', borderRadius:12, border:'1px solid rgba(255,255,255,.07)' }}>
-          {isCouncil && (
-            <p style={{ fontSize:'.78rem', color:'var(--gold)', fontWeight:700, marginBottom:10 }}>사주위원회 인증 풀이</p>
-          )}
-          {renderLines(headerlessPre)}
+    <div style={{
+      marginTop: 20,
+      padding: '22px 18px',
+      background: 'linear-gradient(180deg, rgba(20, 24, 45, 0.85) 0%, rgba(13, 16, 32, 0.95) 100%)',
+      borderRadius: 16,
+      border: '1px solid rgba(196, 168, 255, 0.25)',
+      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+      position: 'relative',
+    }}>
+      {/* 상단 AI 스트리밍 배지 */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingBottom: 14,
+        marginBottom: 16,
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 26,
+            height: 26,
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #c4a8ff, #7a5af8)',
+            fontSize: '.85rem',
+          }}>
+            ✦
+          </span>
+          <span style={{ fontSize: '.95rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.02em' }}>
+            Gemini AI 실시간 심층 풀이
+          </span>
         </div>
-      )}
+        {loading && (
+          <span style={{
+            fontSize: '.72rem',
+            padding: '3px 8px',
+            borderRadius: 100,
+            background: 'rgba(232, 196, 106, 0.15)',
+            border: '1px solid rgba(232, 196, 106, 0.4)',
+            color: 'var(--gold)',
+            fontWeight: 600,
+          }}>
+            실시간 작성 중...
+          </span>
+        )}
+      </div>
 
-      {[...sections]
-        .sort((a, b) => fortuneSectionSortIndex(a.id) - fortuneSectionSortIndex(b.id))
-        .map((sec) => {
-          const meta = SECTION_LABELS[sec.id] ?? { emoji:'✦', color:'#c4a8ff' };
-          return (
-            <div key={sec.id} style={{
-              marginBottom:16, borderRadius:16, overflow:'hidden',
-              border:'1px solid rgba(255,255,255,.10)',
-              boxShadow:'0 4px 24px rgba(0,0,0,.3)',
-            }}>
-              {/* 섹션 비주얼 배너 */}
-              <SectionBanner sectionId={sec.id} />
+      {/* AI 본문 실시간 텍스트 렌더링 */}
+      <div style={{ fontSize: '.92rem', lineHeight: 1.85, color: 'rgba(248, 246, 255, 0.92)' }}>
+        {renderFortuneLines(text.split('\n'))}
+        {loading && (
+          <span className="typing-cursor" style={{ color: 'var(--gold)', marginLeft: 4 }}>▌</span>
+        )}
+      </div>
 
-              {/* 섹션 제목 헤더 */}
-              <div style={{
-                display:'flex', alignItems:'center', gap:12,
-                padding:'14px 20px 12px',
-                background:'rgba(255,255,255,.03)',
-                borderBottom:'1px solid rgba(255,255,255,.07)',
-              }}>
-                <span style={{
-                  background:`${meta.color}22`, color: meta.color, fontWeight:900,
-                  fontSize:'.85rem', padding:'4px 10px', borderRadius:100, flexShrink:0,
-                  border:`1px solid ${meta.color}44`,
-                }}>
-                  {meta.emoji}
-                </span>
-                <span style={{ flex:1, fontWeight:900, fontSize:'1.02rem', color:'#fff', lineHeight:1.35 }}>
-                  {fortuneSectionNumberedLabel(sec.id, sec.title)}
-                </span>
-              </div>
-
-              {/* 섹션 내용 */}
-              <div style={{ padding:'16px 20px', background:'rgba(0,0,0,.15)' }}>
-                {SECTION_EXTRAS[sec.id]}
-                {renderLines(sec.lines)}
-              </div>
-            </div>
-          );
-        })}
-
-      {loading && (
-        <div style={{ padding:'12px 20px', color:'var(--gold)' }}>
-          <span className="typing-cursor">▌</span>
-        </div>
-      )}
       <style>{`
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .typing-cursor { font-weight: 700; animation: blink 0.8s infinite; }
@@ -2212,6 +2131,7 @@ function AiRenderer({ text, loading, result }: {
     </div>
   );
 }
+
 
 // ─── 7번 재물: 재성(편재·정재) 분포 ───
 function WealthSipsinBar({ pillars, dayStemIdx }: { pillars: (Pillar|null)[], dayStemIdx: number }) {

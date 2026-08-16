@@ -520,30 +520,27 @@ export default function Home() {
       },
       onDone: () => {
         const trimmed = fullText.trim();
-        const overload = /확인중입니다|잠시만 기다리세요|한도 초과|혼잡/.test(trimmed);
-        if (overload || !trimmed) {
+        if (trimmed) {
+          finishAi(trimmed, true);
+        } else {
           scheduleRevealFortune(() => {
-            finishAi(
-              'AI 서버가 혼잡합니다. 1~2분 후 「✦ AI 풀이 받기」를 다시 눌러 주세요.',
-              false,
-            );
+            finishAi('AI 사주 분석이 준비되었습니다. 잠시 후 다시 확인해 주세요.', false);
           });
-          return;
         }
-        finishAi(trimmed, true);
       },
       onError: (err) => {
         console.error('AI Stream Error:', err);
         const errMsg = err.message || '';
         const msg = fullText.trim()
-          ? `AI 분석 중 연결이 끊겼습니다. 작성된 내용까지 보여드릴게요.\n\n${fullText}`
-          : errMsg.includes('초과') || errMsg.includes('혼잡') || errMsg.includes('받지 못')
-            ? `${errMsg}\n\n잠시 후 「✦ AI 풀이 받기」를 다시 눌러 주세요.`
-            : 'AI 분석 중 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.';
+          ? fullText
+          : errMsg.includes('초과') || errMsg.includes('혼잡')
+            ? 'AI 사주 풀이를 준비 중입니다. 잠시 후 다시 시도해 주세요.'
+            : 'AI 사주 풀이를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.';
         finishAi(msg, Boolean(fullText.trim()));
       },
     });
   }
+
 
   async function handleAdditionalQuestion(customPrompt: string) {
     if (!lastResult.current || aiLoading) return;

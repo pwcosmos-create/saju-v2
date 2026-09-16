@@ -1,4 +1,4 @@
-name: CI & Security Audit
+name: CI & Saju Knowledge & Security Audit
 
 on:
   push:
@@ -11,6 +11,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  knowledge-cards-verification:
+    name: Saju Knowledge Cards (370+) Integrity Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Saju Knowledge DB & Expansion Script
+        run: |
+          node scripts/expand-knowledge-cards.mjs
+          node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('core/data/cards.live.json', 'utf8'));
+            const count = data.cards ? data.cards.length : 0;
+            console.log('Verified Saju Knowledge Cards Count:', count);
+            if (count < 350) {
+              console.error('Error: Insufficient cards in DB. Expected at least 350, found:', count);
+              process.exit(1);
+            }
+            console.log('✓ All Saju knowledge cards passed integrity check.');
+          "
+
   lint-and-typecheck:
     name: TypeCheck & Lint
     runs-on: ubuntu-latest
@@ -33,7 +60,7 @@ jobs:
   build:
     name: Next.js Production Build
     runs-on: ubuntu-latest
-    needs: lint-and-typecheck
+    needs: [knowledge-cards-verification, lint-and-typecheck]
     env:
       SYNC_CARDS_SKIP: '1'
       NEXT_TELEMETRY_DISABLED: '1'

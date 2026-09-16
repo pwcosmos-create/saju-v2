@@ -12,7 +12,7 @@ import type { SajuResult } from '../../core/pillar-calc/main-calculator';
 import { STEMS, BRANCHES, STEMS_H, BRANCHES_H, STEM_ELEM, ELEM_NAMES } from '../../core/pillar-calc/korean-calendar-engine';
 import { calcStrength, classifyElements, getSipsin } from '../../core/daily-fortune/classifier';
 import { getIljooDesc } from '../../core/interpretation-db/matcher';
-import { primeSpeechAudio, speakKoreanQueued, stopKoreanSpeech } from '../../lib/korean-tts';
+
 
 export interface ChatMessage {
   id: string;
@@ -29,6 +29,8 @@ const QUICK_PROMPTS = [
   { id: 'daeun', label: '🌟 인생의 전성기와 대운', prompt: '제 인생에서 가장 강력한 운이 들어오는 전성기(대운)와 조심해야 할 시기를 알려주세요.' },
   { id: 'advice', label: '✨ 기운을 보완하는 개운법', prompt: '제 사주에서 부족한 오행을 채우고 운을 끌어올리는 행운의 색상, 숫자, 일상 실천법을 알려주세요.' },
 ];
+
+const KAKAO_CHAT_URL = process.env.NEXT_PUBLIC_KAKAO_CHAT_URL || 'https://open.kakao.com';
 
 const ELEM_COLORS: Record<string, string> = {
   '목': '#5dce70',
@@ -51,7 +53,6 @@ export default function SajuRealtimeChat({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputVal, setInputVal] = useState('');
-  const [isTtsPlaying, setIsTtsPlaying] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -110,22 +111,7 @@ export default function SajuRealtimeChat({
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
 
-  // 음성 TTS 토글
-  const handleToggleTts = () => {
-    if (isTtsPlaying) {
-      stopKoreanSpeech();
-      setIsTtsPlaying(false);
-    } else {
-      const fullAiText = messages.filter((m) => m.sender === 'ai').map((m) => m.text).join('\n\n');
-      if (!fullAiText) return;
-      primeSpeechAudio();
-      setIsTtsPlaying(true);
-      speakKoreanQueued(fullAiText, {
-        onDone: () => setIsTtsPlaying(false),
-        onChunkError: () => setIsTtsPlaying(false),
-      });
-    }
-  };
+
 
   // 질문 전송 처리
   const handleSend = async (customPrompt?: string) => {
@@ -180,27 +166,38 @@ export default function SajuRealtimeChat({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleToggleTts}
-            aria-label="사주 풀이 음성 듣기"
+          <a
+            href={KAKAO_CHAT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              if (KAKAO_CHAT_URL === 'https://open.kakao.com') {
+                e.preventDefault();
+                alert('카카오톡 1:1 오픈채팅방 링크가 아직 설정되지 않았습니다.\n(오픈채팅방 링크를 생성 후 연동해 주세요)');
+              }
+            }}
+            aria-label="카카오톡 1:1 실시간 상담"
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
-              gap: 6,
+              gap: 5,
               padding: '6px 12px',
               borderRadius: 20,
-              background: isTtsPlaying ? 'rgba(184, 134, 11, 0.25)' : 'rgba(255, 255, 255, 0.08)',
-              border: `1px solid ${isTtsPlaying ? '#B8860B' : 'rgba(255, 255, 255, 0.15)'}`,
-              color: isTtsPlaying ? '#F5D67A' : '#e0e0e0',
+              background: '#FEE500',
+              border: '1px solid #FAD400',
+              color: '#191919',
               fontSize: '.78rem',
-              fontWeight: 700,
+              fontWeight: 800,
+              textDecoration: 'none',
               cursor: 'pointer',
-              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+              transition: 'all 0.15s ease',
+              flexShrink: 0,
             }}
           >
-            <span>{isTtsPlaying ? '🔊 듣는 중' : '🔈 음성 듣기'}</span>
-          </button>
+            <span style={{ fontSize: '.85rem' }}>💬</span>
+            <span>카톡 1:1 상담</span>
+          </a>
         </div>
 
         {/* 4주 8자 미니 칩스 */}

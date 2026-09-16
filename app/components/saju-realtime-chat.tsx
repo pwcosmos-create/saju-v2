@@ -49,7 +49,11 @@ export default function SajuRealtimeChat({
   result: SajuResult | null;
   streamText: string;
   isStreaming: boolean;
-  onSendAdditionalPrompt: (prompt: string) => Promise<void>;
+  onSendAdditionalPrompt: (
+    prompt: string,
+    onChunk?: (text: string) => void,
+    onDone?: () => void
+  ) => Promise<void>;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputVal, setInputVal] = useState('');
@@ -124,10 +128,45 @@ export default function SajuRealtimeChat({
       text: textToSend,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const aiMsgId = `ai-${Date.now()}`;
+    const initialAiMsg: ChatMessage = {
+      id: aiMsgId,
+      sender: 'ai',
+      text: '',
+      isStreaming: true,
+    };
+
+    setMessages((prev) => [...prev, userMsg, initialAiMsg]);
     if (!customPrompt) setInputVal('');
 
-    await onSendAdditionalPrompt(textToSend);
+    await onSendAdditionalPrompt(
+      textToSend,
+      (chunk: string) => {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === aiMsgId);
+          if (idx < 0) return prev;
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            text: next[idx].text + chunk,
+            isStreaming: true,
+          };
+          return next;
+        });
+      },
+      () => {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === aiMsgId);
+          if (idx < 0) return prev;
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            isStreaming: false,
+          };
+          return next;
+        });
+      }
+    );
   };
 
   if (!result || !sajuSummary) return null;

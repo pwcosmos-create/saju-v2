@@ -542,24 +542,32 @@ export default function Home() {
   }
 
 
-  async function handleAdditionalQuestion(customPrompt: string) {
+  async function handleAdditionalQuestion(
+    customPrompt: string,
+    onChunk?: (text: string) => void,
+    onDone?: () => void
+  ) {
     if (!lastResult.current || aiLoading) return;
     setAiLoad(true);
     const prevContext = aiText;
     const promptPayload = `[추가 상담 질문]\n${customPrompt}\n\n[내담자 사주 명식 및 이전 풀이]\n${buildPrompt(lastResult.current)}\n${prevContext.slice(0, 1500)}`;
     
-    let chunkAccum = '';
     fetchStream(promptPayload, {
       onChunk: t => {
-        chunkAccum += t;
-        setAiText(prev => prev + t);
+        if (onChunk) {
+          onChunk(t);
+        } else {
+          setAiText(prev => prev + t);
+        }
       },
       onDone: () => {
         setAiLoad(false);
+        onDone?.();
       },
       onError: (err) => {
         console.error('Additional question stream error:', err);
         setAiLoad(false);
+        onDone?.();
       }
     });
   }

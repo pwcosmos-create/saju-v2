@@ -12,7 +12,8 @@ concurrency:
 
 jobs:
   knowledge-cards-verification:
-    name: Saju Knowledge Cards (370+) Integrity Check
+    # cards.live.json 은 gitignore(서버 sync). CI는 expand 시드 무결성만 검증.
+    name: Saju Knowledge Expand Pack Integrity
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -21,21 +22,28 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: Verify Saju Knowledge DB & Expansion Script
+      - name: Verify expand script seeds and fills cards
         run: |
+          rm -f core/data/cards.live.json
           node scripts/expand-knowledge-cards.mjs
           node -e "
             const fs = require('fs');
             const data = JSON.parse(fs.readFileSync('core/data/cards.live.json', 'utf8'));
-            const count = data.cards ? data.cards.length : 0;
-            console.log('Verified Saju Knowledge Cards Count:', count);
-            if (count < 350) {
-              console.error('Error: Insufficient cards in DB. Expected at least 350, found:', count);
+            const cards = data.cards || [];
+            const count = cards.length;
+            console.log('Verified expand-seed cards count:', count);
+            if (count < 70) {
+              console.error('Error: Expand pack too small. Expected at least 70, found:', count);
               process.exit(1);
             }
-            console.log('✓ All Saju knowledge cards passed integrity check.');
+            const missing = cards.filter((c) => !c.title || !c.body);
+            if (missing.length) {
+              console.error('Error: Cards missing title/body:', missing.length);
+              process.exit(1);
+            }
+            console.log('All expand-seed saju knowledge cards passed integrity check.');
           "
 
   lint-and-typecheck:
@@ -48,11 +56,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        # apps-in-toss peer optional deps make npm ci flaky vs lockfile
+        run: npm install --no-audit --no-fund
 
       - name: TypeCheck (tsc)
         run: npm run lint
@@ -71,11 +80,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Next.js Build
         run: npm run build
@@ -90,7 +99,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Production Security Audit
         run: npm audit --omit=dev --audit-level=critical || true

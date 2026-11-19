@@ -778,15 +778,24 @@ const EXPAND_CARDS = [
 console.log('=== Gemma24 Knowledge Expansion ===');
 console.log('Target cards path:', cardsPath);
 
+/** CI·로컬 시드: live 파일이 없으면 빈 팩을 만든 뒤 EXPAND_CARDS 만 채운다 */
 if (!fs.existsSync(cardsPath)) {
-  console.error('File not found:', cardsPath);
-  process.exit(1);
+  fs.mkdirSync(path.dirname(cardsPath), { recursive: true });
+  const seed = {
+    version: 1,
+    purpose: 'offline_saju_interpretation',
+    exported_at: new Date().toISOString(),
+    card_count: 0,
+    cards: [],
+  };
+  fs.writeFileSync(cardsPath, `${JSON.stringify(seed, null, 2)}\n`, 'utf8');
+  console.log('Seeded empty cards pack:', cardsPath);
+} else {
+  // 자동 백업 생성
+  const backupPath = `${cardsPath}.bak-${Date.now()}`;
+  fs.copyFileSync(cardsPath, backupPath);
+  console.log('Backup created:', backupPath);
 }
-
-// 자동 백업 생성
-const backupPath = `${cardsPath}.bak-${Date.now()}`;
-fs.copyFileSync(cardsPath, backupPath);
-console.log('Backup created:', backupPath);
 
 const pack = JSON.parse(fs.readFileSync(cardsPath, 'utf8'));
 const cards = pack.cards || [];

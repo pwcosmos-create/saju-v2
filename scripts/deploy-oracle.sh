@@ -19,4 +19,4 @@ pm2 status "$PM2_NAME"
 echo "Smoke test..."
 sleep 10
 curl -sf -o /dev/null http://127.0.0.1:3001/saju
-echo "OK: /saju"
+echo "OK: /saju on :3001"

@@ -31,6 +31,7 @@ const QUICK_PROMPTS = [
 ];
 
 const KAKAO_CHAT_URL = process.env.NEXT_PUBLIC_KAKAO_CHAT_URL || 'https://open.kakao.com';
+const KAKAO_CHAT_ID = 'qudrn2302';
 
 const ELEM_COLORS: Record<string, string> = {
   '목': '#5dce70',
@@ -209,13 +210,18 @@ export default function SajuRealtimeChat({
             href={KAKAO_CHAT_URL}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => {
+            onClick={async (e) => {
               if (KAKAO_CHAT_URL === 'https://open.kakao.com') {
                 e.preventDefault();
-                alert('카카오톡 1:1 오픈채팅방 링크가 아직 설정되지 않았습니다.\n(오픈채팅방 링크를 생성 후 연동해 주세요)');
+                try {
+                  await navigator.clipboard.writeText(KAKAO_CHAT_ID);
+                  alert(`카카오톡 아이디 ${KAKAO_CHAT_ID}가 복사되었습니다.\n카카오톡에서 아이디로 친구를 추가한 뒤 1:1 상담을 요청해 주세요.`);
+                } catch {
+                  alert(`1:1 카톡상담 아이디: ${KAKAO_CHAT_ID}\n카카오톡에서 아이디로 친구를 추가한 뒤 상담을 요청해 주세요.`);
+                }
               }
             }}
-            aria-label="카카오톡 1:1 실시간 상담"
+            aria-label={`카카오톡 1:1 실시간 상담 (아이디: ${KAKAO_CHAT_ID})`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',

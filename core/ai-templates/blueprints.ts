@@ -126,7 +126,7 @@ export function buildPremiumPrompt(result: SajuResult): string {
 
   const daeunText = daeun.pillars.slice(0, 4).map((p, i) => {
     const age = daeun.startAge + i * 10;
-    return `${age}세: ${STEMS[p.s]}${BRANCHES[p.b]}`;
+    return `${age}세~${age + 9}세: ${STEMS[p.s]}${BRANCHES[p.b]}`;
   }).join(' / ');
 
   const sipsinText = sipsin
@@ -327,16 +327,16 @@ export function buildPrompt(result: SajuResult): string {
     ? shinsal.map(s => `  - ${s.name}: ${s.desc}`).join('\n')
     : '  - 해당 없음';
 
-  // 대운
+  // 대운 (시작나이만 쓰면 현재 나이로 오해 → 나이 구간 표기)
   const daeunText = daeun.pillars.slice(0, 4).map((p, i) => {
     const age = daeun.startAge + i * 10;
-    return `${age}세: ${STEMS[p.s]}${BRANCHES[p.b]}`;
+    return `${age}세~${age + 9}세: ${STEMS[p.s]}${BRANCHES[p.b]}`;
   }).join(' / ');
   const daeunDetailedText = daeun.pillars.slice(0, 8).map((p, i) => {
     const age = daeun.startAge + i * 10;
     const startY = input.year + age;
     const endY = startY + 9;
-    return `- ${age}세(${startY}~${endY}): ${STEMS[p.s]}${BRANCHES[p.b]}(${STEMS_H[p.s]}${BRANCHES_H[p.b]})`;
+    return `- ${age}세~${age + 9}세(${startY}~${endY}): ${STEMS[p.s]}${BRANCHES[p.b]}(${STEMS_H[p.s]}${BRANCHES_H[p.b]})`;
   }).join('\n');
 
   const sipsinText = sipsin
@@ -379,6 +379,7 @@ export function buildPrompt(result: SajuResult): string {
 9. 특수문자(!@#$%^&*~\`<>|\\/_+=) 사용 금지. ◆·—·**강조**·괄호() 외 기호 사용 시 오류.
 10. 사주 풀이 시작 전 인사말 금지. [1]부터 바로 시작.
 11. 대운은 제공된 8개 구간을 모두 누락 없이 설명하세요. 특정 구간을 생략하면 오류입니다.
+12. 대운 나이는 시작나이만 쓰지 말고 반드시 **현재 52세 · 48세~57세(2022~2031)**처럼 **현재 나이 + 구간 나이 + 연도**로 표기하세요. "48세(2022~2031)"처럼 시작나이만 쓰면 현재 나이로 오해됩니다.
 
 ━━━ ✍️ 글쓰기 및 분량 극대화 지침 (최적화) ━━━
 • 각 항목을 서술할 때 단순 요약하지 말고, 독자가 깊이 공감할 수 있도록 구체적인 심리 분석과 대인관계 패턴, 행동 요령을 명리학 원리에 근거하여 아주 풍부하게(최소 3~4문단 이상) 설명하십시오.

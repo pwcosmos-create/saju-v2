@@ -10,6 +10,28 @@ export type DaeunPeriod = {
   label: string;
 };
 
+/** 대운 시작나이만 쓰면 "지금 나이"로 오해됨 → 48세~57세 */
+export function formatDaeunAgeSpan(startAge: number): string {
+  return `${startAge}세~${startAge + 9}세`;
+}
+
+/** 생년 기준 현재 연나이 (기존 대운 판정과 동일: 올해 − 출생연도) */
+export function currentDaeunAge(birthYear: number, now = new Date()): number {
+  return now.getFullYear() - birthYear;
+}
+
+/** 예: 48세~57세(2022~2031) / 현재 나이 포함 시: 현재 52세 · 48세~57세(2022~2031) */
+export function formatDaeunPeriodLabel(
+  period: Pick<DaeunPeriod, 'age' | 'startYear' | 'endYear'>,
+  opts?: { currentAge?: number },
+): string {
+  const base = `${formatDaeunAgeSpan(period.age)}(${period.startYear}~${period.endYear})`;
+  if (opts?.currentAge != null && Number.isFinite(opts.currentAge)) {
+    return `현재 ${opts.currentAge}세 · ${base}`;
+  }
+  return base;
+}
+
 const STEM_KO_TO_ELEM: Record<string, string> = {
   갑: '목', 을: '목', 병: '화', 정: '화', 무: '토', 기: '토', 경: '금', 신: '금', 임: '수', 계: '수',
 };
@@ -118,7 +140,7 @@ export function parseDaeunFromQuery(query: string): {
   if (detailedBlock) {
     const periods: DaeunPeriod[] = [];
     for (const m of detailedBlock.matchAll(
-      /^-\s*(\d+)세\((\d{4})~(\d{4})\):\s*([^\n]+)/gm,
+      /^-\s*(\d+)세(?:~\d+세)?\((\d{4})~(\d{4})\):\s*([^\n]+)/gm,
     )) {
       periods.push({
         age: Number.parseInt(m[1]!, 10),
@@ -133,7 +155,9 @@ export function parseDaeunFromQuery(query: string): {
   const short = query.match(/대운:\s*([^\n(]+)/)?.[1]?.trim();
   if (short && birthYear) {
     const periods: DaeunPeriod[] = [];
-    for (const m of short.matchAll(/(\d+)세:\s*([갑을병정무기경신임계][子丑寅卯辰巳午未申酉戌亥])/g)) {
+    for (const m of short.matchAll(
+      /(\d+)세(?:~\d+세)?:\s*([갑을병정무기경신임계][子丑寅卯辰巳午未申酉戌亥])/g,
+    )) {
       const age = Number.parseInt(m[1]!, 10);
       const startYear = birthYear + age;
       periods.push({
@@ -173,7 +197,7 @@ export function adviseDaeunPeriod(
 }
 
 function findCurrentPeriod(periods: DaeunPeriod[], birthYear: number): DaeunPeriod | null {
-  const age = new Date().getFullYear() - birthYear;
+  const age = currentDaeunAge(birthYear);
   return (
     periods.find((p) => age >= p.age && age < p.age + 10)
     ?? periods.find((p) => age >= p.age - 2 && age < p.age + 12)
@@ -247,7 +271,7 @@ export function buildDaeunFortuneBody(opts: {
   lines.push(
     `### 🗓️ 귀하의 10년 대운 흐름`,
     '',
-    `귀하의 대운은 **${dir}**하는 흐름을 타며, **${periods[0]!.age}세**부터 새로운 10년 주기의 구간으로 나뉘어 흐릅니다. 10년 단위의 흐름과 각 시기에 맞는 삶의 자세는 다음과 같습니다.`,
+    `귀하의 대운은 **${dir}**하는 흐름을 타며, **${formatDaeunAgeSpan(periods[0]!.age)}**부터 새로운 10년 주기의 구간으로 나뉘어 흐릅니다. 10년 단위의 흐름과 각 시기에 맞는 삶의 자세는 다음과 같습니다.`,
     ''
   );
 
@@ -260,20 +284,20 @@ export function buildDaeunFortuneBody(opts: {
                      elem === '수' ? '수(水·물)' : '';
     const stemInfo = elemName ? ` [${elemName} 기운]` : '';
     lines.push(
-      `* **${p.age}세 (${p.startYear}~${p.endYear}) ${p.label} 대운:**${stemInfo} ${adviseDaeunPeriod(p, yongsinElem, gisinElems)}`
+      `* **${formatDaeunPeriodLabel(p)} ${p.label} 대운:**${stemInfo} ${adviseDaeunPeriod(p, yongsinElem, gisinElems)}`
     );
   }
 
   // 3. Current Daeun Focus
   if (birthYear) {
     const cur = findCurrentPeriod(periods, birthYear);
-    const age = new Date().getFullYear() - birthYear;
+    const age = currentDaeunAge(birthYear);
     if (cur) {
       lines.push(
         '',
         `### 🎯 지금 나에게 작용하는 운: **${cur.label}** 대운 (현재 ${age}세)`,
         '',
-        `현재 귀하는 **${cur.age}세(${cur.startYear}~${cur.endYear}) ${cur.label} 대운**의 한가운데를 지나고 있습니다. 이 시기에는 아래의 포인트에 초점을 맞추어 행동하는 것이 대단히 유리합니다.`,
+        `현재 귀하는 **${formatDaeunPeriodLabel(cur, { currentAge: age })} ${cur.label} 대운**의 한가운데를 지나고 있습니다. 이 시기에는 아래의 포인트에 초점을 맞추어 행동하는 것이 대단히 유리합니다.`,
         ''
       );
 

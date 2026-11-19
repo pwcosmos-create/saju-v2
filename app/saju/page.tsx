@@ -1024,8 +1024,9 @@ export default function Home() {
         result={result}
         aiSummaryReady={APPS_IN_TOSS ? Boolean(result) : aiFortuneComplete}
       />
-      <StickyBannerAd visible={Boolean(result)} />
       </div>{/* /z-index wrapper */}
+      {/* overflow 래퍼 밖 — viewport 하단에 고정 */}
+      <StickyBannerAd visible={Boolean(result)} />
     </div>
   );
 }
@@ -1292,18 +1293,19 @@ function TabShinsal({ shinsal }: { shinsal:Shinsal[] }) {
 
 function TabDaeun({ daeun, birthYear }: { daeun:DaeunResult; birthYear:number }) {
   const thisYear=THIS_YEAR, dir=daeun.forward?'순행(順行)':'역행(逆行)';
+  const currentAge=thisYear-birthYear;
   return (
     <div>
       <h3 style={{ fontSize:'.98rem',fontWeight:700,marginBottom:6,color:'var(--gold)' }}>🔄 대운 흐름 (大運)</h3>
-      <p style={{ fontSize:'.83rem',color:'var(--muted)',marginBottom:16 }}>방향: <strong style={{ color:'var(--gold)' }}>{dir}</strong></p>
+      <p style={{ fontSize:'.83rem',color:'var(--muted)',marginBottom:16 }}>방향: <strong style={{ color:'var(--gold)' }}>{dir}</strong> · 현재 <strong style={{ color:'var(--gold)' }}>{currentAge}세</strong></p>
       <div style={{ display:'flex',gap:8,overflowX:'auto',paddingBottom:8 }}>
         {daeun.pillars.map((p,i)=>{
-          const age=daeun.startAge+i*10, startY=birthYear+age, endY=startY+9;
+          const age=daeun.startAge+i*10, endAge=age+9, startY=birthYear+age, endY=startY+9;
           const isCur=thisYear>=startY&&thisYear<=endY;
           const ec=ELEM_COLORS[STEM_ELEM[p.s]];
           return (
             <div key={i} style={{ minWidth:80,border:`1px solid ${isCur?'var(--gold)':'var(--border)'}`,background:isCur?'rgba(232,196,106,.08)':'rgba(255,255,255,.04)',borderRadius:10,padding:'12px 8px',textAlign:'center',flexShrink:0 }}>
-              <div style={{ fontSize:'.65rem',color:'var(--muted)',marginBottom:6 }}>{age}세<br/><span style={{ fontSize:'.6rem' }}>{startY}~{endY}</span></div>
+              <div style={{ fontSize:'.65rem',color:'var(--muted)',marginBottom:6 }}>{age}~{endAge}세{isCur?` · 현재 ${currentAge}세`:''}<br/><span style={{ fontSize:'.6rem' }}>{startY}~{endY}</span></div>
               <div style={{ fontSize:'1.1rem',fontWeight:800,color:ec }}>{STEMS_H[p.s]}</div>
               <div style={{ fontSize:'1.1rem',fontWeight:800,color:ELEM_COLORS[BRANCH_ELEM[p.b]] }}>{BRANCHES_H[p.b]}</div>
               <div style={{ fontSize:'.68rem',color:'var(--muted)',marginTop:3 }}>{STEMS[p.s]}{BRANCHES[p.b]}</div>

@@ -6,7 +6,12 @@ import {
   calcYear,
 } from '../pillar-calc/korean-calendar-engine';
 import { calculate } from '../pillar-calc/main-calculator';
-import { adviseDaeunPeriod, parseDaeunFromQuery } from '../gemma24/council-fortune-daeun';
+import {
+  adviseDaeunPeriod,
+  currentDaeunAge,
+  formatDaeunPeriodLabel,
+  parseDaeunFromQuery,
+} from '../gemma24/council-fortune-daeun';
 import { extractPromptFacts } from '../gemma24/saju-knowledge';
 import { dailyFortune } from './index';
 import { parseSajuInputFromContext } from './from-saju-context';
@@ -20,6 +25,8 @@ export type YearFortuneCounselPayload = {
   level: string;
   score: number;
   daeunLabel: string | null;
+  /** 예: 현재 52세 · 48세~57세(2022~2031) */
+  daeunPeriodLabel: string | null;
   daeunAdvice: string | null;
   yongsinElem: string | null;
 };
@@ -40,6 +47,7 @@ export function tryYearFortuneFromSajuContext(
     const facts = extractPromptFacts(sajuContext);
     const { periods } = parseDaeunFromQuery(sajuContext);
     const period = periods.find((p) => year >= p.startYear && year <= p.endYear) ?? null;
+    const currentAge = currentDaeunAge(input.year);
 
     return {
       year,
@@ -50,6 +58,9 @@ export function tryYearFortuneFromSajuContext(
       level: f.level,
       score: f.score,
       daeunLabel: period?.label ?? null,
+      daeunPeriodLabel: period
+        ? formatDaeunPeriodLabel(period, { currentAge })
+        : null,
       daeunAdvice: period
         ? adviseDaeunPeriod(period, facts.yongsinElem, facts.gisinElems)
         : null,
@@ -85,7 +96,8 @@ export function buildYearFortuneCounselReply(
   ];
 
   if (p.daeunLabel && p.daeunAdvice) {
-    lines.push(`— ${p.year}년은 ${p.daeunLabel} 대운 구간: ${p.daeunAdvice}`);
+    const span = p.daeunPeriodLabel ? `${p.daeunPeriodLabel} ` : '';
+    lines.push(`— ${p.year}년은 ${span}${p.daeunLabel} 대운 구간: ${p.daeunAdvice}`);
   }
   if (p.yongsinElem) {
     lines.push(

@@ -32,7 +32,10 @@ export function buildChatContext(r: SajuResult): string {
   const isWeak = sup - drn <= 0;
   const cls = classifyElements(ds, isWeak, r.ohaeng.counts);
   const daeun = r.daeun.pillars.slice(0, 5)
-    .map((p, i) => `${r.daeun.startAge + i * 10}세: ${STEMS[p.s]}${BRANCHES[p.b]}`).join(' / ');
+    .map((p, i) => {
+      const age = r.daeun.startAge + i * 10;
+      return `${age}세~${age + 9}세: ${STEMS[p.s]}${BRANCHES[p.b]}`;
+    }).join(' / ');
 
   return `생년월일: ${r.input.year}년 ${r.input.month}월 ${r.input.day}일 (${r.input.gender}성)
 사주: 연주 ${ps(yp)} | 월주 ${ps(mp)} | 일주 ${ps(dp)} | 시주 ${ps(hp)}

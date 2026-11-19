@@ -1,6 +1,11 @@
 import { extractPromptFacts } from '../gemma24/saju-knowledge';
 import type { CounselTopicIntent } from '../gemma24/parse-counsel-intent';
-import { adviseDaeunPeriod, parseDaeunFromQuery } from '../gemma24/council-fortune-daeun';
+import {
+  adviseDaeunPeriod,
+  currentDaeunAge,
+  formatDaeunPeriodLabel,
+  parseDaeunFromQuery,
+} from '../gemma24/council-fortune-daeun';
 
 const TOPIC_SECTION: Record<
   number,
@@ -125,12 +130,12 @@ export function buildTopicCounselReply(
   }
 
   if (birthYear && periods.length) {
-    const age = new Date().getFullYear() - birthYear;
+    const age = currentDaeunAge(birthYear);
     const cur = periods.find((p) => age >= p.age && age < p.age + 10) ?? periods[0];
     if (cur) {
-      lines.push('', '◆ 지금 대운과의 관계');
+      lines.push('', '◆ 현재 대운');
       lines.push(
-        `— ${cur.age}세(${cur.startYear}~${cur.endYear}) ${cur.label}: ${adviseDaeunPeriod(cur, facts.yongsinElem, facts.gisinElems)}`,
+        `— ${formatDaeunPeriodLabel(cur, { currentAge: age })} ${cur.label}: ${adviseDaeunPeriod(cur, facts.yongsinElem, facts.gisinElems)}`,
       );
     }
   }

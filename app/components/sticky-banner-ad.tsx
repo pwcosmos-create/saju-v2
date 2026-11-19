@@ -3,7 +3,7 @@
  * StickyBannerAd
  * 사주 풀이 결과 화면 하단 고정 배너 (TossAds.attachBanner)
  * - 가로: 기기 화면 전폭 (left/right 0, width 100% — 100vw 금지)
- * - 세로: 96px + safe-area-inset-bottom
+ * - 세로: 광고를 화면 맨 아래(safe-area 포함)에 붙임
  * - --saju-sticky-banner-h CSS 변수로 본문 padding 연동
  */
 import { useEffect, useRef, useState } from "react";
@@ -90,8 +90,9 @@ export default function StickyBannerAd({ visible }: Props) {
           backgroundColor: "#0d1b2e",
           borderTop: "1px solid rgba(255,255,255,0.08)",
           display: "flex",
+          flexDirection: "column",
           alignItems: "stretch",
-          justifyContent: "center",
+          justifyContent: "flex-end",
           overflow: "hidden",
         }}
       >
@@ -100,9 +101,12 @@ export default function StickyBannerAd({ visible }: Props) {
           id="saju-banner-ad-container"
           style={{
             width: "100%",
-            height: "100%",
+            height: SAJU_BANNER_HEIGHT_PX,
+            minHeight: SAJU_BANNER_HEIGHT_PX,
             minWidth: 0,
             position: "relative",
+            flexShrink: 0,
+            marginTop: "auto",
           }}
         />
 
@@ -112,7 +116,7 @@ export default function StickyBannerAd({ visible }: Props) {
               position: "absolute",
               left: 0,
               right: 0,
-              top: 0,
+              bottom: "env(safe-area-inset-bottom, 0px)",
               height: SAJU_BANNER_HEIGHT_PX,
               display: "flex",
               alignItems: "center",

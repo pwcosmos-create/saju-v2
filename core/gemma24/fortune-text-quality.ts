@@ -212,7 +212,7 @@ export function isLowQualityFortuneBody(
     if (query && lacksChartPersonalization(t, query)) return true;
     if (ENCYCLOPEDIC_JOB_RE.test(t)) return true;
     if (GENERIC_OHAENG_RE.test(t) && !/목\s*\d+\s*개|지배 오행|넘치는 기운/.test(t)) return true;
-    if (GENERIC_DAEUN_RE.test(t) && !/\d+세\(|지금\(|구간별 흐름|10년 대운/.test(t)) return true;
+    if (GENERIC_DAEUN_RE.test(t) && !/\d+세(?:~\d+세)?\(|지금\(|구간별 흐름|10년 대운/.test(t)) return true;
   }
 
   const brokenLines = lines.filter((l) => isBrokenDisplayLine(l));
